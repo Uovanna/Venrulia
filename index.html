@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#08080f" />
+    <title>Realms of Eldoria</title>
+    <style>
+      html, body, #root { margin: 0; padding: 0; height: 100%; background: #08080f; overscroll-behavior: none; }
+      #root { min-height: 100vh; }
+      * { -webkit-tap-highlight-color: transparent; }
+      textarea, input { user-select: text; }
+      .boot { color: #f0b429; font-family: Georgia, serif; text-align: center; padding-top: 42vh; font-size: 18px; }
+    </style>
+    <!-- Supabase UMD → provides window.supabase (used by src/App.jsx for cloud saves + auth). Loads before the app module. -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  </head>
+  <body>
+    <div id="root"><div class="boot">⚔️ Loading Realms of Eldoria…</div></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

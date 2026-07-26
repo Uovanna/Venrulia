@@ -1,0 +1,6 @@
+-- 0006 blob-v1 RPCs (THE PATH THE CLIENT ACTUALLY USES)
+-- Server owns shared listings + mail and enforces the ±75% band; the client keeps
+-- gold/inventory in its trusted blob. Goods travel as JSON (no server wallet/item sync).
+-- (0001-0005's full server-owned economy remains as the future hardened path.)
+-- Applied live to project hofkfxuyurjnmzhzrarw. See ah_list_gear / ah_list_stack /
+-- ah_purchase / ah_unlist / mail_claim / mail_claim_all + the JSON-embedding expire sweep.

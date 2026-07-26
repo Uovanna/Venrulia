@@ -1,0 +1,7 @@
+-- 0007 seed material/drop unit values (matches client stackUnitValue after the ×3 change)
+insert into ah_mat_value(kind,mat_id,unit_value) values
+('mat','copper',9),('mat','tin',15),('mat','iron',26),('mat','silver',44),('mat','gold',75),('mat','mithril',128),('mat','truesilver',217),('mat','adamant',369),('mat','crystalline',628),
+('mat','bluepetal',9),('mat','sunblossom',15),('mat','thornweed',26),('mat','mossroot',44),('mat','wildvine',75),('mat','frostleaf',128),('mat','emberbloom',217),
+('mat','dust',36),('mat','dust_str',120),('mat','dust_agi',120),('mat','dust_int',120),('mat','dust_sta',120),('mat','dust_leech',120),('mat','dust_vers',120),('mat','dust_resil',120),
+('drop','goblinBone',4),('drop','silk',4),('drop','spiderVenom',4),('drop','frogSlime',4),('drop','wornLeather',6),('drop','dustMote',6),('drop','strawBundle',6),('drop','gnollFang',6),('drop','crackedBone',10),('drop','wolfPelt',10),('drop','shadowCloth',10),('drop','giantChitin',10),('drop','trollHide',16),('drop','scrapMetal',16),('drop','raptorClaw',16),('drop','sleekPelt',16),('drop','cinderDust',26),('drop','elementalEmber',26),('drop','lavaRock',26),('drop','charredHide',26),('drop','rottingFlesh',42),('drop','rustedBlade',42),('drop','batWing',42),('drop','ectoplasm',42),('drop','surgingEmber',67),('drop','moltenFragment',67),('drop','magmaFang',67),('drop','sentinelCore',67),('drop','drakeScale',67),('drop','cinderAsh',67),('drop','salamanderHide',67)
+on conflict (kind,mat_id) do update set unit_value=excluded.unit_value;

@@ -8,7 +8,7 @@
   "scripts": {
     "start": "node index.mjs",
     "dev": "node --watch index.mjs",
-    "test": "node sim.test.mjs && node room.test.mjs",
+    "test": "node sim.test.mjs && node room.test.mjs && node input.test.mjs",
     "test:e2e": "node e2e.test.mjs",
     "sync-core": "cp ../game-core/rng.mjs ../game-core/combat.mjs ."
   },

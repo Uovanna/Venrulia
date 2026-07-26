@@ -75,9 +75,35 @@ builds combatants from published snapshots the same way.
 | Determinism of real core | ✅ proven (`determinism-core.cjs`) |
 | Closure identified (155 symbols) | ✅ mapped (`CLOSURE.md`) |
 | `combat.mjs` (lift the 146 closure) | ✅ extracted + proven byte-identical |
-| `App.jsx` cutover | ✅ prepared as reviewable `App.cutover.jsx` (−715 lines); playtest to adopt |
-| Standalone-build splice update | ▢ next |
+| `App.jsx` cutover | ✅ **adopted** — `src/App.jsx` imports `../game-core/`; Vite build green, booted and played in a real browser |
+| Standalone-build splice update | ▢ next — `standalone/realms-of-eldoria.html` still embeds the pre-cutover inline core |
 | Server core (sim + validator) | ✅ built + tested (`server/sim.mjs`) |
 | Colyseus room + deploy config | ✅ built (`server/`); runs live under real Colyseus (`npm run test:e2e`) |
 | Railway service | ✅ configured (root dir, healthcheck, domain, vars); deploy blocked on authorizing Railway's GitHub App — see `server/README.md` |
-| Real-time human input in core | ▢ Stage 4 (`stepEncounter(state,dt,inputs)`) |
+| Real-time human input in core | ✅ `stepEncounter(state, dt, inputs)` + `resolveIntent`; server & room wired, tested (`server/input.test.mjs`) |
+| Client netcode (Stage 4b) | ✅ **playable** — Guild → 🌐 Online Co-op; verified with two browsers in one room |
+
+## Stage 4b — client netcode (done)
+
+Online co-op is playable: **Guild → 🌐 Online Co-op → Play Online**. `mpProvider.connectEncounter`
+joins the room (`colyseus.js` is a lazy import, so it only loads when you play online), waits for
+`assigned`, and hands `GroupCombat` a `room` + `myAllyId`. Networked, the component stops ticking
+locally and renders the server's snapshots; `cast()` sends `{ skillName, target }`.
+
+Server URL comes from `VITE_GAME_SERVER`, defaulting to the Railway deployment.
+
+Verified with **two real browsers in one room**: separate characters, one shared authoritative
+fight, bot-filled remaining seats, each client correctly rendering itself as "You" and the other
+player by name. No console errors.
+
+### Known gaps
+- **Potions are offline-only.** They mutate authoritative state and need their own validated
+  server message; the button is disabled online rather than silently desyncing.
+- **Full state every tick.** `fullSnapshot` sends the whole encounter (minus `ally.char`) at
+  ~8/sec. Fine for 4–6 players, not the endgame.
+- **No prediction yet.** Actions land on the next server tick (≤120ms + RTT). Since both sides
+  now run the identical core, the fix is local stepping with reconciliation against a rarer
+  authoritative frame — the payoff for having one shared core.
+- Only the two encounters in `ONLINE_CONTENT` are server-hosted; everything else stays local.
+
+The wire protocol is documented in `server/README.md`.

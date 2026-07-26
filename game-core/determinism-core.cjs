@@ -12,8 +12,19 @@ const outName = fs.readdirSync(dir).find(f => f.endsWith('.js'));
 let js = fs.readFileSync(path.join(dir, outName), 'utf8');
 const stub = '({default:{Component:function(){},createElement:function(){return{}},Fragment:"F"},useState:0,useEffect:0,useRef:0,useCallback:0,createElement:function(){return{}},Component:function(){},Fragment:"F"})';
 js = js.replace('__importStar(require("react"))', stub);
+// Post-cutover App.jsx imports the core by relative path. The transpiled harness runs from a
+// temp dir, so those have to be re-pointed at the real modules. Node 22 can require() ESM.
+js = js.replace(/require\("\.\.\/game-core\//g, `require("${path.join(__dirname).replace(/\\/g, '/')}/`);
+// Vite's `import.meta.env` (build-time config, e.g. the game-server URL) is a syntax error in
+// CommonJS. Nothing this harness exercises reads it, so neutralise it rather than run a bundler.
+js = js.replace(/import\.meta\.env/g, '({})');
 js += `
 ;(function(){
+  // Post-cutover the combat symbols arrive as an import namespace rather than bare locals,
+  // so pull them from the module the app itself imports. buildBotChar / botTier are still
+  // App.jsx-local, which keeps this an integration test of the app's real code path.
+  const __core = require(${JSON.stringify(path.join(__dirname, 'combat.mjs').replace(/\\/g, '/'))});
+  const createEncounter = __core.createEncounter, stepEncounter = __core.stepEncounter;
   const party=[
     {char:buildBotChar("warrior","",60,60), role:"tank",   tier:botTier(1800)},
     {char:buildBotChar("paladin","",60,60), role:"healer", tier:botTier(1800)},

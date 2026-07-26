@@ -22,6 +22,8 @@ server/
 - `node sim.test.mjs` — authoritative runs are deterministic; the tick loop matches
   run-to-completion; the replay validator accepts truthful results and rejects forged ones.
 - `node room.test.mjs` — seats → party (bot-filled) → authoritative resolve → broadcast snapshot.
+- `node input.test.mjs` — the Stage 4 input path: unowned/invented/forged skills are rejected,
+  a human idles until they tap, and a recorded input timeline replays the fight exactly.
 - `npm run test:e2e` — boots the server, joins over a websocket with `colyseus.js`, and plays a
   fight to completion: 229 snapshots and the same `wiped @ tick 229` the headless suite produces.
   Malformed joins are refused and leave the process running.
@@ -40,9 +42,32 @@ Note `colyseus` ^0.15 is CommonJS and must be default-imported and destructured 
 loader; `@colyseus/schema` ships a real ESM build and imports by name. Room state must be a `Schema`
 instance — a plain object passed to `setState()` fails to encode and breaks the first join.
 
-The room currently resolves every combatant with the core's AI (an authoritative co-op fight all
-clients watch live, loot server-granted). Real-time **human control** is the one remaining core
-extension — `stepEncounter(state, dt, inputs)` — flagged in `rooms/EncounterRoom.mjs` (Stage 4).
+## Player-driven combatants (Stage 4)
+
+Human seats are controlled by their player; empty seats and dropped players fall back to the
+core's AI. `stepEncounter(state, dt, inputs)` takes `{ [allyId]: intent }` for the tick.
+
+**An intent names a skill; it never carries one.** `resolveIntent` looks the name up in that
+character's *own* loadout and applies the same cooldown and resource rules the AI obeys, so the
+worst a forged intent can do is name something the character doesn't have and get dropped. This
+is the trust boundary — `input.test.mjs` asserts a forged skill object cannot be injected.
+
+Every applied intent is recorded in the room's `timeline`, so `verifyEncounter({ …, timeline })`
+replays a human-played fight from `(party, boss, seed, inputs)` and reproduces it exactly. That
+keeps a player-controlled result as tamper-proof as an AI-resolved one.
+
+### Wire protocol
+```
+join         joinOrCreate("encounter", { contentId, name, role, uid, loadout: { char, tier } })
+← assigned   { allyId, skills }    once at start — your combatant, and the names you may send
+← state      snapshot(enc)         every 120ms tick
+← result     { outcome, tick, elapsed }
+← error      { message }
+→ intent     { skillName, target?: { type: "enemy"|"ally", id } }
+```
+Target is optional — the core picks a sensible one (primary enemy, or the most injured ally for
+heals). Re-sending before the next tick replaces the queued intent rather than banking a second
+action. A human's turn stays open until they act, so an idle player simply contributes nothing.
 
 ## Run locally
 ```

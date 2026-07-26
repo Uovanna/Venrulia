@@ -1,5 +1,20 @@
 # Stage 2 — combat.mjs extraction + App.jsx cutover
 
+> **ADOPTED.** `src/App.jsx` now imports the core from `../game-core/`. The notes below are
+> kept as the record of how the extraction was proven. Two things changed at adoption:
+>
+> - The modules were **not** copied to `src/game-core/` as step 2 suggested. `src/App.jsx`
+>   imports `../game-core/` directly, so there is exactly one canonical core; `server/` keeps
+>   synced copies via `npm run sync-core` so it can deploy standalone.
+> - The prepared `App.cutover.jsx` had a defect: it imported the RNG helpers *and* still
+>   defined `rngPick` / `rngInt` / `makeClock` locally, so the build failed with
+>   "The symbol has already been declared". Those three definitions were removed on adoption.
+>
+> `equivalence.test.mjs` is now tautological — post-cutover the "in-app core" *is* the
+> extracted core, so it compares the module against itself. Its job was done at adoption.
+> **`determinism-core.cjs` remains the live gate** and still reports
+> `229 | DETERMINISTIC: true | SEED MATTERS: true`.
+
 ## What was done
 - **`combat.mjs`** — the 146-symbol combat closure lifted out of `App.jsx` (imports RNG/clock from `rng.mjs`). Loads standalone with 141 exports, **zero missing deps**.
 - **Proven equivalent**: replaying one start state through the in-app core and the extracted core gives byte-identical results across a full fight (final state + step count + every trace checkpoint). See "Run the proof" below.

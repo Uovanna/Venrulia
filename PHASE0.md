@@ -75,8 +75,8 @@ builds combatants from published snapshots the same way.
 | Determinism of real core | ✅ proven (`determinism-core.cjs`) |
 | Closure identified (155 symbols) | ✅ mapped (`CLOSURE.md`) |
 | `combat.mjs` (lift the 146 closure) | ✅ extracted + proven byte-identical |
-| `App.jsx` cutover | ✅ prepared as reviewable `App.cutover.jsx` (−715 lines); playtest to adopt |
-| Standalone-build splice update | ▢ next |
+| `App.jsx` cutover | ✅ **adopted** — `src/App.jsx` imports `../game-core/`; Vite build green, booted and played in a real browser |
+| Standalone-build splice update | ▢ next — `standalone/realms-of-eldoria.html` still embeds the pre-cutover inline core |
 | Server core (sim + validator) | ✅ built + tested (`server/sim.mjs`) |
 | Colyseus room + deploy config | ✅ built (`server/`); runs live under real Colyseus (`npm run test:e2e`) |
 | Railway service | ✅ configured (root dir, healthcheck, domain, vars); deploy blocked on authorizing Railway's GitHub App — see `server/README.md` |
@@ -88,10 +88,21 @@ builds combatants from published snapshots the same way.
 The core and server halves of Stage 4 are done: a player's combatant is driven by intents, and
 those intents are validated and replayed like any other part of the reproducible tuple.
 
-What remains is pointing the client at the room. That should happen **after** the `App.jsx`
-cutover is adopted, not before. `src/App.jsx` still carries its own copy of the combat code
-(its own `stepEncounter`, `grpResolveTarget`, `skillByName`, …), so wiring netcode into it now
-would predict against a *divergent* copy of the sim — which is precisely the thing the shared
-core exists to prevent. Adopt `game-core/App.cutover.jsx` first, then `mpProvider` gains a room
-connection and the local `cast()` handler sends `{ skillName, target }` instead of mutating
-`pendingAction` directly.
+What remains is pointing the client at the room. **The cutover blocker is now cleared** —
+`src/App.jsx` imports the same `game-core/` the server ticks, so client prediction and the
+authoritative sim are the same code by construction rather than by discipline.
+
+The remaining work is in `mpProvider` (`src/App.jsx`), which today fills parties locally and
+has no socket:
+
+1. Add a room connection — `joinOrCreate("encounter", { contentId, loadout: { char, tier }, … })`
+   against `wss://eldoria-game-server-production.up.railway.app`, and keep the `assigned`
+   message (your `allyId` + the skill names you may send).
+2. In `GroupCombat`, when the fight is networked: stop calling `stepEncounter` on an interval
+   and render the server's `state` snapshots instead; `cast()` sends
+   `{ skillName: sk.name, target }` rather than mutating `pendingAction` locally.
+3. Optional next step — client-side prediction. Because both sides run the identical core,
+   the client can keep stepping locally and reconcile against each snapshot, which is what
+   makes the 120ms tick feel instant. Not required for a first playtest.
+
+The full wire protocol is documented in `server/README.md`.

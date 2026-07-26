@@ -1,0 +1,21 @@
+{
+  "name": "realms-of-eldoria-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Authoritative Colyseus game server for Realms of Eldoria (deterministic PvE rooms).",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node index.mjs",
+    "dev": "node --watch index.mjs",
+    "test": "node sim.test.mjs && node room.test.mjs",
+    "sync-core": "cp ../game-core/rng.mjs ../game-core/combat.mjs ."
+  },
+  "dependencies": {
+    "@colyseus/schema": "^2.0.0",
+    "@colyseus/ws-transport": "^0.15.0",
+    "colyseus": "^0.15.17",
+    "express": "^4.19.2",
+    "@supabase/supabase-js": "^2.45.0"
+  }
+}

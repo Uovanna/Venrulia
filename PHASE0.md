@@ -96,9 +96,20 @@ Verified with **two real browsers in one room**: separate characters, one shared
 fight, bot-filled remaining seats, each client correctly rendering itself as "You" and the other
 player by name. No console errors.
 
+All 12 Guild instances are hosted (5 dungeons, 5 hard dungeons, 2 raids). The server catalogue in
+`server/party.mjs` mirrors the client's ids and builds each boss with the **shared** `guildBossDef`,
+so an online run is the encounter you picked — the first cut hand-wrote two stub entries that both
+pointed at `BOSS_DEFS.ashen`, which quietly made every online fight the Ashen Warden.
+
+A tap is echoed locally the instant you press it (`localQueued`), because the authoritative
+confirmation is a full round trip away and the action bar otherwise reads as ignoring you. The
+server still decides what actually happens; the echo is superseded by the next snapshot.
+
 ### Known gaps
 - **Potions are offline-only.** They mutate authoritative state and need their own validated
   server message; the button is disabled online rather than silently desyncing.
+- **Rejected intents are silent.** A skill dropped for cost/cooldown at the server just doesn't
+  happen; there's no "not enough Rage" feedback yet. The local echo masks the worst of it.
 - **Full state every tick.** `fullSnapshot` sends the whole encounter (minus `ally.char`) at
   ~8/sec. Fine for 4–6 players, not the endgame.
 - **No prediction yet.** Actions land on the next server tick (≤120ms + RTT). Since both sides

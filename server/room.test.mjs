@@ -6,8 +6,8 @@ const fixture = JSON.parse(readFileSync(new URL("./fixtures/party.json", import.
 let fail = 0; const ok = (c, m) => { console.log((c ? "  ✓ " : "  ✗ ") + m); if (!c) fail++; };
 
 // Simulate 1 human seat (brings a loadout.char) + bot-fill to partySize
-const content = contentById("trial_ashen");
-ok(!!content, "content resolves (trial_ashen)");
+const content = contentById("deadmines");
+ok(!!content, "content resolves (deadmines)");
 const seats = [{ sessionId: "s1", uid: "u1", name: "Anvu", role: "tank", loadout: { char: fixture[0].char, tier: fixture[0].tier } }];
 const party = buildPartyFromSeats(seats, content);
 ok(party.length === content.partySize, `party filled to ${content.partySize} (1 human + ${content.partySize - 1} bots)`);

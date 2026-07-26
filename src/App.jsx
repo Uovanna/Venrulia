@@ -142,6 +142,7 @@ import {
   grpHitAlly,
   grpRaidDamage,
   grpResolveTarget,
+  guildBossDef,
   stepEncounter
 } from "../game-core/combat.mjs";
 
@@ -3863,9 +3864,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
   // The server owns the seed, the party and every tick. We wait for `assigned` (which names our
   // combatant) before opening the combat screen, so the UI always knows which ally is ours.
   const [onlineStatus, setOnlineStatus] = useState(null); // { busy?, label?, error? }
-  const startOnline = async (mpId, label, ilvl) => {
-    const contentId = ONLINE_CONTENT[mpId];
-    if (!contentId) { setOnlineStatus({ error: "That encounter isn't hosted online yet." }); return; }
+  const startOnline = async (contentId, label, ilvl) => {
     setOnlineStatus({ busy: true, label });
     let room;
     try {
@@ -5809,21 +5808,17 @@ function GameScreen({ character: initChar, onSave, onBack }) {
               <div style={{ color: "#8a83b8", fontSize: 10.5, lineHeight: 1.5, marginBottom: 8 }}>
                 Runs on the authoritative server — everyone in the room sees the same fight. Empty seats fill with adventurers after 8s. Loot is granted server-side to your mailbox.
               </div>
-              {Object.keys(ONLINE_CONTENT).map((mpId) => {
-                const c = MP_CONTENT.find((x) => x.id === mpId);
-                const label = c ? c.name : ONLINE_CONTENT[mpId];
-                return (
-                  <div key={mpId} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-                    <span style={{ fontSize: 18 }}>{c?.icon || "⚔️"}</span>
-                    <span style={{ flex: 1, minWidth: 0, color: "#d8d2ee", fontSize: 12.5, fontWeight: 700 }}>{label}
-                      <span style={{ color: "#8a83b8", fontSize: 9.5, display: "block", fontWeight: 400 }}>4 players · you play your own skills</span></span>
-                    <button onClick={() => startOnline(mpId, label, avg)} disabled={!!onlineStatus?.busy}
-                      style={{ ...btnPrimary, width: "auto", margin: 0, padding: "7px 13px", opacity: onlineStatus?.busy ? 0.5 : 1, cursor: onlineStatus?.busy ? "default" : "pointer" }}>
-                      {onlineStatus?.busy && onlineStatus.label === label ? "Joining…" : "Play Online"}
-                    </button>
-                  </div>
-                );
-              })}
+              {ONLINE_CONTENT.map((c) => (
+                <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                  <span style={{ fontSize: 18 }}>{c.icon || "⚔️"}</span>
+                  <span style={{ flex: 1, minWidth: 0, color: "#d8d2ee", fontSize: 12.5, fontWeight: 700 }}>{c.name}
+                    <span style={{ color: "#8a83b8", fontSize: 9.5, display: "block", fontWeight: 400 }}>{c.size} players · {c.req} · you play your own skills</span></span>
+                  <button onClick={() => startOnline(c.id, c.name, avg)} disabled={!!onlineStatus?.busy}
+                    style={{ ...btnPrimary, width: "auto", margin: 0, padding: "7px 13px", opacity: onlineStatus?.busy ? 0.5 : 1, cursor: onlineStatus?.busy ? "default" : "pointer" }}>
+                    {onlineStatus?.busy && onlineStatus.label === c.name ? "Joining…" : "Play Online"}
+                  </button>
+                </div>
+              ))}
               {onlineStatus?.busy && <div style={{ color: "#c8a0ff", fontSize: 10.5, marginTop: 4 }}>⏳ Forming the party — this waits up to 8s for other players.</div>}
               {onlineStatus?.error && <div style={{ color: "#ff8a7a", fontSize: 10.5, marginTop: 4 }}>⚠️ {onlineStatus.error}</div>}
             </div>
@@ -7641,8 +7636,14 @@ const mpRosterDrift = () => { // nudge records so ratings shift a little on refr
 };
 // Authoritative encounter server (Colyseus). Override at build time with VITE_GAME_SERVER.
 const GAME_SERVER_URL = (import.meta.env && import.meta.env.VITE_GAME_SERVER) || "wss://eldoria-game-server-production.up.railway.app";
-// Only the content the server actually hosts can be played online; everything else stays local.
-const ONLINE_CONTENT = { mp_hard_deadmines: "hard_deadmines", mp_trial_ashen: "trial_ashen" };
+// Every Guild instance is hosted online. The server's catalogue keys off the SAME ids, so a
+// row here maps straight to a room; `kind` must match what guildBossDef expects on both sides.
+const ONLINE_CONTENT = [
+  ...DUNGEONS.map((d) => ({ id: d.id, name: d.name, icon: d.icon, kind: "dungeon", size: 4, req: `Lv ${d.minLevel}` })),
+  ...HARD_DUNGEONS.map((d) => ({ id: d.id, name: d.name + " (Hard)", icon: d.icon, kind: "hard-dungeon", size: 4, req: d.reqIlvl ? `ilvl ${d.reqIlvl}` : "Hard" })),
+  ...RAIDS.map((r) => ({ id: r.id, name: r.name, icon: r.icon, kind: "raid", size: 6, req: `ilvl ${r.reqIlvl}` })),
+  { id: HARD_RAID.id, name: HARD_RAID.name + " (Hard)", icon: HARD_RAID.icon || "🌋", kind: "hard-raid", size: 6, req: "Hard cleared" },
+];
 
 const mpProvider = {
   _realOpps: [], // cache of real opponent snapshots (primed on Arena open)
@@ -8030,24 +8031,6 @@ const trialCdLeft = (c, id, now) => Math.max(0, ((c && c.trialCooldowns && c.tri
 // Compact "2h 14m" style countdown for the cooldown pills.
 const fmtCd = (ms) => { if (ms <= 0) return ""; const s = Math.ceil(ms / 1000); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60); return h > 0 ? `${h}h ${m}m` : m > 0 ? `${m}m ${s % 60}s` : `${s}s`; };
 // Turn a dungeon/raid into a Trinity encounter so Guild content runs the same role-based fight.
-const guildBossDef = (content, kind, level) => {
-  const raid = (kind || "").includes("raid"), hard = (kind || "").startsWith("hard");
-  const m = hard ? 1.25 : 1;
-  const abilities = [
-    { kind: "auto", everyMs: raid ? 1400 : 1500, dmgMult: 1.1 * m },
-    { kind: "tankbuster", name: hard ? "Brutal Crush" : "Crushing Blow", everyMs: 15000, first: 9000, dmgMult: 9.0 * m },
-    { kind: "raidcast", name: raid ? "Cataclysm" : "Dark Surge", everyMs: 12000, first: 11000, castMs: 2300, dmgMult: 9.5 * m },
-    { kind: "raidtick", name: "Lingering Wounds", everyMs: 7000, first: 6500, dmgMult: 1.3 * m },
-  ];
-  if (raid) {
-    abilities.push({ kind: "summon", name: (content.enemies && content.enemies[0]) || "Adds", everyMs: 22000, first: 16000, count: 1 });
-    abilities.push({ kind: "enrage", name: "Fury", first: 80000 });
-  }
-  if (hard) abilities.push({ kind: "spike", name: "Searing Lash", everyMs: 6000, first: 6000, dmgMult: 5.0 * m });
-  // dur = target fight length in "estimated party DPS seconds" (actual clears land ~55-60% of it)
-  return { id: "guild_" + content.id, name: content.boss || content.name, level: level || ((content.minLevel || 60) + 2),
-    dur: Math.round((raid ? 115 : 70) * (hard ? 1.15 : 1)), raid, desc: content.desc || `${content.name} — defeat ${content.boss || "the boss"}.`, abilities };
-};
 // Trinity party padded out to the content's group size (extra slots are DPS).
 const buildTrinityPartyOfSize = (char, ilvl, size) => {
   const party = buildTrinityParty(char, ilvl);
@@ -8079,6 +8062,13 @@ function GroupCombat({ char, commitChar, onExit, bossId, bossDef, ilvl, party, o
   const [enc, setEnc] = useState(() => networked ? null : createEncounter({ party: party || buildTrinityParty(char, ilvl), boss: bossDef || bossId || "ashen", seed: (Date.now() >>> 0) }));
   const rewarded = useRef(false);
   const [target, setTarget] = useState(null); // { type:"ally"|"enemy", id } — manual target, else smart auto
+  // Online, the authoritative confirmation of a tap is a full round trip away (RTT + up to two
+  // 120ms ticks), which reads as the button ignoring you. `localQueued` echoes the tap
+  // immediately so the action bar responds at once; the server remains the only thing that
+  // decides what actually happens, and its snapshot supersedes the echo as soon as it lands.
+  // NB: must sit above the `!enc` early return — declaring it later changes the hook count
+  // between the waiting-room and in-combat renders (React #310).
+  const localQueued = useRef(null);
   useEffect(() => {
     if (networked) { room.onMessage("state", setEnc); return; }   // server drives time; we only render
     const iv = setInterval(() => setEnc((p) => (p && !p.cleared && !p.wiped) ? stepEncounter(p, 120) : p), 120); // sim is ~0.13ms/step, so a fine tick is smooth & cheap
@@ -8098,10 +8088,13 @@ function GroupCombat({ char, commitChar, onExit, bossId, bossDef, ilvl, party, o
   const me = enc.allies.find(isMe) || enc.allies[0];
   const nowE = enc.elapsed;
   const mySkills = (char.selectedSkills || []).map((n) => skillByName(char, n)).filter(Boolean).slice(0, 6);
-  const queuedName = networked ? me.pendingSkillName : (me.pendingAction && me.pendingAction.skill && me.pendingAction.skill.name);
+  const queuedName = networked
+    ? (me.pendingSkillName || (localQueued.current && localQueued.current.tick + 4 > enc.tick ? localQueued.current.name : null))
+    : (me.pendingAction && me.pendingAction.skill && me.pendingAction.skill.name);
   const cast = (sk) => {
     if (networked) {
       if (enc.cleared || enc.wiped || me.down) return;
+      localQueued.current = { name: sk.name, tick: enc.tick };   // optimistic echo, expires in ~4 ticks
       // Name the skill; never send the object. The server re-checks it against our own loadout.
       room.send("intent", { skillName: sk.name, target: target || undefined });
       return;

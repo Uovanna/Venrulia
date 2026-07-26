@@ -6,12 +6,48 @@
 // game-core (same technique used for combat.mjs) is the small follow-on that lets the
 // server construct bots itself; until then, bots reuse a rotation of the human loadouts.
 
-// Minimal content catalogue. Source of truth is MP_CONTENT in the client; mirror the
-// entries you expose as rooms here (or extract MP_CONTENT into the shared core too).
-export const MP_CONTENT = {
-  hard_deadmines: { id: "hard_deadmines", name: "The Sunken Mine (Hard)", boss: "ashen", partySize: 4 },
-  trial_ashen:    { id: "trial_ashen",    name: "Trial of the Ashen King", boss: "ashen", partySize: 4 },
+// Every piece of Guild content, mirroring the client's DUNGEONS / RAIDS / HARD_RAID. Ids match
+// the client's so a room id is stable across both. The boss is built by the SHARED
+// guildBossDef, so an online fight is the same encounter the offline one would have been —
+// the earlier hand-written stubs all pointed at BOSS_DEFS.ashen, which made every online run
+// the Ashen Warden regardless of which dungeon you picked.
+import { guildBossDef } from "./combat.mjs";
+
+const DUNGEONS = [
+  { id: "deadmines",  name: "The Sunken Mine",   boss: "Bandit Lord Garrick", minLevel: 15 },
+  { id: "scarlet",    name: "The Crimson Abbey", boss: "Champion Hadrok",     minLevel: 30 },
+  { id: "uldaman",    name: "The Forgotten Vault", boss: "Stoneguard Aurok",  minLevel: 40 },
+  { id: "blackrock",  name: "The Ember Deeps",   boss: "Emperor Vorgath",     minLevel: 50 },
+  { id: "stratholme", name: "The Cursed City",   boss: "Baron Morthane",      minLevel: 56 },
+];
+const RAIDS = [
+  { id: "moltencore", name: "The Molten Heart", boss: "Ignaroth the Flamelord", minLevel: 60 },
+];
+
+const HARD_DUNGEONS = [
+  { id: "hd_deadmines",  name: "The Sunken Mine",     boss: "Bandit Lord Garrick", enemyLvl: 63 },
+  { id: "hd_scarlet",    name: "The Crimson Abbey",   boss: "Champion Hadrok",     enemyLvl: 65 },
+  { id: "hd_uldaman",    name: "The Forgotten Vault", boss: "Stoneguard Aurok",    enemyLvl: 66 },
+  { id: "hd_blackrock",  name: "The Ember Deeps",     boss: "Emperor Vorgath",     enemyLvl: 67 },
+  { id: "hd_stratholme", name: "The Cursed City",     boss: "Baron Morthane",      enemyLvl: 68 },
+];
+const HARD_RAID = { id: "hr_moltencore", name: "The Molten Heart", boss: "Ignaroth the Flamelord", enemyLvl: 72 };
+
+// `kind` must match the client's strings exactly — guildBossDef keys off `includes("raid")`
+// and `startsWith("hard")`, so "hard_dungeon" would silently produce a RAID boss.
+const entry = (c, kind, partySize) => {
+  const level = c.enemyLvl || (c.minLevel || 60) + 2;
+  return { id: c.id, name: c.name + (kind.startsWith("hard") ? " (Hard)" : ""), kind, partySize, level,
+           boss: guildBossDef(c, kind, level) };
 };
+
+export const MP_CONTENT = Object.fromEntries([
+  ...DUNGEONS.map((d) => [d.id, entry(d, "dungeon", 4)]),
+  ...HARD_DUNGEONS.map((d) => [d.id, entry(d, "hard-dungeon", 4)]),
+  ...RAIDS.map((r) => [r.id, entry(r, "raid", 6)]),
+  [HARD_RAID.id, entry(HARD_RAID, "hard-raid", 6)],
+]);
+
 export function contentById(id) { return MP_CONTENT[id] || null; }
 
 const ROLES = ["tank", "healer", "dps", "dps", "dps", "dps"];

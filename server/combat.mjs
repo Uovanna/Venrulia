@@ -860,6 +860,28 @@ const mkEncEnemy = (def, allies, id, isAdd) => {
 const allyById = (st, id) => st.allies.find((a) => a.id === id && !a.down);
 const grpAdds = (st) => st.enemies.filter((e) => e.hp > 0 && e.isAdd);
 const grpIncoming = (st, now) => { let raidSoon = false, busterSoon = false; for (const en of st.enemies) { if (en.hp <= 0) continue; if (en.castBar && en.castBar.interruptible && en.castBar.endsAt - now < 1600) raidSoon = true; for (const ab of en.abilities || []) { if (ab.kind === "raidtick" && ab.nextAt - now < 1200) raidSoon = true; if (ab.kind === "tankbuster" && ab.nextAt - now < 2200) busterSoon = true; } } return { raidSoon, busterSoon }; };
+// Builds a boss definition for a piece of group content. Lives in the core so the server
+// generates byte-identical encounters from the same catalogue entry — passing `boss` as an
+// object is already supported by createEncounter.
+const guildBossDef = (content, kind, level) => {
+  const raid = (kind || "").includes("raid"), hard = (kind || "").startsWith("hard");
+  const m = hard ? 1.25 : 1;
+  const abilities = [
+    { kind: "auto", everyMs: raid ? 1400 : 1500, dmgMult: 1.1 * m },
+    { kind: "tankbuster", name: hard ? "Brutal Crush" : "Crushing Blow", everyMs: 15000, first: 9000, dmgMult: 9.0 * m },
+    { kind: "raidcast", name: raid ? "Cataclysm" : "Dark Surge", everyMs: 12000, first: 11000, castMs: 2300, dmgMult: 9.5 * m },
+    { kind: "raidtick", name: "Lingering Wounds", everyMs: 7000, first: 6500, dmgMult: 1.3 * m },
+  ];
+  if (raid) {
+    abilities.push({ kind: "summon", name: (content.enemies && content.enemies[0]) || "Adds", everyMs: 22000, first: 16000, count: 1 });
+    abilities.push({ kind: "enrage", name: "Fury", first: 80000 });
+  }
+  if (hard) abilities.push({ kind: "spike", name: "Searing Lash", everyMs: 6000, first: 6000, dmgMult: 5.0 * m });
+  // dur = target fight length in "estimated party DPS seconds" (actual clears land ~55-60% of it)
+  return { id: "guild_" + content.id, name: content.boss || content.name, level: level || ((content.minLevel || 60) + 2),
+    dur: Math.round((raid ? 115 : 70) * (hard ? 1.15 : 1)), raid, desc: content.desc || `${content.name} — defeat ${content.boss || "the boss"}.`, abilities };
+};
+
 const createEncounter = ({ party, boss, seed, potionCap }) => {
   const allies = party.map((p, i) => mkAlly(p.char, p.role || roleOf(p.char), p.tier, p.isHuman, "a" + i));
   const bdef = (typeof boss === "string" ? BOSS_DEFS[boss] : (boss && boss.abilities ? boss : null)) || BOSS_DEFS.ashen;
@@ -1189,6 +1211,7 @@ export {
   grpAdds,
   grpIncoming,
   createEncounter,
+  guildBossDef,
   chooseAllyAction,
   applyAllyAction,
   grpResolveTarget,

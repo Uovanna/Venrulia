@@ -42,7 +42,7 @@ const client = new Client(`ws://127.0.0.1:${PORT}`);
 // A join with no combatant must be refused at the door — not deferred to the fill timer,
 // where the throw would take the process down.
 try {
-  await client.joinOrCreate("encounter", { contentId: "trial_ashen", name: "NoLoadout" });
+  await client.joinOrCreate("encounter", { contentId: "deadmines", name: "NoLoadout" });
   fail("join without loadout.char was accepted");
 } catch (e) {
   if (!/loadout\.char/.test(String(e.message || e))) fail("unexpected rejection: " + e.message);
@@ -58,7 +58,7 @@ if (!(await fetch(`${BASE}/health`)).ok) fail("server died on a malformed join")
 console.log("  ✓ server survives malformed joins");
 
 const room = await client.joinOrCreate("encounter", {
-  contentId: "trial_ashen",
+  contentId: "deadmines",
   name: "Tester",
   role: me.role,
   seed: 12345,
@@ -108,11 +108,32 @@ for (const k of ["tick", "elapsed", "cleared", "wiped", "allies", "enemies"]) {
 }
 console.log(`  ✓ ${snaps} snapshots broadcast over the wire`);
 if (!result.outcome) fail("result missing outcome");
-// The transport must not change the fight: the headless suite resolves this seed in 229 ticks.
-if (result.tick !== 229 || result.outcome !== "wiped") {
-  fail(`authoritative result drifted over the wire: ${JSON.stringify(result)} (expected 229 ticks, wiped)`);
+if (!["cleared", "wiped"].includes(result.outcome) || !(result.tick > 0)) {
+  fail(`implausible result: ${JSON.stringify(result)}`);
 }
-console.log(`  ✓ result matches the headless run exactly (${result.outcome} @ tick ${result.tick})`);
+console.log(`  ✓ fight resolved (${result.outcome} @ tick ${result.tick})`);
+
+// Transport fidelity. The run above can't be compared to a fixed number — its intents are sent
+// on a wall-clock timer, so which tick each lands on varies. Instead run a second room with the
+// same seed and NO intents, which is exactly reproducible, and check it against a headless
+// replay of the same party. That is the real claim: the wire does not perturb the simulation.
+const { buildPartyFromSeats, contentById } = await import("./party.mjs");
+const { runEncounter } = await import("./sim.mjs");
+const content = contentById("deadmines");
+const seats = [{ sessionId: "x", name: "Quiet", role: me.role, bot: false, loadout: { char: me.char, tier: me.tier } }];
+const expected = runEncounter({ party: buildPartyFromSeats(seats, content), boss: content.boss, seed: 4242 });
+
+const quietRoom = await new Client(`ws://127.0.0.1:${PORT}`).joinOrCreate("encounter", {
+  contentId: "deadmines", name: "Quiet", role: me.role, seed: 4242, loadout: { char: me.char, tier: me.tier },
+});
+const quiet = await new Promise((resolve, reject) => {
+  quietRoom.onMessage("result", resolve);
+  setTimeout(() => reject(new Error("timed out waiting for the quiet room")), 90000);
+}).catch((e) => fail(e.message));
+if (quiet.tick !== expected.steps || quiet.outcome !== expected.outcome) {
+  fail(`transport perturbed the sim: room ${quiet.outcome}@${quiet.tick} vs headless ${expected.outcome}@${expected.steps}`);
+}
+console.log(`  ✓ an un-driven room matches the headless replay exactly (${quiet.outcome} @ tick ${quiet.tick})`);
 
 server.kill();
 console.log("\n✅ e2e: real Colyseus client drove an authoritative fight to completion");

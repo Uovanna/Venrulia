@@ -866,6 +866,39 @@ const createEncounter = ({ party, boss, seed, potionCap }) => {
   const enemies = [mkEncEnemy(bdef, allies, "e0", false)];
   return { seed: (seed || 1) >>> 0, tick: 0, elapsed: 0, allies, enemies, nextEnemyId: 1, bossName: bdef.name, potionsUsed: 0, potionCap: potionCap || (bdef.raid ? 2 : 1), reses: bdef.raid ? 3 : 2, wiped: false, cleared: false, log: [] };
 };
+// Pick the enemy/ally a skill should land on, given an optional explicit selection.
+// Shared by the client's tap handler and the server's intent resolver so both agree.
+const grpResolveTarget = (enc, sk, sel) => {
+  const out = {};
+  if (sk.mult || sk.hits || sk.dotMult || sk.interrupt || sk.taunt) {
+    if (sel && sel.type === "enemy") { const e = enc.enemies.find((x) => x.id === sel.id && x.hp > 0); if (e) out.targetEnemyId = e.id; }
+    if (out.targetEnemyId == null) { const e = sk.interrupt ? (enc.enemies.find((x) => x.hp > 0 && x.castBar && x.castBar.interruptible) || grpPrimaryEnemy(enc)) : grpPrimaryEnemy(enc); if (e) out.targetEnemyId = e.id; }
+  }
+  if (sk.heal || sk.offheal) {
+    if (sel && sel.type === "ally") { const a = enc.allies.find((x) => x.id === sel.id && !x.down); if (a) out.targetAllyId = a.id; }
+    if (out.targetAllyId == null) { const w = grpInjured(enc.allies); if (w) out.targetAllyId = w.id; }
+  }
+  if (out.targetEnemyId == null && out.targetAllyId == null) { const p = grpPrimaryEnemy(enc); if (p) out.targetEnemyId = p.id; } // pure utility → route cd on the boss
+  return out;
+};
+
+// Turn an untrusted intent into a legal action, or null.
+//
+// THE TRUST BOUNDARY. An intent names a skill; it never carries one. The skill object is
+// looked up in the ally's OWN loadout, so a client cannot invent a skill or inflate an
+// existing one — the worst a forged intent can do is name something the character doesn't
+// have or can't afford yet, and get dropped. Cooldown and resource checks are applied here
+// too, so the same rules bind humans and bots.
+//
+// intent: { skillName, target?: { type:"enemy"|"ally", id } }
+const resolveIntent = (st, ally, intent, now) => {
+  if (!ally || ally.down || !intent || typeof intent.skillName !== "string") return null;
+  const sk = grpSkills(ally).find((s) => s.name === intent.skillName); // own loadout only
+  if (!sk || !grpReady(ally, sk, now)) return null;                    // unknown, on cooldown, or unaffordable
+  const sel = intent.target && (intent.target.type === "enemy" || intent.target.type === "ally") ? intent.target : null;
+  return { skill: sk, ...grpResolveTarget(st, sk, sel) };
+};
+
 const chooseAllyAction = (st, ally, now) => {
   if (ally.isHuman) { const pa = ally.pendingAction; ally.pendingAction = null; return pa || null; } // humans act on their own taps
   const usable = grpSkills(ally).filter((s) => grpReady(ally, s, now));
@@ -947,13 +980,31 @@ const applyAllyAction = (st, ally, act, now) => {
 const grpWardOf = (ally) => ally.bw.playerEffects.filter((e) => e.kind === "ward").reduce((m, e) => m + e.pct, 0) / 100;
 const grpHitAlly = (ally, raw) => { const mit = mitigation(effectiveStats(ally.char).armor || 0, ally.char.level); const dmg = Math.max(1, Math.round(raw * (1 - mit) * (1 - grpWardOf(ally)))); ally.hp = Math.max(0, ally.hp - dmg); return dmg; };
 const grpRaidDamage = (st, raw) => { for (const a of st.allies) if (!a.down) grpHitAlly(a, raw); };
-const stepEncounter = (state, dt) => withRng(makeRng((state.seed ^ (state.tick * 2654435761)) >>> 0), () => {
+// stepEncounter(state, dt, inputs) — pure. `inputs` maps an ally id to that player's intent
+// for THIS tick: { [allyId]: { skillName, target? } }. Intents are resolved through
+// resolveIntent (own loadout, cooldown- and resource-checked) and queued as that ally's
+// pendingAction, exactly as a local tap does.
+//
+// Determinism is unaffected: inputs simply join (state, seed) in the reproducible tuple, so
+// a replay that feeds the same intents at the same ticks reproduces the fight byte for byte.
+// Omitting the argument leaves behaviour identical to before.
+const stepEncounter = (state, dt, inputs) => withRng(makeRng((state.seed ^ (state.tick * 2654435761)) >>> 0), () => {
   if (state.wiped || state.cleared) return state;
   // functional clone (purity → reproducible & replayable)
   const s = { ...state, log: state.log.slice(-40),
     allies: state.allies.map((a) => ({ ...a, hots: (a.hots || []).map((h) => ({ ...h })), debuffs: (a.debuffs || []).map((d) => ({ ...d })), bw: { ...a.bw, enemy: { ...a.bw.enemy }, playerEffects: a.bw.playerEffects.map((e) => ({ ...e })), enemyEffects: a.bw.enemyEffects.map((e) => ({ ...e })), cooldowns: { ...a.bw.cooldowns }, resQ: a.bw.resQ.map((q) => ({ ...q })) } })),
     enemies: state.enemies.map((e) => ({ ...e, threat: { ...e.threat }, castBar: e.castBar ? { ...e.castBar } : null, abilities: (e.abilities || []).map((ab) => ({ ...ab })) })) };
   const now = state.elapsed + dt;
+  // 0) queue this tick's player intents. An intent that arrives mid-GCD stays queued on the
+  // ally until its turn opens, which is what a local tap already does.
+  if (inputs) {
+    for (const id of Object.keys(inputs)) {
+      const ally = s.allies.find((a) => a.id === id);
+      if (!ally || !ally.isHuman) continue;              // only a human's own combatant is drivable
+      const act = resolveIntent(s, ally, inputs[id], now);
+      if (act) ally.pendingAction = act;                 // illegal intents are simply dropped
+    }
+  }
   // 1) allies act on their GCD
   for (const ally of s.allies) {
     if (ally.down) continue;
@@ -1140,6 +1191,8 @@ export {
   createEncounter,
   chooseAllyAction,
   applyAllyAction,
+  grpResolveTarget,
+  resolveIntent,
   grpWardOf,
   grpHitAlly,
   grpRaidDamage,

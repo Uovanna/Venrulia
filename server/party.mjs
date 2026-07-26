@@ -17,13 +17,19 @@ export function contentById(id) { return MP_CONTENT[id] || null; }
 const ROLES = ["tank", "healer", "dps", "dps", "dps", "dps"];
 const BOT_NAMES = ["Kaelen", "Sora", "Bran", "Yuki", "Rurik", "Mei", "Torvald", "Aya"];
 
-// party: [{ char, role, tier }] for createRun()
+// party: [{ char, role, tier, isHuman }] for createRun()
+//
+// `isHuman` is what makes a combatant player-driven: the core skips the AI for those allies
+// and waits on their queued intent instead (see chooseAllyAction / resolveIntent). The array
+// index is the ally id the core assigns ("a0", "a1", …), so the caller can map a seat to its
+// combatant by position — that mapping is how the room routes intents.
 export function buildPartyFromSeats(seats, content) {
   const filled = [];
   for (let i = 0; i < content.partySize; i++) {
     const seat = seats[i];
     if (seat && seat.loadout && seat.loadout.char) {
-      filled.push({ char: seat.loadout.char, role: seat.role || ROLES[i] || "dps", tier: seat.loadout.tier });
+      filled.push({ char: seat.loadout.char, role: seat.role || ROLES[i] || "dps", tier: seat.loadout.tier, isHuman: !seat.bot });
+      seat.allyId = "a" + i;   // ally ids are assigned by index in createEncounter
     } else {
       // Disguised bot: reuse a human loadout as a template, or a supplied bot template.
       const template = seats.find((s) => s.loadout && s.loadout.char)?.loadout;

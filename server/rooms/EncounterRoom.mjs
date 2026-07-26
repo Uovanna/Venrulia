@@ -3,9 +3,10 @@
 // broadcasts snapshots. Empty seats are filled with disguised bots, matching the
 // client's existing bot policy. Targets Colyseus ^0.15.
 //
-// STATUS: scaffold. The core currently auto-resolves every combatant (bot AI via the
-// game-core). Real-time HUMAN control is the one remaining core extension — see the
-// `onMessage("intent")` handler and STAGE-4 note at the bottom.
+// Human seats are player-driven: a client sends an `intent` naming one of its own skills,
+// the room queues it, and the next authoritative tick consumes it. Empty seats and dropped
+// players fall back to the core's AI. Every intent is validated inside the core against the
+// character's own loadout, so the wire carries a skill NAME and never a skill object.
 
 // colyseus ^0.15 ships CommonJS, so it has to be default-imported and destructured;
 // `import { Room } from "colyseus"` throws at load under Node's ESM loader.
@@ -51,13 +52,18 @@ export class EncounterRoom extends Room {
     state.seed = this.seed;
     this.setState(state);
 
-    // Players send ability intents; validated here (see STAGE-4 note).
+    // Players send ability intents. Only the skill NAME and an optional target cross the
+    // wire; the core resolves it against that character's own loadout and checks cooldown
+    // and resources, so a forged or unaffordable intent is dropped rather than trusted.
     this.onMessage("intent", (client, intent) => {
       const seat = this.seats.find((s) => s.sessionId === client.sessionId);
-      if (!seat || !this.started) return;
-      // TODO(stage-4): queue this intent for `seat`'s combatant so the next stepRun consumes it.
-      // Requires the core to accept per-combatant inputs: stepRun(state, dt, inputs).
-      seat.pendingIntent = intent;
+      if (!seat || !this.started || seat.bot || !seat.allyId) return;   // no seat, not started, or handed to AI
+      if (!intent || typeof intent.skillName !== "string") return;
+      const target = intent.target && (intent.target.type === "enemy" || intent.target.type === "ally") && typeof intent.target.id === "string"
+        ? { type: intent.target.type, id: intent.target.id }
+        : null;
+      // Last intent before the next tick wins — a player cannot bank actions by spamming.
+      seat.pendingIntent = { skillName: intent.skillName, target };
     });
   }
 
@@ -100,11 +106,29 @@ export class EncounterRoom extends Room {
     }
     this.enc = createRun({ party, boss: this.content.boss, seed: this.seed });
     this.state.phase = "combat"; // mutate: setState() would swap the encoder out mid-room
+    this.timeline = [];          // recorded intents, so the fight can be replayed and validated
+
+    // Tell each player which combatant is theirs and which skills they may name. Without
+    // this a client cannot address its own ally or build a legal intent.
+    for (const seat of this.seats) {
+      if (seat.bot || !seat.allyId) continue;
+      const client = this.clients.find((c) => c.sessionId === seat.sessionId);
+      if (client) client.send("assigned", { allyId: seat.allyId, skills: (seat.loadout?.char?.selectedSkills || []).slice(0, 6) });
+    }
 
     // Authoritative loop — the server is the only place time advances.
     this.setSimulationInterval(() => {
-      // TODO(stage-4): fold each seat.pendingIntent into the step (input-driven core).
-      this.enc = stepRun(this.enc, TICK_MS);
+      // Drain each seat's queued intent into this tick's inputs. Draining (rather than
+      // leaving it set) is what makes one tap one action: the core re-queues it internally
+      // if the ally is still on GCD.
+      let inputs = null;
+      for (const seat of this.seats) {
+        if (!seat.pendingIntent || seat.bot || !seat.allyId) continue;
+        (inputs ||= {})[seat.allyId] = seat.pendingIntent;
+        this.timeline.push({ tick: this.enc.tick, allyId: seat.allyId, ...seat.pendingIntent });
+        seat.pendingIntent = null;
+      }
+      this.enc = stepRun(this.enc, TICK_MS, inputs);
       this.broadcast("state", snapshot(this.enc));
       if (this.enc.cleared || this.enc.wiped) this.finish();
     }, TICK_MS);
@@ -128,17 +152,37 @@ export class EncounterRoom extends Room {
   onLeave(client) {
     const seat = this.seats.find((s) => s.sessionId === client.sessionId);
     if (seat && this.started && !this.enc?.cleared && !this.enc?.wiped) {
-      seat.bot = true; // hand a dropped player's slot to a bot mid-fight (Stage-4 uses this for control)
+      seat.bot = true;
+      seat.pendingIntent = null;
+      // Hand the combatant itself back to the AI. Clearing isHuman is the part that matters:
+      // the core lets a human's turn stay open until they tap, so a dropped player's ally
+      // would otherwise stand still for the rest of the fight and stall the party.
+      const ally = this.enc?.allies.find((a) => a.id === seat.allyId);
+      if (ally) ally.isHuman = false;
     }
   }
   onDispose() { this.setSimulationInterval(undefined); }
 }
 
 /*
-STAGE-4 (real-time human control): the current game-core resolves every combatant with its
-built-in AI, so this room already runs an authoritative co-op fight that all clients watch live
-and whose loot is server-granted. To let humans *act* in real time, extend the core to accept
-inputs — stepEncounter(state, dt, inputs) — where `inputs[allyId]` is a queued ability/target.
-The room feeds each seat.pendingIntent in; bots keep using chooseAllyAction. Determinism and the
-validator are unchanged because inputs become part of the reproducible (state, seed, inputs) tuple.
+CLIENT PROTOCOL
+
+  join    joinOrCreate("encounter", { contentId, name, role, uid, loadout: { char, tier } })
+          `loadout.char` is required — it seeds the combatant and the bot-fill templates.
+
+  ← assigned  { allyId, skills }   sent once at start; `allyId` is your combatant in every
+                                   snapshot, `skills` are the names you may send.
+  ← state     snapshot(enc)        every 120ms tick.
+  ← result    { outcome, tick, elapsed }
+  ← error     { message }
+
+  → intent    { skillName, target?: { type: "enemy"|"ally", id } }
+              Names one of your own skills. Target is optional; the core picks a sensible
+              one (primary enemy, or the most injured ally for heals). Sending again before
+              the next tick replaces the queued intent rather than banking a second action.
+
+The server never trusts a skill object from the wire — resolveIntent looks the name up in the
+character's own loadout and applies the same cooldown and resource rules bots obey. Every
+applied intent is recorded in `this.timeline`, so verifyEncounter can replay a human-played
+fight from (party, boss, seed, timeline) and reproduce it exactly.
 */

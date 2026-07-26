@@ -80,4 +80,18 @@ builds combatants from published snapshots the same way.
 | Server core (sim + validator) | ✅ built + tested (`server/sim.mjs`) |
 | Colyseus room + deploy config | ✅ built (`server/`); runs live under real Colyseus (`npm run test:e2e`) |
 | Railway service | ✅ configured (root dir, healthcheck, domain, vars); deploy blocked on authorizing Railway's GitHub App — see `server/README.md` |
-| Real-time human input in core | ▢ Stage 4 (`stepEncounter(state,dt,inputs)`) |
+| Real-time human input in core | ✅ `stepEncounter(state, dt, inputs)` + `resolveIntent`; server & room wired, tested (`server/input.test.mjs`) |
+| Client netcode (Stage 4b) | ▢ next — blocked behind the `App.jsx` cutover, see below |
+
+## Stage 4b — client netcode
+
+The core and server halves of Stage 4 are done: a player's combatant is driven by intents, and
+those intents are validated and replayed like any other part of the reproducible tuple.
+
+What remains is pointing the client at the room. That should happen **after** the `App.jsx`
+cutover is adopted, not before. `src/App.jsx` still carries its own copy of the combat code
+(its own `stepEncounter`, `grpResolveTarget`, `skillByName`, …), so wiring netcode into it now
+would predict against a *divergent* copy of the sim — which is precisely the thing the shared
+core exists to prevent. Adopt `game-core/App.cutover.jsx` first, then `mpProvider` gains a room
+connection and the local `cast()` handler sends `{ skillName, target }` instead of mutating
+`pendingAction` directly.

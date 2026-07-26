@@ -4,7 +4,9 @@
 // validator replays a whole encounter with `verifyEncounter`. Same code as the client,
 // so results are reproducible and cheat-checkable.
 
-import { createEncounter, stepEncounter } from "./combat.mjs";
+import { createEncounter, stepEncounter, resolveIntent } from "./combat.mjs";
+
+export { resolveIntent };
 
 export const DEFAULT_DT = 120;      // ms per tick (matches the client sim)
 export const MAX_STEPS = 6000;      // safety cap (~12 min at 120ms) so a stuck fight can't spin forever
@@ -18,15 +20,31 @@ export function createRun({ party, boss, seed, potionCap }) {
 }
 
 // Advance one authoritative tick. Pure: returns a new state, never mutates the input.
-export function stepRun(state, dt = DEFAULT_DT) {
-  return (state.cleared || state.wiped) ? state : stepEncounter(state, dt);
+// `inputs` is this tick's player intents, { [allyId]: { skillName, target? } }. The core
+// validates each one against that ally's own loadout, so it is safe to pass straight
+// through from the wire.
+export function stepRun(state, dt = DEFAULT_DT, inputs) {
+  return (state.cleared || state.wiped) ? state : stepEncounter(state, dt, inputs);
+}
+
+// Index a recorded input timeline by tick, so a replay can feed each intent back at the
+// exact tick it was applied. Entries: { tick, allyId, skillName, target? }.
+export function indexTimeline(timeline) {
+  const byTick = new Map();
+  for (const e of timeline || []) {
+    if (!byTick.has(e.tick)) byTick.set(e.tick, {});
+    byTick.get(e.tick)[e.allyId] = { skillName: e.skillName, target: e.target };
+  }
+  return byTick;
 }
 
 // Run an encounter to completion (used by the validator and for offline resolution).
-export function runEncounter({ party, boss, seed, dt = DEFAULT_DT, maxSteps = MAX_STEPS }) {
+// `timeline` replays recorded human intents; omit it for a fully AI-resolved fight.
+export function runEncounter({ party, boss, seed, dt = DEFAULT_DT, maxSteps = MAX_STEPS, timeline }) {
   let s = createRun({ party, boss, seed });
+  const byTick = indexTimeline(timeline);
   let steps = 0;
-  while (!s.cleared && !s.wiped && steps < maxSteps) { s = stepEncounter(s, dt); steps++; }
+  while (!s.cleared && !s.wiped && steps < maxSteps) { s = stepEncounter(s, dt, byTick.get(s.tick)); steps++; }
   return {
     steps,
     outcome: s.cleared ? "cleared" : s.wiped ? "wiped" : "timeout",
@@ -38,9 +56,11 @@ export function runEncounter({ party, boss, seed, dt = DEFAULT_DT, maxSteps = MA
 }
 
 // Replay validator: re-simulate the exact fight and confirm a client-reported outcome.
-// Because the core is deterministic in (party, boss, seed), the server is the source of truth.
-export function verifyEncounter({ party, boss, seed, claimed, dt = DEFAULT_DT, maxSteps = MAX_STEPS }) {
-  const r = runEncounter({ party, boss, seed, dt, maxSteps });
+// The core is deterministic in (party, boss, seed, inputs), so replaying the recorded
+// `timeline` alongside the seed reproduces a human-played fight exactly — which is what
+// keeps a player-controlled result as tamper-proof as an AI-resolved one.
+export function verifyEncounter({ party, boss, seed, claimed, dt = DEFAULT_DT, maxSteps = MAX_STEPS, timeline }) {
+  const r = runEncounter({ party, boss, seed, dt, maxSteps, timeline });
   const valid = !claimed || (
     (claimed.outcome === undefined || claimed.outcome === r.outcome) &&
     (claimed.steps === undefined || claimed.steps === r.steps)

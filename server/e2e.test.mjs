@@ -69,11 +69,38 @@ console.log("  ✓ joined room (bot-filled after the fill window)");
 let snaps = 0, last = null;
 room.onMessage("state", (s) => { snaps++; last = s; });
 
+// The room tells each player which combatant is theirs and which skills it may name.
+// Without this a client cannot address its own ally or build a legal intent.
+const assigned = await new Promise((resolve) => {
+  room.onMessage("assigned", resolve);
+  setTimeout(() => resolve(null), 20000);   // sent at start(), i.e. after the fill window
+});
+if (!assigned) fail("never received the `assigned` message");
+if (assigned.allyId !== "a0") fail(`expected allyId a0, got ${assigned.allyId}`);
+if (!Array.isArray(assigned.skills) || !assigned.skills.length) fail("assigned carried no skills");
+console.log(`  ✓ assigned ally ${assigned.allyId} with ${assigned.skills.length} skills`);
+
+// Drive the combatant over the wire. Outcome-sensitivity of inputs is asserted in
+// input.test.mjs against a mixed party; here the point is that the protocol round-trips
+// and that a forged skill name cannot crash or hijack the room.
+let sent = 0;
+const spam = setInterval(() => {
+  room.send("intent", { skillName: assigned.skills[sent % assigned.skills.length], target: { type: "enemy", id: "e0" } });
+  room.send("intent", { skillName: "Kill Everything Instantly" });   // must be ignored, not fatal
+  sent++;
+}, 600);
+
 const result = await new Promise((resolve, reject) => {
   room.onMessage("result", resolve);
   room.onError((code, message) => reject(new Error(`room error ${code}: ${message}`)));
   setTimeout(() => reject(new Error("timed out waiting for result")), 90000);
 }).catch((e) => fail(e.message));
+clearInterval(spam);
+
+if (sent < 2) fail(`expected to send several intents, sent ${sent}`);
+console.log(`  ✓ ${sent} intent rounds sent (each with one forged skill name mixed in)`);
+if (!(await fetch(`${BASE}/health`)).ok) fail("server died while handling intents");
+console.log("  ✓ server survived forged intents");
 
 if (!snaps) fail("no snapshots were broadcast");
 for (const k of ["tick", "elapsed", "cleared", "wiped", "allies", "enemies"]) {

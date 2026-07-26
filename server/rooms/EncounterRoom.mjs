@@ -7,11 +7,29 @@
 // game-core). Real-time HUMAN control is the one remaining core extension — see the
 // `onMessage("intent")` handler and STAGE-4 note at the bottom.
 
-import { Room } from "colyseus";
+// colyseus ^0.15 ships CommonJS, so it has to be default-imported and destructured;
+// `import { Room } from "colyseus"` throws at load under Node's ESM loader.
+import colyseus from "colyseus";
+// @colyseus/schema does ship an ESM build, so it imports by name; `colyseus` itself does not.
+import { Schema, defineTypes } from "@colyseus/schema";
 import { createRun, stepRun, snapshot } from "../sim.mjs";
 import { buildPartyFromSeats, contentById } from "../party.mjs";
 
-const TICK_MS = 120;             // authoritative sim rate (matches client)
+const { Room } = colyseus;
+
+// Colyseus encodes room state with @colyseus/schema, so it must be a Schema instance —
+// handing setState() a plain object makes the first client's join fail to encode.
+// `defineTypes` is the decorator-free form, which is what plain .mjs needs.
+// Only lobby metadata lives here; the per-tick fight state goes out as `state` broadcasts.
+class EncounterState extends Schema {}
+defineTypes(EncounterState, {
+  phase: "string",      // "lobby" | "combat" | "done"
+  contentId: "string",
+  partySize: "uint8",
+  seed: "uint32",
+});
+
+const TICK_MS = 120;           // authoritative sim rate (matches client)
 const FILL_TIMEOUT_MS = 8000;    // wait for humans, then bot-fill and start (organic, like the client)
 
 export class EncounterRoom extends Room {
@@ -26,7 +44,12 @@ export class EncounterRoom extends Room {
     this.enc = null;
 
     // lobby metadata clients can read before the fight starts
-    this.setState({ phase: "lobby", contentId: content.id, partySize: content.partySize, seed: this.seed });
+    const state = new EncounterState();
+    state.phase = "lobby";
+    state.contentId = content.id;
+    state.partySize = content.partySize;
+    state.seed = this.seed;
+    this.setState(state);
 
     // Players send ability intents; validated here (see STAGE-4 note).
     this.onMessage("intent", (client, intent) => {
@@ -40,6 +63,10 @@ export class EncounterRoom extends Room {
 
   onJoin(client, options) {
     if (this.started) throw new Error("encounter already in progress");
+    // Reject here rather than at start(): buildPartyFromSeats needs a real combatant to seed
+    // both the seat and the bot-fill templates, and a throw from the fill timer is uncatchable
+    // by Colyseus and takes the process down with it.
+    if (!options?.loadout?.char) throw new Error("join requires loadout.char (a combat-ready character)");
     this.seats.push({
       sessionId: client.sessionId,
       uid: options?.uid || null,
@@ -60,9 +87,19 @@ export class EncounterRoom extends Room {
     this.lock();
 
     // Fill remaining seats with bots (disguised: player-style names/loadouts), then build the party.
-    const party = buildPartyFromSeats(this.seats, this.content);
+    // start() runs off the fill timer, where an uncaught throw kills the whole server process —
+    // so a party that won't build closes this room only.
+    let party;
+    try {
+      party = buildPartyFromSeats(this.seats, this.content);
+    } catch (e) {
+      console.warn("encounter start failed:", e.message);
+      this.broadcast("error", { message: "could not start encounter: " + e.message });
+      this.disconnect();
+      return;
+    }
     this.enc = createRun({ party, boss: this.content.boss, seed: this.seed });
-    this.setState({ ...this.state, phase: "combat" });
+    this.state.phase = "combat"; // mutate: setState() would swap the encoder out mid-room
 
     // Authoritative loop — the server is the only place time advances.
     this.setSimulationInterval(() => {
@@ -77,6 +114,7 @@ export class EncounterRoom extends Room {
     if (this._done) return; this._done = true;
     this.setSimulationInterval(undefined);
     const outcome = this.enc.cleared ? "cleared" : "wiped";
+    this.state.phase = "done";
     this.broadcast("result", { outcome, tick: this.enc.tick, elapsed: this.enc.elapsed });
     if (outcome === "cleared") {
       try {

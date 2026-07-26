@@ -2,9 +2,14 @@
 // rooms driven by the shared deterministic core. Deploy target: Railway.
 import express from "express";
 import { createServer } from "http";
-import { Server } from "colyseus";
-import { WebSocketTransport } from "@colyseus/ws-transport";
+// colyseus ^0.15 and its transport ship CommonJS — default-import and destructure.
+// Named ESM imports (`import { Server } from "colyseus"`) throw at load under Node.
+import colyseus from "colyseus";
+import wsTransport from "@colyseus/ws-transport";
 import { EncounterRoom } from "./rooms/EncounterRoom.mjs";
+
+const { Server } = colyseus;
+const { WebSocketTransport } = wsTransport;
 
 const port = Number(process.env.PORT) || 2567;
 

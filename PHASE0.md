@@ -78,5 +78,6 @@ builds combatants from published snapshots the same way.
 | `App.jsx` cutover | ✅ prepared as reviewable `App.cutover.jsx` (−715 lines); playtest to adopt |
 | Standalone-build splice update | ▢ next |
 | Server core (sim + validator) | ✅ built + tested (`server/sim.mjs`) |
-| Colyseus room + deploy config | ✅ scaffolded (`server/`), Railway project created |
+| Colyseus room + deploy config | ✅ built (`server/`); runs live under real Colyseus (`npm run test:e2e`) |
+| Railway service | ✅ configured (root dir, healthcheck, domain, vars); deploy blocked on authorizing Railway's GitHub App — see `server/README.md` |
 | Real-time human input in core | ▢ Stage 4 (`stepEncounter(state,dt,inputs)`) |

@@ -81,28 +81,29 @@ builds combatants from published snapshots the same way.
 | Colyseus room + deploy config | ✅ built (`server/`); runs live under real Colyseus (`npm run test:e2e`) |
 | Railway service | ✅ configured (root dir, healthcheck, domain, vars); deploy blocked on authorizing Railway's GitHub App — see `server/README.md` |
 | Real-time human input in core | ✅ `stepEncounter(state, dt, inputs)` + `resolveIntent`; server & room wired, tested (`server/input.test.mjs`) |
-| Client netcode (Stage 4b) | ▢ next — blocked behind the `App.jsx` cutover, see below |
+| Client netcode (Stage 4b) | ✅ **playable** — Guild → 🌐 Online Co-op; verified with two browsers in one room |
 
-## Stage 4b — client netcode
+## Stage 4b — client netcode (done)
 
-The core and server halves of Stage 4 are done: a player's combatant is driven by intents, and
-those intents are validated and replayed like any other part of the reproducible tuple.
+Online co-op is playable: **Guild → 🌐 Online Co-op → Play Online**. `mpProvider.connectEncounter`
+joins the room (`colyseus.js` is a lazy import, so it only loads when you play online), waits for
+`assigned`, and hands `GroupCombat` a `room` + `myAllyId`. Networked, the component stops ticking
+locally and renders the server's snapshots; `cast()` sends `{ skillName, target }`.
 
-What remains is pointing the client at the room. **The cutover blocker is now cleared** —
-`src/App.jsx` imports the same `game-core/` the server ticks, so client prediction and the
-authoritative sim are the same code by construction rather than by discipline.
+Server URL comes from `VITE_GAME_SERVER`, defaulting to the Railway deployment.
 
-The remaining work is in `mpProvider` (`src/App.jsx`), which today fills parties locally and
-has no socket:
+Verified with **two real browsers in one room**: separate characters, one shared authoritative
+fight, bot-filled remaining seats, each client correctly rendering itself as "You" and the other
+player by name. No console errors.
 
-1. Add a room connection — `joinOrCreate("encounter", { contentId, loadout: { char, tier }, … })`
-   against `wss://eldoria-game-server-production.up.railway.app`, and keep the `assigned`
-   message (your `allyId` + the skill names you may send).
-2. In `GroupCombat`, when the fight is networked: stop calling `stepEncounter` on an interval
-   and render the server's `state` snapshots instead; `cast()` sends
-   `{ skillName: sk.name, target }` rather than mutating `pendingAction` locally.
-3. Optional next step — client-side prediction. Because both sides run the identical core,
-   the client can keep stepping locally and reconcile against each snapshot, which is what
-   makes the 120ms tick feel instant. Not required for a first playtest.
+### Known gaps
+- **Potions are offline-only.** They mutate authoritative state and need their own validated
+  server message; the button is disabled online rather than silently desyncing.
+- **Full state every tick.** `fullSnapshot` sends the whole encounter (minus `ally.char`) at
+  ~8/sec. Fine for 4–6 players, not the endgame.
+- **No prediction yet.** Actions land on the next server tick (≤120ms + RTT). Since both sides
+  now run the identical core, the fix is local stepping with reconciliation against a rarer
+  authoritative frame — the payoff for having one shared core.
+- Only the two encounters in `ONLINE_CONTENT` are server-hosted; everything else stays local.
 
-The full wire protocol is documented in `server/README.md`.
+The wire protocol is documented in `server/README.md`.

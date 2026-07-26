@@ -68,6 +68,39 @@ export function verifyEncounter({ party, boss, seed, claimed, dt = DEFAULT_DT, m
   return { valid, actual: { outcome: r.outcome, steps: r.steps }, claimed: claimed || null };
 }
 
+// The full authoritative state, serializable, for the combat UI to render from.
+//
+// `snapshot` below is deliberately minimal, but the real combat screen needs far more than
+// hit points: skill cooldowns and the GCD, the class resource, cast bars, ability timers for
+// telegraphs, debuffs and HoTs, battle-res charges and potions. Rather than enumerate those
+// (and silently break the UI whenever the core grows a field), this sends the whole state
+// minus `ally.char` — the full character sheet, which is the only bulky part and which the
+// client already holds for itself.
+//
+// This is a first-playtest tradeoff: ~8 full states/second is fine for a 4-6 player room but
+// it is not the endgame. Because client and server now run the identical core, the efficient
+// version is client-side prediction — the client steps locally and reconciles against a much
+// rarer authoritative frame. That is a later optimisation, not a correctness fix.
+export function fullSnapshot(state) {
+  return {
+    tick: state.tick,
+    elapsed: state.elapsed,
+    cleared: state.cleared,
+    wiped: state.wiped,
+    reses: state.reses,
+    potionsUsed: state.potionsUsed,
+    potionCap: state.potionCap,
+    bossName: state.bossName,
+    log: state.log.slice(-40),
+    allies: state.allies.map(({ char, pendingAction, ...a }) => ({
+      ...a,
+      // the client only needs to know WHICH skill is queued, not carry the object back
+      pendingSkillName: pendingAction?.skill?.name || null,
+    })),
+    enemies: state.enemies.map((e) => ({ ...e })),
+  };
+}
+
 // A compact, serializable snapshot of authoritative state to broadcast to clients each tick.
 export function snapshot(state) {
   return {

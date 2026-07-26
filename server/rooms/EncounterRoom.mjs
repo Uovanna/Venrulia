@@ -13,7 +13,7 @@
 import colyseus from "colyseus";
 // @colyseus/schema does ship an ESM build, so it imports by name; `colyseus` itself does not.
 import { Schema, defineTypes } from "@colyseus/schema";
-import { createRun, stepRun, snapshot } from "../sim.mjs";
+import { createRun, stepRun, fullSnapshot } from "../sim.mjs";
 import { buildPartyFromSeats, contentById } from "../party.mjs";
 
 const { Room } = colyseus;
@@ -129,7 +129,7 @@ export class EncounterRoom extends Room {
         seat.pendingIntent = null;
       }
       this.enc = stepRun(this.enc, TICK_MS, inputs);
-      this.broadcast("state", snapshot(this.enc));
+      this.broadcast("state", fullSnapshot(this.enc));
       if (this.enc.cleared || this.enc.wiped) this.finish();
     }, TICK_MS);
   }
@@ -172,7 +172,7 @@ CLIENT PROTOCOL
 
   ← assigned  { allyId, skills }   sent once at start; `allyId` is your combatant in every
                                    snapshot, `skills` are the names you may send.
-  ← state     snapshot(enc)        every 120ms tick.
+  ← state     fullSnapshot(enc)    every 120ms tick — whole state minus ally.char.
   ← result    { outcome, tick, elapsed }
   ← error     { message }
 

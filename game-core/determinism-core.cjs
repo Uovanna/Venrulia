@@ -15,6 +15,9 @@ js = js.replace('__importStar(require("react"))', stub);
 // Post-cutover App.jsx imports the core by relative path. The transpiled harness runs from a
 // temp dir, so those have to be re-pointed at the real modules. Node 22 can require() ESM.
 js = js.replace(/require\("\.\.\/game-core\//g, `require("${path.join(__dirname).replace(/\\/g, '/')}/`);
+// Vite's `import.meta.env` (build-time config, e.g. the game-server URL) is a syntax error in
+// CommonJS. Nothing this harness exercises reads it, so neutralise it rather than run a bundler.
+js = js.replace(/import\.meta\.env/g, '({})');
 js += `
 ;(function(){
   // Post-cutover the combat symbols arrive as an import namespace rather than bare locals,

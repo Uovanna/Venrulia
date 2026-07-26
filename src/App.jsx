@@ -3859,6 +3859,32 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     setGroupRun({ trial: true, bossId, ilvl, size: 4, raid: false, bossDef: b, party: tp, bidParty: partyForBid(tp), label: b.name });
     setTab("group");
   };
+  // ---------- online co-op: join the authoritative server's room ----------
+  // The server owns the seed, the party and every tick. We wait for `assigned` (which names our
+  // combatant) before opening the combat screen, so the UI always knows which ally is ours.
+  const [onlineStatus, setOnlineStatus] = useState(null); // { busy?, label?, error? }
+  const startOnline = async (mpId, label, ilvl) => {
+    const contentId = ONLINE_CONTENT[mpId];
+    if (!contentId) { setOnlineStatus({ error: "That encounter isn't hosted online yet." }); return; }
+    setOnlineStatus({ busy: true, label });
+    let room;
+    try {
+      room = await mpProvider.connectEncounter({ contentId, char, ilvl });
+      const assigned = await new Promise((resolve, reject) => {
+        room.onMessage("assigned", resolve);
+        room.onMessage("error", (e) => reject(new Error(e?.message || "the encounter could not start")));
+        room.onError((code, msg) => reject(new Error(msg || `room error ${code}`)));
+        room.onLeave(() => reject(new Error("disconnected before the fight began")));
+        setTimeout(() => reject(new Error("timed out waiting for the party")), 40000);
+      });
+      setGroupRun({ online: true, room, myAllyId: assigned.allyId, ilvl, size: 4, raid: false, label });
+      setOnlineStatus(null);
+      setTab("group");
+    } catch (e) {
+      try { room?.leave(); } catch { /* already gone */ }
+      setOnlineStatus({ error: e?.message || String(e) });
+    }
+  };
   // Boss down → GDKP loot bid (Epic floor; Trials roll a 10% Legendary per item)
   const onGroupCleared = () => {
     const run = groupRunRef.current; if (!run) return;
@@ -5752,7 +5778,8 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           <GroupCombat char={char} commitChar={commitChar} ilvl={groupRun?.ilvl || avgEquippedIlvl(char)}
             bossId={groupRun ? undefined : groupBoss} bossDef={groupRun?.bossDef} party={groupRun?.party}
             label={groupRun?.label} onCleared={onGroupCleared}
-            onExit={() => { setGroupRun(null); setTab("guild"); }} />
+            room={groupRun?.room} myAllyId={groupRun?.myAllyId}
+            onExit={() => { try { groupRun?.room?.leave(); } catch { /* already gone */ } setGroupRun(null); setTab("guild"); }} />
         )}
 
         {tab === "guild" && (() => {
@@ -5776,6 +5803,31 @@ function GameScreen({ character: initChar, onSave, onBack }) {
               </div>
             );
           }
+          const onlinePanel = (
+            <div style={{ background: "#0e0c1a", border: "1px solid #2a4a6a", borderRadius: 10, padding: "10px 11px", marginBottom: 12 }}>
+              <div style={{ color: "#8fd0ff", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>🌐 Online Co-op · real players</div>
+              <div style={{ color: "#8a83b8", fontSize: 10.5, lineHeight: 1.5, marginBottom: 8 }}>
+                Runs on the authoritative server — everyone in the room sees the same fight. Empty seats fill with adventurers after 8s. Loot is granted server-side to your mailbox.
+              </div>
+              {Object.keys(ONLINE_CONTENT).map((mpId) => {
+                const c = MP_CONTENT.find((x) => x.id === mpId);
+                const label = c ? c.name : ONLINE_CONTENT[mpId];
+                return (
+                  <div key={mpId} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                    <span style={{ fontSize: 18 }}>{c?.icon || "⚔️"}</span>
+                    <span style={{ flex: 1, minWidth: 0, color: "#d8d2ee", fontSize: 12.5, fontWeight: 700 }}>{label}
+                      <span style={{ color: "#8a83b8", fontSize: 9.5, display: "block", fontWeight: 400 }}>4 players · you play your own skills</span></span>
+                    <button onClick={() => startOnline(mpId, label, avg)} disabled={!!onlineStatus?.busy}
+                      style={{ ...btnPrimary, width: "auto", margin: 0, padding: "7px 13px", opacity: onlineStatus?.busy ? 0.5 : 1, cursor: onlineStatus?.busy ? "default" : "pointer" }}>
+                      {onlineStatus?.busy && onlineStatus.label === label ? "Joining…" : "Play Online"}
+                    </button>
+                  </div>
+                );
+              })}
+              {onlineStatus?.busy && <div style={{ color: "#c8a0ff", fontSize: 10.5, marginTop: 4 }}>⏳ Forming the party — this waits up to 8s for other players.</div>}
+              {onlineStatus?.error && <div style={{ color: "#ff8a7a", fontSize: 10.5, marginTop: 4 }}>⚠️ {onlineStatus.error}</div>}
+            </div>
+          );
           // status pill + gating for a piece of Guild content (lockouts are independent of solo)
           const row = (item, kind, size, unlocked, req) => {
             const raid = kind.includes("raid");
@@ -5829,6 +5881,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                 <span style={{ color: "#8a83b8", fontSize: 10.5 }}>ilvl {avg}</span>
               </div>
               <div style={{ color: "#9a93b3", fontSize: 11.5, lineHeight: 1.5, marginBottom: 12 }}>Group PvE fought on the <b style={{ color: "#e0c8ff" }}>Trinity engine</b> — you play your spec's role ({ROLES[roleOf(char)].icon} {ROLES[roleOf(char)].name}) while a tank, healer, support and DPS fill the party. Threat, interrupts, tank-busters and healing all matter. <b style={{ color: "#f0d98a" }}>Guild lockouts are separate from your solo runs.</b></div>
+              {onlinePanel}
               <div style={{ color: "#f0b429", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, margin: "4px 0 6px" }}>Dungeons · 4 players · {GUILD_RUN_LIMIT} runs/hour</div>
               {DUNGEONS.map((d) => row(d, "dungeon", 4, char.level >= d.minLevel, `Lv ${d.minLevel}`))}
               {HARD_DUNGEONS.map((d) => row(d, "hard-dungeon", 4, hardDungeonUnlocked(char, avg, d), d.reqIlvl ? `ilvl ${d.reqIlvl}` : `${HARD_BOSS_REQ}× ${d.prevBoss || "prev"}`))}
@@ -7586,8 +7639,29 @@ const mpRosterDrift = () => { // nudge records so ratings shift a little on refr
   _mpRoster = _mpRoster.map((b) => { const g = 1 + Math.floor(Math.random() * 4); const wr = 0.34 + Math.random() * 0.44; const w = Math.round(g * wr); return { ...b, wins: b.wins + w, losses: b.losses + (g - w) }; });
   try { localStorage.setItem(MP_ROSTER_KEY, JSON.stringify(_mpRoster)); } catch {}
 };
+// Authoritative encounter server (Colyseus). Override at build time with VITE_GAME_SERVER.
+const GAME_SERVER_URL = (import.meta.env && import.meta.env.VITE_GAME_SERVER) || "wss://eldoria-game-server-production.up.railway.app";
+// Only the content the server actually hosts can be played online; everything else stays local.
+const ONLINE_CONTENT = { mp_hard_deadmines: "hard_deadmines", mp_trial_ashen: "trial_ashen" };
+
 const mpProvider = {
   _realOpps: [], // cache of real opponent snapshots (primed on Arena open)
+  // ---- authoritative co-op rooms ----
+  // Joins the server's encounter room. The server owns the seed, the party and every tick;
+  // this client only sends intents and renders what comes back.
+  connectEncounter: async ({ contentId, char, role, ilvl, uid }) => {
+    const { Client } = await import("colyseus.js");   // lazy: only pulled in when playing online
+    const client = new Client(GAME_SERVER_URL);
+    const room = await client.joinOrCreate("encounter", {
+      contentId,
+      name: char.name,
+      role: role || roleOf(char),
+      uid: uid || null,
+      // The server builds the combatant from this and never trusts anything else the client says.
+      loadout: { char, tier: botTier(mpPowerOf(char)), ilvl },
+    });
+    return room;
+  },
   fillParty: (size, targetPower, level, existing) => { const out = existing.slice(); while (out.length < size) out.push(mpBot(targetPower, level)); return out; },
   findOpponent: (targetPower, level, targetRating) => {
     const pool = mpProvider._realOpps || [];
@@ -7996,25 +8070,52 @@ const grpTargetFor = (enc, sk) => {
 // Honor a manually-picked target when it's valid; hybrids (e.g. a smite that heals) resolve BOTH a
 // damage target (enemy) and a heal target (ally). Falls back to smart defaults for whatever isn't picked.
 
-function GroupCombat({ char, commitChar, onExit, bossId, bossDef, ilvl, party, onCleared, label }) {
-  const [enc, setEnc] = useState(() => createEncounter({ party: party || buildTrinityParty(char, ilvl), boss: bossDef || bossId || "ashen", seed: (Date.now() >>> 0) }));
+// `room` (a Colyseus room) switches this from a locally-simulated fight to an authoritative
+// one: the server owns every tick and this renders its snapshots, sending intents instead of
+// mutating state. Everything below the data layer — targeting, the action bar, telegraphs —
+// is identical either way, because both sides run the same game-core.
+function GroupCombat({ char, commitChar, onExit, bossId, bossDef, ilvl, party, onCleared, label, room, myAllyId }) {
+  const networked = !!room;
+  const [enc, setEnc] = useState(() => networked ? null : createEncounter({ party: party || buildTrinityParty(char, ilvl), boss: bossDef || bossId || "ashen", seed: (Date.now() >>> 0) }));
   const rewarded = useRef(false);
   const [target, setTarget] = useState(null); // { type:"ally"|"enemy", id } — manual target, else smart auto
   useEffect(() => {
+    if (networked) { room.onMessage("state", setEnc); return; }   // server drives time; we only render
     const iv = setInterval(() => setEnc((p) => (p && !p.cleared && !p.wiped) ? stepEncounter(p, 120) : p), 120); // sim is ~0.13ms/step, so a fine tick is smooth & cheap
     return () => clearInterval(iv);
-  }, []);
-  useEffect(() => { if (enc.cleared && !rewarded.current) { rewarded.current = true; const gold = 400 + (char.level || 60) * 25; commitChar({ ...char, gold: (char.gold || 0) + gold }); if (onCleared) onCleared(enc); } }, [enc.cleared]);
-  const me = enc.allies.find((a) => a.isHuman) || enc.allies[0];
+  }, [networked]);
+  useEffect(() => {
+    if (!enc?.cleared || rewarded.current) return;
+    rewarded.current = true;
+    // Online clears are paid by the server (rewards.mjs → Supabase mail); paying locally too
+    // would hand out the gold twice.
+    if (!networked) { const gold = 400 + (char.level || 60) * 25; commitChar({ ...char, gold: (char.gold || 0) + gold }); }
+    if (onCleared) onCleared(enc);
+  }, [enc?.cleared]);
+  if (!enc) return <div style={{ maxWidth: 520, margin: "0 auto", padding: 24, textAlign: "center", color: "#c8a0ff", fontFamily: "Georgia, serif" }}>⚔️ Waiting for the party…<div style={{ color: "#8a83b8", fontSize: 11, marginTop: 8 }}>Empty seats fill with adventurers shortly.</div></div>;
+  // Online there may be several humans, so "me" is the ally the server assigned, not just any human.
+  const isMe = (a) => networked ? a.id === myAllyId : !!a.isHuman;
+  const me = enc.allies.find(isMe) || enc.allies[0];
   const nowE = enc.elapsed;
   const mySkills = (char.selectedSkills || []).map((n) => skillByName(char, n)).filter(Boolean).slice(0, 6);
-  const cast = (sk) => setEnc((p) => {
-    if (!p || p.cleared || p.wiped) return p;
-    const h = p.allies.find((a) => a.isHuman); if (!h || h.down) return p;
-    if ((h.bw.cooldowns[sk.name] || 0) > p.elapsed || !botCanAfford(char, h.bw, sk)) return p; // queue during GCD; block only on the skill's own cooldown / not enough resource
-    return { ...p, allies: p.allies.map((a) => a.isHuman ? { ...a, pendingAction: { skill: sk, ...grpResolveTarget(p, sk, target) } } : a) };
-  });
-  const potion = () => setEnc((p) => {
+  const queuedName = networked ? me.pendingSkillName : (me.pendingAction && me.pendingAction.skill && me.pendingAction.skill.name);
+  const cast = (sk) => {
+    if (networked) {
+      if (enc.cleared || enc.wiped || me.down) return;
+      // Name the skill; never send the object. The server re-checks it against our own loadout.
+      room.send("intent", { skillName: sk.name, target: target || undefined });
+      return;
+    }
+    setEnc((p) => {
+      if (!p || p.cleared || p.wiped) return p;
+      const h = p.allies.find((a) => a.isHuman); if (!h || h.down) return p;
+      if ((h.bw.cooldowns[sk.name] || 0) > p.elapsed || !botCanAfford(char, h.bw, sk)) return p; // queue during GCD; block only on the skill's own cooldown / not enough resource
+      return { ...p, allies: p.allies.map((a) => a.isHuman ? { ...a, pendingAction: { skill: sk, ...grpResolveTarget(p, sk, target) } } : a) };
+    });
+  };
+  // Potions mutate authoritative state, so they need their own validated server message.
+  // Until that exists they stay offline-only rather than silently desyncing the room.
+  const potion = () => networked ? undefined : setEnc((p) => {
     if (!p || p.potionsUsed >= p.potionCap) return p;
     const h = p.allies.find((a) => a.isHuman); if (!h || h.down) return p;
     return { ...p, potionsUsed: p.potionsUsed + 1, log: [...p.log, `🧪 ${h.name} drinks a potion`].slice(-40), allies: p.allies.map((a) => a.isHuman ? { ...a, hp: Math.min(a.maxHp, a.hp + Math.round(a.maxHp * 0.5)) } : a) };
@@ -8028,9 +8129,9 @@ function GroupCombat({ char, commitChar, onExit, bossId, bossDef, ilvl, party, o
         <span style={{ color: "#8a83b8", fontSize: 10 }}>{ROLES[me.role].icon} You: {ROLES[me.role].name}</span>
       </div>
       {/* enemies */}
-      {enc.enemies.map((en) => { const aggro = enc.allies.find((a) => a.id === en.targetId); const onMe = aggro && aggro.isHuman; const sel = target && target.type === "enemy" && target.id === en.id; return (
+      {enc.enemies.map((en) => { const aggro = enc.allies.find((a) => a.id === en.targetId); const onMe = aggro && isMe(aggro); const sel = target && target.type === "enemy" && target.id === en.id; return (
         <div key={en.id} onClick={() => en.hp > 0 && setTarget({ type: "enemy", id: en.id })} style={{ background: "#160f18", border: `${sel ? 2 : 1}px solid ${sel ? "#ff6b4a" : "#5a2530"}`, borderRadius: 10, padding: "8px 10px", marginBottom: 6, opacity: en.hp <= 0 ? 0.4 : 1, cursor: en.hp > 0 ? "pointer" : "default", boxShadow: sel ? "0 0 8px rgba(255,107,74,0.4)" : "none" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}><span style={{ color: "#ff8a7a", fontSize: 13, fontWeight: 700 }}>{sel ? "🎯 " : ""}{en.name}{en.isBoss ? " 👑" : ""}</span><span style={{ color: "#8a83b8", fontSize: 10 }}>{mpFmt(en.hp)}/{mpFmt(en.maxHp)}{aggro ? ` · 🎯 ${aggro.isHuman ? "YOU" : aggro.name}` : ""}</span></div>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}><span style={{ color: "#ff8a7a", fontSize: 13, fontWeight: 700 }}>{sel ? "🎯 " : ""}{en.name}{en.isBoss ? " 👑" : ""}</span><span style={{ color: "#8a83b8", fontSize: 10 }}>{mpFmt(en.hp)}/{mpFmt(en.maxHp)}{aggro ? ` · 🎯 ${isMe(aggro) ? "YOU" : aggro.name}` : ""}</span></div>
           <div style={{ height: 9, background: "#2a1418", borderRadius: 5, overflow: "hidden" }}><div style={{ height: "100%", width: `${barPct(en.hp, en.maxHp)}%`, background: "linear-gradient(90deg,#c0392b,#e74c3c)", transition: "width 0.14s linear" }} /></div>
           {en.castBar && (<div style={{ marginTop: 4 }}><div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#ffd479", fontSize: 10, fontWeight: 700 }}>⏳ {en.castBar.name} — INTERRUPT!</span></div><div style={{ height: 5, background: "#2a2418", borderRadius: 3, overflow: "hidden" }}><div style={{ height: "100%", width: `${barPct(en.castBar.endsAt - nowE, en.castBar.endsAt - (en.castBar.endsAt - 2400)) }%`, background: "#f0b429", transition: "width .2s" }} /></div></div>)}
           {!en.castBar && en.hp > 0 && (() => { const tg = grpNextTelegraph(en, nowE); if (!tg || tg.t > 6000) return null; const secs = Math.ceil(tg.t / 1000); const soon = tg.t < 2500; const label = tg.ab.name || (tg.ab.kind === "raidtick" ? "Raid damage" : tg.ab.kind === "summon" ? "Summon" : tg.ab.kind); return (<div style={{ marginTop: 4, color: soon ? "#ffb04a" : "#8a83b8", fontSize: 9.5, fontWeight: soon ? 700 : 400 }}>{ABILITY_ICON[tg.ab.kind] || "•"} {label} in {secs}s{tg.ab.kind === "tankbuster" ? " (tank: mitigate)" : tg.ab.kind === "raidcast" ? " (support: interrupt)" : tg.ab.kind === "raidtick" ? " (healer: AoE)" : ""}</div>); })()}
@@ -8040,9 +8141,9 @@ function GroupCombat({ char, commitChar, onExit, bossId, bossDef, ilvl, party, o
       {/* party */}
       <div style={{ color: "#8a83b8", fontSize: 10, textTransform: "uppercase", letterSpacing: 1, margin: "8px 0 4px" }}>Party · ✚ {enc.reses} battle-res</div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 8 }}>
-        {(() => { const inc = grpIncoming(enc, nowE); const boss = enc.enemies.find((e) => e.isBoss && e.hp > 0); const busterId = boss ? boss.targetId : null; return enc.allies.map((a) => { const sel = target && target.type === "ally" && target.id === a.id; const incoming = !a.down && (inc.raidSoon || (inc.busterSoon && a.id === busterId)); const glow = sel ? "#5fd39a" : incoming ? "#ff9838" : (a.isHuman ? "#3a6ea5" : "#241f3c"); return (
-          <div key={a.id} onClick={() => !a.down && setTarget({ type: "ally", id: a.id })} style={{ background: a.isHuman ? "#16213a" : "#0e0c1a", border: `${sel || incoming ? 2 : 1}px solid ${glow}`, borderRadius: 8, padding: "6px 8px", opacity: a.down ? 0.45 : 1, cursor: a.down ? "default" : "pointer", boxShadow: sel ? "0 0 8px rgba(95,211,154,0.4)" : incoming ? "0 0 9px rgba(255,152,56,0.55)" : "none" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}><span style={{ color: a.isHuman ? "#8fd0ff" : "#d8d2ee", fontSize: 11, fontWeight: 700 }}>{sel ? "🎯 " : ""}{ROLES[a.role].icon} {a.isHuman ? "You" : a.name}{(a.debuffs || []).length ? " " + (a.debuffs[0].icon || "☠️") : ""}{(a.hots || []).length ? " 🕯️" : ""}</span><span style={{ color: a.down ? "#e07a7a" : (a.debuffs || []).length ? "#ff7a9a" : incoming ? "#ffb04a" : "#8a83b8", fontSize: 9 }}>{a.down ? "DOWN" : (a.debuffs || []).length ? "cleanse!" : incoming ? "⚠ incoming" : Math.round(barPct(a.hp, a.maxHp)) + "%"}</span></div>
+        {(() => { const inc = grpIncoming(enc, nowE); const boss = enc.enemies.find((e) => e.isBoss && e.hp > 0); const busterId = boss ? boss.targetId : null; return enc.allies.map((a) => { const sel = target && target.type === "ally" && target.id === a.id; const incoming = !a.down && (inc.raidSoon || (inc.busterSoon && a.id === busterId)); const glow = sel ? "#5fd39a" : incoming ? "#ff9838" : (isMe(a) ? "#3a6ea5" : "#241f3c"); return (
+          <div key={a.id} onClick={() => !a.down && setTarget({ type: "ally", id: a.id })} style={{ background: isMe(a) ? "#16213a" : "#0e0c1a", border: `${sel || incoming ? 2 : 1}px solid ${glow}`, borderRadius: 8, padding: "6px 8px", opacity: a.down ? 0.45 : 1, cursor: a.down ? "default" : "pointer", boxShadow: sel ? "0 0 8px rgba(95,211,154,0.4)" : incoming ? "0 0 9px rgba(255,152,56,0.55)" : "none" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}><span style={{ color: isMe(a) ? "#8fd0ff" : "#d8d2ee", fontSize: 11, fontWeight: 700 }}>{sel ? "🎯 " : ""}{ROLES[a.role].icon} {isMe(a) ? "You" : a.name}{(a.debuffs || []).length ? " " + (a.debuffs[0].icon || "☠️") : ""}{(a.hots || []).length ? " 🕯️" : ""}</span><span style={{ color: a.down ? "#e07a7a" : (a.debuffs || []).length ? "#ff7a9a" : incoming ? "#ffb04a" : "#8a83b8", fontSize: 9 }}>{a.down ? "DOWN" : (a.debuffs || []).length ? "cleanse!" : incoming ? "⚠ incoming" : Math.round(barPct(a.hp, a.maxHp)) + "%"}</span></div>
             <div style={{ height: 7, background: "#0a0812", borderRadius: 4, overflow: "hidden" }}><div style={{ height: "100%", width: `${a.down ? 0 : barPct(a.hp, a.maxHp)}%`, background: ROLES[a.role].color, transition: "width 0.14s linear" }} /></div>
           </div>
         ); }); })()}
@@ -8072,16 +8173,16 @@ function GroupCombat({ char, commitChar, onExit, bossId, bossDef, ilvl, party, o
         );
       })()}
       {/* action bar */}
-      <div style={{ color: "#8a83b8", fontSize: 9.5, marginBottom: 4, textAlign: "center" }}>{target ? (() => { const t = target.type === "ally" ? enc.allies.find((a) => a.id === target.id) : enc.enemies.find((e) => e.id === target.id); return t ? `🎯 Target: ${t.isHuman ? "You" : t.name}${target.type === "ally" ? " (heal)" : ""} · tap a frame to change` : "tap a frame to target"; })() : "Tap an ally to heal them or an enemy to focus — otherwise skills auto-target"}</div>
+      <div style={{ color: "#8a83b8", fontSize: 9.5, marginBottom: 4, textAlign: "center" }}>{target ? (() => { const t = target.type === "ally" ? enc.allies.find((a) => a.id === target.id) : enc.enemies.find((e) => e.id === target.id); return t ? `🎯 Target: ${t && isMe(t) ? "You" : t.name}${target.type === "ally" ? " (heal)" : ""} · tap a frame to change` : "tap a frame to target"; })() : "Tap an ally to heal them or an enemy to focus — otherwise skills auto-target"}</div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
-        {mySkills.map((sk) => { const cd = (me.bw.cooldowns[sk.name] || 0); const onCd = cd > nowE; const onGcd = nowE < (me.nextGcd || 0); const afford = botCanAfford(char, me.bw, sk); const ready = !onCd && afford && !me.down; const queued = me.pendingAction && me.pendingAction.skill && me.pendingAction.skill.name === sk.name; const util = sk.heal || sk.healAoe ? "#5fd39a" : sk.taunt ? "#5b8fd6" : sk.interrupt ? "#c8a0ff" : "#e0a955"; const cdFrac = onCd && sk.cd ? Math.max(0, Math.min(1, (cd - nowE) / (sk.cd * 1000))) : 0; return (
+        {mySkills.map((sk) => { const cd = (me.bw.cooldowns[sk.name] || 0); const onCd = cd > nowE; const onGcd = nowE < (me.nextGcd || 0); const afford = botCanAfford(char, me.bw, sk); const ready = !onCd && afford && !me.down; const queued = queuedName === sk.name; const util = sk.heal || sk.healAoe ? "#5fd39a" : sk.taunt ? "#5b8fd6" : sk.interrupt ? "#c8a0ff" : "#e0a955"; const cdFrac = onCd && sk.cd ? Math.max(0, Math.min(1, (cd - nowE) / (sk.cd * 1000))) : 0; return (
           <button key={sk.name} onClick={() => cast(sk)} disabled={!ready} style={{ position: "relative", overflow: "hidden", flex: "1 1 30%", background: ready ? "linear-gradient(135deg,#2a2450,#3a2d6a)" : "#15131f", border: `${queued ? 2 : 1}px solid ${queued ? "#ffd479" : ready ? util : !afford ? "#5a3a3a" : "#2a2550"}`, borderRadius: 9, color: ready ? "#e8ddff" : "#5a5478", fontSize: 11, fontWeight: 700, padding: "9px 5px", cursor: ready ? "pointer" : "default", boxShadow: queued ? "0 0 7px rgba(255,212,121,0.5)" : "none" }}>
             <span style={{ position: "relative", zIndex: 2 }}>{queued ? "▸ " : ""}{sk.icon || "✦"} {sk.name}{onCd ? ` ${Math.ceil((cd - nowE) / 1000)}s` : !afford ? " ·" : ""}</span>
             {onCd && <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${cdFrac * 100}%`, background: "rgba(10,8,18,0.72)", zIndex: 1, transition: "width 0.14s linear" }} />}
             {!onCd && onGcd && !me.down && !queued && <div style={{ position: "absolute", inset: 0, background: "rgba(10,8,18,0.45)", zIndex: 1 }} />}
           </button>
         ); })}
-        <button onClick={potion} disabled={enc.potionsUsed >= enc.potionCap || me.down} style={{ flex: "1 1 30%", background: enc.potionsUsed < enc.potionCap ? "linear-gradient(135deg,#3a2a1a,#5a3a1a)" : "#15131f", border: `1px solid ${enc.potionsUsed < enc.potionCap ? "#a8863a" : "#2a2550"}`, borderRadius: 9, color: enc.potionsUsed < enc.potionCap ? "#ffd479" : "#5a5478", fontSize: 11, fontWeight: 700, padding: "9px 5px", cursor: enc.potionsUsed < enc.potionCap ? "pointer" : "default" }}>🧪 Potion ({enc.potionCap - enc.potionsUsed})</button>
+        <button onClick={potion} disabled={networked || enc.potionsUsed >= enc.potionCap || me.down} title={networked ? "Potions are offline-only for now" : undefined} style={{ flex: "1 1 30%", background: enc.potionsUsed < enc.potionCap ? "linear-gradient(135deg,#3a2a1a,#5a3a1a)" : "#15131f", border: `1px solid ${enc.potionsUsed < enc.potionCap ? "#a8863a" : "#2a2550"}`, borderRadius: 9, color: enc.potionsUsed < enc.potionCap ? "#ffd479" : "#5a5478", fontSize: 11, fontWeight: 700, padding: "9px 5px", cursor: enc.potionsUsed < enc.potionCap ? "pointer" : "default" }}>🧪 Potion ({enc.potionCap - enc.potionsUsed})</button>
       </div>
       {/* log */}
       <div style={{ background: "#0a0812", border: "1px solid #1e1a30", borderRadius: 8, padding: 8, height: 96, overflowY: "auto", fontSize: 10.5, color: "#b9b3d6", lineHeight: 1.5, display: "flex", flexDirection: "column-reverse" }}>

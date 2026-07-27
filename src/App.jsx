@@ -2931,6 +2931,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
   const [groupBoss, setGroupBoss] = useState("ashen"); // chosen Trinity Trial boss
   const [groupRun, setGroupRun] = useState(null); // active Guild/Trial run (Trinity engine)
   const groupRunRef = useRef(null); useEffect(() => { groupRunRef.current = groupRun; }, [groupRun]);
+  const [partyCode, setPartyCode] = useState(""); // optional: friends entering the same code always land in one room
   const [guildQueue, setGuildQueue] = useState(null); // { content, size, kind, party, countdown, launch }
   const guildRunRef = useRef(null); // active Guild run context (for the GDKP bid on the final boss)
   const botCharRef = useRef(null);  // PvP bot: the geared character it plays
@@ -3850,16 +3851,10 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     // opening the combat screen, otherwise a local fight would play for the seconds the room
     // takes to form and then be yanked out from under the player. If the server can't be
     // reached we fall back to the local Trinity run rather than blocking them from playing.
-    showNotif("🌐 Forming party on the server…");
-    mpProvider.connectEncounter({ contentId: content.id, char: nc, ilvl })
-      .then((room) => new Promise((resolve, reject) => {
-        room.onMessage("assigned", (a) => resolve({ room, allyId: a.allyId }));
-        room.onMessage("error", (e) => reject(new Error(e?.message || "the encounter could not start")));
-        room.onError((code, msg) => reject(new Error(msg || `room error ${code}`)));
-        room.onLeave(() => reject(new Error("disconnected")));
-        setTimeout(() => reject(new Error("timed out forming the party")), 40000);
-      }))
-      .then(({ room, allyId }) => { setGroupRun({ ...localRun, online: true, room, myAllyId: allyId }); setTab("group"); })
+    // Open the combat screen as soon as we are IN the room, not once the party has formed —
+    // it renders a live lobby, so players can see each other arrive instead of guessing.
+    mpProvider.connectEncounter({ contentId: content.id, char: nc, ilvl, code: partyCode.trim() })
+      .then((room) => { setGroupRun({ ...localRun, online: true, room }); setTab("group"); })
       .catch((e) => { showNotif(`⚠️ Playing offline — ${e?.message || "server unreachable"}`); setGroupRun(localRun); setTab("group"); });
   };
   // Trinity Trials: 24h lockout each, GDKP reward at the boss's own ilvl
@@ -5870,6 +5865,16 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                 <span style={{ color: "#8a83b8", fontSize: 10.5 }}>ilvl {avg}</span>
               </div>
               <div style={{ color: "#9a93b3", fontSize: 11.5, lineHeight: 1.5, marginBottom: 12 }}>Group PvE fought on the <b style={{ color: "#e0c8ff" }}>Trinity engine</b> — you play your spec's role ({ROLES[roleOf(char)].icon} {ROLES[roleOf(char)].name}) while a tank, healer, support and DPS fill the party. Threat, interrupts, tank-busters and healing all matter. <b style={{ color: "#f0d98a" }}>Guild lockouts are separate from your solo runs.</b></div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#0e0c1a", border: "1px solid #2a4a6a", borderRadius: 9, padding: "8px 10px", marginBottom: 10 }}>
+                <span style={{ fontSize: 15 }}>🔑</span>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <input value={partyCode} onChange={(e) => setPartyCode(e.target.value.slice(0, 16))} placeholder="Party code (optional)"
+                    style={{ width: "100%", background: "#15132a", border: "1px solid #2a2550", borderRadius: 7, color: "#e8ddff", fontSize: 12, padding: "6px 8px", outline: "none" }} />
+                  <span style={{ color: "#8a83b8", fontSize: 9.5, display: "block", marginTop: 3 }}>
+                    Share a code with a friend and you'll always land in the same run. Leave it blank to match with anyone.
+                  </span>
+                </span>
+              </div>
               <div style={{ color: "#f0b429", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, margin: "4px 0 6px" }}>Dungeons · 4 players · {GUILD_RUN_LIMIT} runs/hour</div>
               {DUNGEONS.map((d) => row(d, "dungeon", 4, char.level >= d.minLevel, `Lv ${d.minLevel}`))}
               {HARD_DUNGEONS.map((d) => row(d, "hard-dungeon", 4, hardDungeonUnlocked(char, avg, d), d.reqIlvl ? `ilvl ${d.reqIlvl}` : `${HARD_BOSS_REQ}× ${d.prevBoss || "prev"}`))}
@@ -7634,11 +7639,12 @@ const mpProvider = {
   // ---- authoritative co-op rooms ----
   // Joins the server's encounter room. The server owns the seed, the party and every tick;
   // this client only sends intents and renders what comes back.
-  connectEncounter: async ({ contentId, char, role, ilvl, uid }) => {
+  connectEncounter: async ({ contentId, char, role, ilvl, uid, code }) => {
     const { Client } = await import("colyseus.js");   // lazy: only pulled in when playing online
     const client = new Client(GAME_SERVER_URL);
     const room = await client.joinOrCreate("encounter", {
       contentId,
+      code: code || "",                                 // shared code = guaranteed same room
       name: char.name,
       role: role || roleOf(char),
       uid: uid || null,
@@ -8041,8 +8047,14 @@ const grpTargetFor = (enc, sk) => {
 // one: the server owns every tick and this renders its snapshots, sending intents instead of
 // mutating state. Everything below the data layer — targeting, the action bar, telegraphs —
 // is identical either way, because both sides run the same game-core.
-function GroupCombat({ char, commitChar, onExit, bossId, bossDef, ilvl, party, onCleared, label, room, myAllyId }) {
+function GroupCombat({ char, commitChar, onExit, bossId, bossDef, ilvl, party, onCleared, label, room, myAllyId: myAllyIdProp }) {
   const networked = !!room;
+  // Which combatant is ours arrives with the server's `assigned` message at start, and the
+  // lobby tells us who else is waiting. Both are held here so the screen can be opened the
+  // moment we join rather than after the party forms — a minute of blank screen would be
+  // worse than the matchmaking bug this window exists to fix.
+  const [myAllyId, setMyAllyId] = useState(myAllyIdProp || null);
+  const [lobby, setLobby] = useState(null);
   const [enc, setEnc] = useState(() => networked ? null : createEncounter({ party: party || buildTrinityParty(char, ilvl), boss: bossDef || bossId || "ashen", seed: (Date.now() >>> 0) }));
   const rewarded = useRef(false);
   const [target, setTarget] = useState(null); // { type:"ally"|"enemy", id } — manual target, else smart auto
@@ -8054,7 +8066,12 @@ function GroupCombat({ char, commitChar, onExit, bossId, bossDef, ilvl, party, o
   // between the waiting-room and in-combat renders (React #310).
   const localQueued = useRef(null);
   useEffect(() => {
-    if (networked) { room.onMessage("state", setEnc); return; }   // server drives time; we only render
+    if (networked) {                                              // server drives time; we only render
+      room.onMessage("state", setEnc);
+      room.onMessage("assigned", (a) => setMyAllyId(a.allyId));
+      room.onMessage("lobby", setLobby);
+      return;
+    }
     const iv = setInterval(() => setEnc((p) => (p && !p.cleared && !p.wiped) ? stepEncounter(p, 120) : p), 120); // sim is ~0.13ms/step, so a fine tick is smooth & cheap
     return () => clearInterval(iv);
   }, [networked]);
@@ -8066,7 +8083,28 @@ function GroupCombat({ char, commitChar, onExit, bossId, bossDef, ilvl, party, o
     if (!networked) { const gold = 400 + (char.level || 60) * 25; commitChar({ ...char, gold: (char.gold || 0) + gold }); }
     if (onCleared) onCleared(enc);
   }, [enc?.cleared]);
-  if (!enc) return <div style={{ maxWidth: 520, margin: "0 auto", padding: 24, textAlign: "center", color: "#c8a0ff", fontFamily: "Georgia, serif" }}>⚔️ Waiting for the party…<div style={{ color: "#8a83b8", fontSize: 11, marginTop: 8 }}>Empty seats fill with adventurers shortly.</div></div>;
+  if (!enc) return (
+    <div style={{ maxWidth: 520, margin: "0 auto", padding: "18px 14px", textAlign: "center" }}>
+      <button onClick={onExit} style={{ float: "left", background: "#15132a", border: "1px solid #2a2550", borderRadius: 8, color: "#c9c2e6", fontSize: 12, padding: "6px 12px", cursor: "pointer" }}>← Leave</button>
+      <div style={{ color: "#c8a0ff", fontFamily: "Georgia, serif", fontSize: 17, marginBottom: 2, paddingTop: 4 }}>⚔️ Forming Party</div>
+      <div style={{ color: "#e8ddff", fontSize: 13, marginBottom: 10 }}>{lobby?.contentName || label || "Encounter"}</div>
+      {lobby?.code ? <div style={{ color: "#f0b429", fontSize: 11, marginBottom: 8 }}>🔑 Party code <b>{lobby.code}</b> — anyone using it joins you</div> : null}
+      <div style={{ color: "#8fd0ff", fontSize: 30, fontWeight: 800, margin: "6px 0" }}>{lobby ? `${lobby.players.length}/${lobby.size}` : "…"}</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, textAlign: "left", margin: "10px 0" }}>
+        {(lobby?.players || []).map((p, i) => (
+          <div key={i} style={{ background: "#16213a", border: "1px solid #3a6ea5", borderRadius: 8, padding: "7px 10px", color: "#8fd0ff", fontSize: 12, fontWeight: 700 }}>
+            {ROLES[p.role]?.icon || "🧑"} {p.name}
+          </div>
+        ))}
+        {Array.from({ length: Math.max(0, (lobby?.size || 4) - (lobby?.players.length || 1)) }).map((_, i) => (
+          <div key={"e" + i} style={{ border: "1px dashed #2a2550", borderRadius: 8, padding: 8, color: "#5a5478", fontSize: 11, textAlign: "center" }}>waiting for a player…</div>
+        ))}
+      </div>
+      <div style={{ color: "#8a83b8", fontSize: 11 }}>
+        {lobby ? `Empty seats fill with adventurers in ${lobby.secondsLeft}s` : "Connecting to the server…"}
+      </div>
+    </div>
+  );
   // Online there may be several humans, so "me" is the ally the server assigned, not just any human.
   const isMe = (a) => networked ? a.id === myAllyId : !!a.isHuman;
   const me = enc.allies.find(isMe) || enc.allies[0];

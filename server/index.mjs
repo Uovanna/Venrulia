@@ -21,7 +21,11 @@ const httpServer = createServer(app);
 const gameServer = new Server({ transport: new WebSocketTransport({ server: httpServer }) });
 
 // One room type for now; add per-content rooms as you expose them.
-gameServer.define("encounter", EncounterRoom);
+// filterBy is what makes matchmaking respect the request: without it joinOrCreate hands you
+// ANY open "encounter" room, so a player queuing a 6-player raid could be dropped into
+// someone else's dungeon. `code` lets friends guarantee they land together — same code, same
+// room; empty code is ordinary public matchmaking.
+gameServer.define("encounter", EncounterRoom).filterBy(["contentId", "code"]);
 
 httpServer.listen(port, () => console.log(`Realms game server listening on :${port}`));
 

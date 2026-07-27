@@ -3842,10 +3842,25 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     }
     commitChar(nc);
     const tp = buildTrinityPartyOfSize(nc, ilvl, size);
-    setGroupRun({ content, kind, size, ilvl, raid, bossDef: guildBossDef(content, kind, nc.level),
-      party: tp, bidParty: (party && party.length) ? party : partyForBid(tp),
-      label: `${content.name}${kind.startsWith("hard") ? " (Hard)" : ""}` });
-    setTab("group");
+    const label = `${content.name}${kind.startsWith("hard") ? " (Hard)" : ""}`;
+    const localRun = { content, kind, size, ilvl, raid, bossDef: guildBossDef(content, kind, nc.level),
+      party: tp, bidParty: (party && party.length) ? party : partyForBid(tp), label };
+    // Guild content runs on the authoritative server. The queue and its unlock requirements
+    // above are untouched — only the party and the ticking move server-side. Connect BEFORE
+    // opening the combat screen, otherwise a local fight would play for the seconds the room
+    // takes to form and then be yanked out from under the player. If the server can't be
+    // reached we fall back to the local Trinity run rather than blocking them from playing.
+    showNotif("🌐 Forming party on the server…");
+    mpProvider.connectEncounter({ contentId: content.id, char: nc, ilvl })
+      .then((room) => new Promise((resolve, reject) => {
+        room.onMessage("assigned", (a) => resolve({ room, allyId: a.allyId }));
+        room.onMessage("error", (e) => reject(new Error(e?.message || "the encounter could not start")));
+        room.onError((code, msg) => reject(new Error(msg || `room error ${code}`)));
+        room.onLeave(() => reject(new Error("disconnected")));
+        setTimeout(() => reject(new Error("timed out forming the party")), 40000);
+      }))
+      .then(({ room, allyId }) => { setGroupRun({ ...localRun, online: true, room, myAllyId: allyId }); setTab("group"); })
+      .catch((e) => { showNotif(`⚠️ Playing offline — ${e?.message || "server unreachable"}`); setGroupRun(localRun); setTab("group"); });
   };
   // Trinity Trials: 24h lockout each, GDKP reward at the boss's own ilvl
   const startTrial = (bossId) => {
@@ -5802,27 +5817,6 @@ function GameScreen({ character: initChar, onSave, onBack }) {
               </div>
             );
           }
-          const onlinePanel = (
-            <div style={{ background: "#0e0c1a", border: "1px solid #2a4a6a", borderRadius: 10, padding: "10px 11px", marginBottom: 12 }}>
-              <div style={{ color: "#8fd0ff", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>🌐 Online Co-op · real players</div>
-              <div style={{ color: "#8a83b8", fontSize: 10.5, lineHeight: 1.5, marginBottom: 8 }}>
-                Runs on the authoritative server — everyone in the room sees the same fight. Empty seats fill with adventurers after 8s. Loot is granted server-side to your mailbox.
-              </div>
-              {ONLINE_CONTENT.map((c) => (
-                <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-                  <span style={{ fontSize: 18 }}>{c.icon || "⚔️"}</span>
-                  <span style={{ flex: 1, minWidth: 0, color: "#d8d2ee", fontSize: 12.5, fontWeight: 700 }}>{c.name}
-                    <span style={{ color: "#8a83b8", fontSize: 9.5, display: "block", fontWeight: 400 }}>{c.size} players · {c.req} · you play your own skills</span></span>
-                  <button onClick={() => startOnline(c.id, c.name, avg)} disabled={!!onlineStatus?.busy}
-                    style={{ ...btnPrimary, width: "auto", margin: 0, padding: "7px 13px", opacity: onlineStatus?.busy ? 0.5 : 1, cursor: onlineStatus?.busy ? "default" : "pointer" }}>
-                    {onlineStatus?.busy && onlineStatus.label === c.name ? "Joining…" : "Play Online"}
-                  </button>
-                </div>
-              ))}
-              {onlineStatus?.busy && <div style={{ color: "#c8a0ff", fontSize: 10.5, marginTop: 4 }}>⏳ Forming the party — this waits up to 8s for other players.</div>}
-              {onlineStatus?.error && <div style={{ color: "#ff8a7a", fontSize: 10.5, marginTop: 4 }}>⚠️ {onlineStatus.error}</div>}
-            </div>
-          );
           // status pill + gating for a piece of Guild content (lockouts are independent of solo)
           const row = (item, kind, size, unlocked, req) => {
             const raid = kind.includes("raid");
@@ -5876,7 +5870,6 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                 <span style={{ color: "#8a83b8", fontSize: 10.5 }}>ilvl {avg}</span>
               </div>
               <div style={{ color: "#9a93b3", fontSize: 11.5, lineHeight: 1.5, marginBottom: 12 }}>Group PvE fought on the <b style={{ color: "#e0c8ff" }}>Trinity engine</b> — you play your spec's role ({ROLES[roleOf(char)].icon} {ROLES[roleOf(char)].name}) while a tank, healer, support and DPS fill the party. Threat, interrupts, tank-busters and healing all matter. <b style={{ color: "#f0d98a" }}>Guild lockouts are separate from your solo runs.</b></div>
-              {onlinePanel}
               <div style={{ color: "#f0b429", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, margin: "4px 0 6px" }}>Dungeons · 4 players · {GUILD_RUN_LIMIT} runs/hour</div>
               {DUNGEONS.map((d) => row(d, "dungeon", 4, char.level >= d.minLevel, `Lv ${d.minLevel}`))}
               {HARD_DUNGEONS.map((d) => row(d, "hard-dungeon", 4, hardDungeonUnlocked(char, avg, d), d.reqIlvl ? `ilvl ${d.reqIlvl}` : `${HARD_BOSS_REQ}× ${d.prevBoss || "prev"}`))}
@@ -7636,15 +7629,6 @@ const mpRosterDrift = () => { // nudge records so ratings shift a little on refr
 };
 // Authoritative encounter server (Colyseus). Override at build time with VITE_GAME_SERVER.
 const GAME_SERVER_URL = (import.meta.env && import.meta.env.VITE_GAME_SERVER) || "wss://eldoria-game-server-production.up.railway.app";
-// Every Guild instance is hosted online. The server's catalogue keys off the SAME ids, so a
-// row here maps straight to a room; `kind` must match what guildBossDef expects on both sides.
-const ONLINE_CONTENT = [
-  ...DUNGEONS.map((d) => ({ id: d.id, name: d.name, icon: d.icon, kind: "dungeon", size: 4, req: `Lv ${d.minLevel}` })),
-  ...HARD_DUNGEONS.map((d) => ({ id: d.id, name: d.name + " (Hard)", icon: d.icon, kind: "hard-dungeon", size: 4, req: d.reqIlvl ? `ilvl ${d.reqIlvl}` : "Hard" })),
-  ...RAIDS.map((r) => ({ id: r.id, name: r.name, icon: r.icon, kind: "raid", size: 6, req: `ilvl ${r.reqIlvl}` })),
-  { id: HARD_RAID.id, name: HARD_RAID.name + " (Hard)", icon: HARD_RAID.icon || "🌋", kind: "hard-raid", size: 6, req: "Hard cleared" },
-];
-
 const mpProvider = {
   _realOpps: [], // cache of real opponent snapshots (primed on Arena open)
   // ---- authoritative co-op rooms ----

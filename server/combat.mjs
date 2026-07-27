@@ -809,14 +809,24 @@ function applySkillCore(skill, c, bIn, now, log) {
 }
 const GRP = { gcd: 1300, enemyAuto: 1500, threatTank: 2.6, threatDps: 1.0, threatHeal: 0.5, healCoeff: 1.0, resKick: 0, dmg: 1.9 };
 const healPowerOf = (char) => Math.round(maxHpFor(char) * GRP.healCoeff);
-const skIsHeal = (s) => !!s && !!(s.heal || s.offheal);
-const skIsHot = (s) => !!s && !!s.hot;
+// These predicates drive the whole group-combat role system, and they must key off the
+// property names the SKILLS data actually uses. They previously looked for `heal`, `offheal`,
+// `hot`, `healAoe`, `partyHastePct`, … — none of which exist on a single skill in the game.
+// Every role branch therefore fell through to "just deal damage": healers never healed, and
+// the combat log stayed empty because its lines only fire on these effects. The real data
+// uses healPct / hotPct+hotDur / empowerPct+empowerDur / hastePct+hasteDur / wardPct / cleanse.
+//
+// `taunt` and `interrupt` genuinely do not exist on any skill yet, so the tank's taunt branch
+// and the "interrupt it!" prompt still cannot fire — that needs new skills, not a rename.
+const skHealPct = (s) => (s && s.healPct) || 0;
+const skIsHeal = (s) => !!s && skHealPct(s) > 0;
+const skIsHot = (s) => !!s && !!s.hotPct;
 const skIsCleanse = (s) => !!s && !!s.cleanse;
-const skIsAoeHeal = (s) => !!s && !!s.healAoe;
-const skIsTaunt = (s) => !!s && !!s.taunt;
-const skIsInterrupt = (s) => !!s && !!s.interrupt;
+const skIsAoeHeal = (s) => !!s && !!s.healAoe;          // no skill has this yet
+const skIsTaunt = (s) => !!s && !!s.taunt;              // ditto
+const skIsInterrupt = (s) => !!s && !!s.interrupt;      // ditto
 const skIsDef = (s) => !!s && !!s.wardPct;
-const skIsPartyBuff = (s) => !!s && !!(s.partyHastePct || s.partyWardPct || s.partyEmpowerPct);
+const skIsPartyBuff = (s) => !!s && !!(s.empowerPct || s.hastePct);
 const skThreatMult = (s) => (s && s.threatMult) || 1;
 const roleThreatBase = (role) => role === "tank" ? GRP.threatTank : role === "healer" ? GRP.threatHeal : role === "support" ? 0.7 : GRP.threatDps;
 const grpSkills = (ally) => (ally.char.selectedSkills || []).map((n) => skillByName(ally.char, n)).filter(Boolean);
@@ -988,16 +998,26 @@ const applyAllyAction = (st, ally, act, now) => {
     const before = ally.bw.enemy.hp;
     const r = applySkillCore(sk, ally.char, ally.bw, now, () => {}); ally.bw = r.battle;
     const dmg = Math.max(0, before - ally.bw.enemy.hp);
-    if (dmg > 0) { focus.hp = Math.max(0, focus.hp - dmg); const th = dmg * roleThreatBase(ally.role) * skThreatMult(sk); grpAddThreat(focus, ally.id, th); if (sk.aoeThreat) { for (const en of st.enemies) if (en.hp > 0 && en.id !== focus.id) grpAddThreat(en, ally.id, th); } }
+    if (dmg > 0) { focus.hp = Math.max(0, focus.hp - dmg); const th = dmg * roleThreatBase(ally.role) * skThreatMult(sk); grpAddThreat(focus, ally.id, th); if (sk.aoeThreat) { for (const en of st.enemies) if (en.hp > 0 && en.id !== focus.id) grpAddThreat(en, ally.id, th); }
+      // Damage is the bulk of what happens in a fight, and none of it was ever logged — which
+      // is why the combat log read as broken. This is the line that makes it a combat log.
+      st.log.push(`${sk.icon || "⚔️"} ${ally.isHuman ? "You" : ally.name} — ${sk.name}: ${dmg}`);
+      if (focus.hp <= 0) st.log.push(`☠️ ${focus.name} dies!`);
+    }
   } else { ally.bw = applySkillCore(sk, ally.char, ally.bw, now, () => {}).battle; }
   // role effects (interpreted by the engine)
-  if (sk.heal || sk.offheal) { const amt = Math.round((sk.heal || sk.offheal) * healPowerOf(ally.char)); const tgt = st.allies.find((a) => a.id === act.targetAllyId && !a.down) || grpInjured(st.allies); if (tgt) { tgt.hp = Math.min(tgt.maxHp, tgt.hp + amt); for (const en of st.enemies) if (en.hp > 0) grpAddThreat(en, ally.id, amt * GRP.threatHeal / Math.max(1, st.enemies.filter((e) => e.hp > 0).length)); } }
-  if (sk.hot) { const tgt = st.allies.find((a) => a.id === act.targetAllyId && !a.down) || grpInjured(st.allies); if (tgt) { const per = Math.round(sk.hot * healPowerOf(ally.char)); tgt.hots = [...(tgt.hots || []).filter((h) => h.src !== sk.name), { src: sk.name, healPerTick: per, nextTick: now + 1000, expires: now + (sk.hotDur || 12) * 1000 }]; } }
+  // healPct / hotPct are PERCENTAGES of the caster's heal power, not raw amounts.
+  if (skIsHeal(sk)) { const amt = Math.round(skHealPct(sk) / 100 * healPowerOf(ally.char)); const tgt = st.allies.find((a) => a.id === act.targetAllyId && !a.down) || grpInjured(st.allies); if (tgt) { const before = tgt.hp; tgt.hp = Math.min(tgt.maxHp, tgt.hp + amt); st.log.push(`💚 ${ally.name} heals ${tgt.isHuman ? "you" : tgt.name} for ${Math.round(tgt.hp - before)}`); for (const en of st.enemies) if (en.hp > 0) grpAddThreat(en, ally.id, amt * GRP.threatHeal / Math.max(1, st.enemies.filter((e) => e.hp > 0).length)); } }
+  if (skIsHot(sk)) { const tgt = st.allies.find((a) => a.id === act.targetAllyId && !a.down) || grpInjured(st.allies); if (tgt) { const dur = sk.hotDur || 12; const per = Math.round(sk.hotPct / 100 * healPowerOf(ally.char) / dur); tgt.hots = [...(tgt.hots || []).filter((h) => h.src !== sk.name), { src: sk.name, healPerTick: per, nextTick: now + 1000, expires: now + dur * 1000 }]; st.log.push(`🕯️ ${ally.name} puts ${sk.name} on ${tgt.isHuman ? "you" : tgt.name}`); } }
   if (sk.cleanse) { const tgt = st.allies.find((a) => a.id === act.targetAllyId && !a.down && (a.debuffs || []).length) || st.allies.find((a) => !a.down && (a.debuffs || []).length); if (tgt) { st.log.push(`💧 ${ally.name} cleanses ${tgt.isHuman ? "you" : tgt.name}`); tgt.debuffs = []; } }
   if (sk.healAoe) { const amt = Math.round(sk.healAoe * healPowerOf(ally.char)); for (const a of st.allies) if (!a.down) a.hp = Math.min(a.maxHp, a.hp + amt); for (const en of st.enemies) if (en.hp > 0) grpAddThreat(en, ally.id, amt * GRP.threatHeal); }
   if (sk.taunt) { for (const en of st.enemies) if (en.hp > 0) { const top = Math.max(0, ...Object.values(en.threat), 0); en.threat[ally.id] = top * 1.3 + 100; en.targetId = ally.id; } st.log.push(`🛡️ ${ally.name} taunts!`); }
   if (sk.interrupt) { const en = st.enemies.find((e) => e.id === act.targetEnemyId && e.castBar && e.castBar.interruptible) || st.enemies.find((e) => e.castBar && e.castBar.interruptible); if (en) { st.log.push(`🚫 ${ally.name} interrupted ${en.name}'s ${en.castBar.name}!`); en.castBar = null; en.nextCastAt = now + 11000; } }
-  if (skIsPartyBuff(sk)) { const dur = ((sk.partyHasteDur || sk.partyWardDur || sk.partyEmpowerDur) || 10) * 1000; for (const a of st.allies) if (!a.down) { if (sk.partyHastePct) a.bw.playerEffects.push({ kind: "haste", pct: sk.partyHastePct, expires: now + dur }); if (sk.partyWardPct) a.bw.playerEffects.push({ kind: "ward", pct: sk.partyWardPct, expires: now + dur }); if (sk.partyEmpowerPct) a.bw.playerEffects.push({ kind: "empower", pct: sk.partyEmpowerPct, expires: now + dur }); } st.log.push(`✨ ${ally.name} empowers the party!`); }
+  // Empower/haste read as party-wide in a group fight — that is what the support role's
+  // "keep a buff rolling" branch is for, and what makes a support slot worth a seat.
+  if (skIsPartyBuff(sk)) { const dur = ((sk.hasteDur || sk.empowerDur) || 10) * 1000; for (const a of st.allies) if (!a.down) { if (sk.hastePct) a.bw.playerEffects.push({ kind: "haste", pct: sk.hastePct, expires: now + dur }); if (sk.empowerPct) a.bw.playerEffects.push({ kind: "empower", pct: sk.empowerPct, expires: now + dur }); } st.log.push(`✨ ${ally.name} casts ${sk.name} — the party is empowered!`); }
+  // Defensives were silent too; a mitigation cooldown is exactly the thing a party wants to see.
+  if (skIsDef(sk)) st.log.push(`🛡️ ${ally.name} braces with ${sk.name}`);
 };
 const grpWardOf = (ally) => ally.bw.playerEffects.filter((e) => e.kind === "ward").reduce((m, e) => m + e.pct, 0) / 100;
 const grpHitAlly = (ally, raw) => { const mit = mitigation(effectiveStats(ally.char).armor || 0, ally.char.level); const dmg = Math.max(1, Math.round(raw * (1 - mit) * (1 - grpWardOf(ally)))); ally.hp = Math.max(0, ally.hp - dmg); return dmg; };

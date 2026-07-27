@@ -1,17 +1,18 @@
 // Builds the encounter party from room seats, filling empty slots with disguised bots.
 //
 // Combatants: a seat's `loadout.char` is a full combat-ready character object (the client
-// publishes it on join, same shape the game already uses). Bot seats need a generated
-// combatant — `buildBotChar` — which is NOT yet in the shared core. Extracting it into
-// game-core (same technique used for combat.mjs) is the small follow-on that lets the
-// server construct bots itself; until then, bots reuse a rotation of the human loadouts.
+// publishes it on join, same shape the game already uses). Bot seats are built from reference
+// characters of a class that can play the role (see botCharFor). The client's `buildBotChar`
+// — which rolls fresh gear at a content's item level — is still App.jsx-local; extracting it
+// into game-core would let bots scale to the encounter instead of using fixed reference gear.
 
 // Every piece of Guild content, mirroring the client's DUNGEONS / RAIDS / HARD_RAID. Ids match
 // the client's so a room id is stable across both. The boss is built by the SHARED
 // guildBossDef, so an online fight is the same encounter the offline one would have been —
 // the earlier hand-written stubs all pointed at BOSS_DEFS.ashen, which made every online run
 // the Ashen Warden regardless of which dungeon you picked.
-import { guildBossDef } from "./combat.mjs";
+import { readFileSync } from "fs";
+import { guildBossDef, SKILLS } from "./combat.mjs";
 
 const DUNGEONS = [
   { id: "deadmines",  name: "The Sunken Mine",   boss: "Bandit Lord Garrick", minLevel: 15 },
@@ -50,8 +51,38 @@ export const MP_CONTENT = Object.fromEntries([
 
 export function contentById(id) { return MP_CONTENT[id] || null; }
 
-const ROLES = ["tank", "healer", "dps", "dps", "dps", "dps"];
+const ROLES = ["tank", "healer", "support", "dps", "dps", "dps"];
 const BOT_NAMES = ["Kaelen", "Sora", "Bran", "Yuki", "Rurik", "Mei", "Torvald", "Aya"];
+
+// Bot-fill used to clone the joining player's character for every empty seat, so a party of
+// warriors would be handed the "healer" and "tank" roles with no heals and no mitigation
+// between them. Bots now come from a class that can actually play the role, with a loadout
+// picked for it — mirroring the client's TRINITY_FILL.
+const ROLE_CLASS = { tank: "warrior", healer: "paladin", support: "mage", dps: "rogue" };
+const REFERENCE = Object.fromEntries(
+  JSON.parse(readFileSync(new URL("./fixtures/party.json", import.meta.url), "utf8"))
+    .map((p) => [p.char.cls, p.char]));
+
+// Score a skill for a role so the bot brings the kit its seat needs. The AI then runs its
+// normal rotation over whatever we hand it.
+const roleScore = (role, s) => {
+  const heal = (s.healPct || 0) + (s.hotPct || 0);
+  const util = (s.cleanse ? 60 : 0) + (s.wardPct || 0) + (s.empowerPct || 0) + (s.hastePct || 0);
+  const dmg = (s.mult || 0) * (s.hits || 1) + (s.dotMult || 0);
+  if (role === "healer") return heal * 3 + util + dmg * 0.05;
+  if (role === "tank") return (s.wardPct || 0) * 3 + (s.cleanse ? 40 : 0) + dmg * 0.5;
+  if (role === "support") return ((s.empowerPct || 0) + (s.hastePct || 0)) * 3 + (s.cleanse ? 40 : 0) + dmg * 0.5;
+  return dmg;                                             // dps: just the biggest hits
+};
+
+function botCharFor(role, playerChar, name) {
+  const cls = ROLE_CLASS[role] || "rogue";
+  const base = REFERENCE[cls] || playerChar;              // fall back rather than fail a room
+  const level = playerChar.level || base.level || 60;
+  const pool = (SKILLS[base.cls] || []).filter((s) => (s.unlockLevel || 1) <= level);
+  const selected = pool.slice().sort((a, b) => roleScore(role, b) - roleScore(role, a)).slice(0, 5).map((s) => s.name);
+  return { ...base, name, level, selectedSkills: selected.length ? selected : base.selectedSkills };
+}
 
 // party: [{ char, role, tier, isHuman }] for createRun()
 //
@@ -67,11 +98,10 @@ export function buildPartyFromSeats(seats, content) {
       filled.push({ char: seat.loadout.char, role: seat.role || ROLES[i] || "dps", tier: seat.loadout.tier, isHuman: !seat.bot });
       seat.allyId = "a" + i;   // ally ids are assigned by index in createEncounter
     } else {
-      // Disguised bot: reuse a human loadout as a template, or a supplied bot template.
       const template = seats.find((s) => s.loadout && s.loadout.char)?.loadout;
       if (!template) throw new Error("no loadout available to seed a combatant; publish loadout.char on join");
-      const botChar = { ...template.char, name: BOT_NAMES[i % BOT_NAMES.length] };
-      filled.push({ char: botChar, role: ROLES[i] || "dps", tier: template.tier });
+      const role = ROLES[i] || "dps";
+      filled.push({ char: botCharFor(role, template.char, BOT_NAMES[i % BOT_NAMES.length]), role, tier: template.tier });
       if (seat) seat.bot = true;
     }
   }

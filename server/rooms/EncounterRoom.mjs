@@ -31,7 +31,11 @@ defineTypes(EncounterState, {
 });
 
 const TICK_MS = 120;           // authoritative sim rate (matches client)
-const FILL_TIMEOUT_MS = 8000;    // wait for humans, then bot-fill and start (organic, like the client)
+// How long the lobby stays open for other players before empty seats are bot-filled. Eight
+// seconds meant two friends had to press Queue within eight seconds of each other or they were
+// silently placed in separate rooms — the room locks on start. A minute is long enough to
+// coordinate across timezones; a full party still starts instantly.
+const FILL_TIMEOUT_MS = 60000;
 
 export class EncounterRoom extends Room {
   onCreate(options) {
@@ -40,7 +44,9 @@ export class EncounterRoom extends Room {
     this.content = content;
     this.maxClients = content.partySize;
     this.seed = (options?.seed ?? ((Math.random() * 2 ** 31) | 0)) >>> 0; // authoritative seed lives on the server
+    this.code = (options?.code || "").slice(0, 16);   // shared by friends; "" = public matchmaking
     this.seats = [];         // { sessionId, name, loadout, role, bot }
+    this.opensAt = Date.now() + FILL_TIMEOUT_MS;
     this.started = false;
     this.enc = null;
 
@@ -83,7 +89,21 @@ export class EncounterRoom extends Room {
     });
     // Start when full, or after the fill window (bot-filled) once at least one human is in.
     if (this.seats.length >= this.content.partySize) this.start();
-    else if (!this._fillTimer) this._fillTimer = this.clock.setTimeout(() => this.start(), FILL_TIMEOUT_MS);
+    else {
+      if (!this._fillTimer) this._fillTimer = this.clock.setTimeout(() => this.start(), FILL_TIMEOUT_MS);
+      this.sendLobby();   // so everyone can SEE who has arrived instead of guessing
+    }
+  }
+
+  // Waiting players need to know someone else is there, and how long they have.
+  sendLobby() {
+    this.broadcast("lobby", {
+      contentName: this.content.name,
+      size: this.content.partySize,
+      code: this.code,
+      players: this.seats.filter((s) => !s.bot).map((s) => ({ name: s.name, role: s.role })),
+      secondsLeft: Math.max(0, Math.round((this.opensAt - Date.now()) / 1000)),
+    });
   }
 
   start() {
@@ -151,6 +171,12 @@ export class EncounterRoom extends Room {
 
   onLeave(client) {
     const seat = this.seats.find((s) => s.sessionId === client.sessionId);
+    if (seat && !this.started) {
+      // Left while still forming — free the seat and tell the others.
+      this.seats = this.seats.filter((s) => s !== seat);
+      this.sendLobby();
+      return;
+    }
     if (seat && this.started && !this.enc?.cleared && !this.enc?.wiped) {
       seat.bot = true;
       seat.pendingIntent = null;

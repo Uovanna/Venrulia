@@ -1631,6 +1631,11 @@ const intentRejection = (ally, intent, now) => {
   if (!ally || !intent || intent.potion) return null;
   if (ally.down) return { code: "down", text: "You're down — wait for a resurrect" };
   if (typeof intent.skillName !== "string") return null;
+  // A SERVER SNAPSHOT ally has no `char` — fullSnapshot strips it, since the client already holds
+  // its own. Reading through it threw and killed the caller's tap handler. This is advisory
+  // feedback and the server re-checks every intent anyway, so with nothing to judge by, fail OPEN
+  // and let the authoritative side answer rather than blocking the player.
+  if (!ally.char) return null;
   const sk = grpSkills(ally).find((s) => s.name === intent.skillName);
   if (!sk) return { code: "unknown", text: `${intent.skillName} isn't on your bar` };
   const until = ally.bw.cooldowns[sk.name] || 0;

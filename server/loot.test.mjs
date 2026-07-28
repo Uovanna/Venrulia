@@ -123,6 +123,18 @@ function currentLotReserve() { const a = mk(); return currentLot(a).reserve; }
   ok(rewardGold({ level: 72, kind: "hard-raid" }, enc) > rewardGold(content, enc),
      "a hard raid now pays more than a level-17 dungeon (the old flat rate paid it less)");
   ok(rewardGold(content, { cleared: false }) === 0, "a wipe pays nothing");
+
+  // The case that actually shipped: the client never sent `uid`, so every seat was skipped and a
+  // cleared run with a hammered lot mailed nothing — silently. The rows being empty is correct
+  // (there is no mailbox to write to); the SILENCE was the defect, so grantRewards now warns.
+  const noUid = buildRewardRows(content, seats.map((s) => ({ ...s, uid: null })), enc, results);
+  ok(noUid.length === 0, "seats with no uid produce no mail rows (nothing to mail to)");
+  const warned = [];
+  const realWarn = console.warn; console.warn = (m) => warned.push(m);
+  try { await (await import("./rewards.mjs")).grantRewards(content, seats.map((s) => ({ ...s, uid: null })), enc, results); }
+  finally { console.warn = realWarn; }
+  ok(warned.some((m) => /NO mail rows/.test(m)),
+     `a cleared run that pays nobody is reported, not swallowed: ${warned.find((m) => /NO mail rows/.test(m)) || "(no warning)"}`);
 }
 
 console.log(fail ? `\n❌ ${fail} loot check(s) failed` : "\n✅ server-authoritative GDKP: shared lots, validated bids, balanced payout");

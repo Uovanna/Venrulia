@@ -10,8 +10,13 @@
 //     could never fire online: App.jsx merged SPEC_SKILL_DEFS into SKILLS at module load, and
 //     the server's SKILLS simply did not contain them.
 //
+//  3. server/ drifting from game-core/. The server deploys standalone with its own copies, and
+//     nothing forced them to stay current — an edit to one side alone means client and
+//     authoritative server disagree about the rules of the fight.
+//
 // Run: node game-core/audit-core-usage.mjs
 import { readFileSync } from "fs";
+import { drifted, SYNCED } from "./sync-core.mjs";
 
 const app = readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
 const core = await import("./combat.mjs");
@@ -49,6 +54,15 @@ for (const name of imported) {
 }
 if (writes.length) { failures++; console.log("✗ App.jsx writes to imported core state (the server will not see it):"); writes.forEach((w) => console.log("   " + w)); }
 else console.log("✓ App.jsx never writes to an imported core table");
+
+// --- 3) server/ copies drifted from the canonical core -------------------------------------
+const stale = drifted();
+if (stale.length) {
+  failures++;
+  console.log(`✗ server/ has drifted from game-core/: ${stale.join(", ")}`);
+  console.log("   the client and the authoritative server would resolve fights differently.");
+  console.log("   fix: npm run sync-core   (edit game-core/ — it is the canonical side)");
+} else console.log(`✓ server/ copies match the core (${SYNCED.join(", ")})`);
 
 console.log(failures ? "\n❌ client/core boundary audit FAILED" : "\n✅ client/core boundary is clean");
 process.exit(failures ? 1 : 0);

@@ -8,7 +8,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "audit": "node game-core/audit-core-usage.mjs"
+    "sync-core": "node game-core/sync-core.mjs",
+    "audit": "node game-core/audit-core-usage.mjs",
+    "test": "node game-core/rng.test.mjs && node game-core/gambit.test.mjs && node game-core/audit-core-usage.mjs && node game-core/determinism-core.cjs"
   },
   "dependencies": {
     "react": "18.3.1",

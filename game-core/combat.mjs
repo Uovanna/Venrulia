@@ -807,7 +807,16 @@ function applySkillCore(skill, c, bIn, now, log) {
     if (skill.cleanse) { const n = b.playerEffects.filter(isPlayerDebuff).length; b.playerEffects = b.playerEffects.filter((e) => !isPlayerDebuff(e)); log(n ? `${skill.icon} ${skill.name} clears ${n} debuff${n > 1 ? "s" : ""}!` : `${skill.icon} ${skill.name}: nothing to cleanse`, "#7CFC9E"); }
     return { battle: b, died: b.enemy.hp <= 0 };
 }
-const GRP = { gcd: 1300, enemyAuto: 1500, threatTank: 2.6, threatDps: 1.0, threatHeal: 0.5, healCoeff: 1.0, resKick: 0, dmg: 1.9 };
+// Group-encounter balance, calibrated for ~60s fights (see PHASE0.md).
+//   estCal  corrects grpEstDps, which sums offlinePlayerDps — an idle-throughput figure that
+//           under-counts a party actually using its rotation by more than an order of
+//           magnitude. Boss HP is grpEstDps * dur, so this is the time-to-kill dial.
+//   dmg     boss outgoing damage. Was 1.9, which killed a party in 20-40s regardless of how
+//           much HP the boss had, capping every fight well under its target duration.
+//   healCoeff  the healer's throughput. Kept above 1 because the only real heal in the game
+//           (Mending Touch) sits on a 90s cooldown, so sustain is otherwise almost nil — this
+//           is what turns the hardest content from a guaranteed wipe into a clear.
+const GRP = { estCal: 24, gcd: 1300, enemyAuto: 1500, threatTank: 2.6, threatDps: 1.0, threatHeal: 0.5, healCoeff: 1.6, resKick: 0, dmg: 0.28 };
 const healPowerOf = (char) => Math.round(maxHpFor(char) * GRP.healCoeff);
 // These predicates drive the whole group-combat role system, and they must key off the
 // property names the SKILLS data actually uses. They previously looked for `heal`, `offheal`,
@@ -835,7 +844,11 @@ const grpInjured = (allies) => allies.filter((a) => !a.down).sort((a, b) => (a.h
 const grpPrimaryEnemy = (st) => st.enemies.filter((e) => e.hp > 0).sort((a, b) => (b.isBoss ? 1 : 0) - (a.isBoss ? 1 : 0) || b.maxHp - a.maxHp)[0] || null;
 const grpTopThreat = (st, en) => { let best = null, bv = -1; for (const a of st.allies) { if (a.down) continue; const t = en.threat[a.id] || 0; if (t > bv) { bv = t; best = a.id; } } return best || (st.allies.find((a) => !a.down) || {}).id || null; };
 const grpAddThreat = (en, allyId, amt) => { en.threat[allyId] = (en.threat[allyId] || 0) + Math.max(0, amt); };
-const grpEstDps = (allies) => allies.reduce((s, a) => s + Math.round(offlinePlayerDps(a.char)) * (a.role === "dps" ? 1 : a.role === "support" ? 0.55 : a.role === "tank" ? 0.5 : 0.2), 0);
+// Boss HP is grpEstDps * dur, so this estimate IS the difficulty dial. offlinePlayerDps
+// is an idle-throughput figure and badly under-counts a party actually using its rotation
+// through applySkillCore, which is why encounters were resolving in a sixth of their target
+// duration. estCal corrects the estimate to observed in-combat damage.
+const grpEstDps = (allies) => GRP.estCal * allies.reduce((s, a) => s + Math.round(offlinePlayerDps(a.char)) * (a.role === "dps" ? 1 : a.role === "support" ? 0.55 : a.role === "tank" ? 0.5 : 0.2), 0);
 const mkAlly = (char, role, tier, isHuman, id) => ({ id, name: char.name, char, role, tier: tier || BOT_TIERS.experienced, isHuman: !!isHuman, hp: maxHpFor(char), maxHp: maxHpFor(char), down: false, nextGcd: 0, hots: [], debuffs: [], bw: { enemy: { hp: 0, maxHp: 0, level: char.level }, hp: maxHpFor(char), maxHp: maxHpFor(char), playerEffects: [], enemyEffects: [], cooldowns: {}, res: 0, resQ: [], shardTicks: 0 } });
 const ADD_ABILITIES = [{ kind: "auto", everyMs: 1600, dmgMult: 0.8 }];
 const BOSS_DEFS = {

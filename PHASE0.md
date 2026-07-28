@@ -118,3 +118,33 @@ server still decides what actually happens; the echo is superseded by the next s
 - Only the two encounters in `ONLINE_CONTENT` are server-hosted; everything else stays local.
 
 The wire protocol is documented in `server/README.md`.
+
+## Group-encounter balance (calibrated)
+
+Fights were resolving in 10-12s against a 70s (dungeon) / 115s (raid) design target. Two
+independent causes, both in `GRP`:
+
+- **Boss HP was far too low.** It is `grpEstDps(party) * dur`, but `grpEstDps` sums
+  `offlinePlayerDps` — an idle-throughput figure that under-counts a party running its real
+  rotation through `applySkillCore` by more than an order of magnitude.
+- **Boss damage was far too high.** At `dmg: 1.9` the party died in 20-40s no matter how much
+  health the boss had, so raising HP alone just converted clears into wipes at the same clock
+  time. Time-to-kill cannot exceed time-to-die.
+
+Calibrated empirically across all nine encounters, with a player working their action bar:
+
+| | before | after |
+|---|---|---|
+| `estCal` (new — corrects the DPS estimate) | 1 | **24** |
+| `dmg` (boss outgoing damage) | 1.9 | **0.28** |
+| `healCoeff` (healer throughput) | 1.0 | **1.6** |
+
+Result: **59s average, 9/9 clears**, spread 53-72s from The Sunken Mine to the hard raid.
+An idle player averages ~100s and loses more than half the time, so participation matters.
+
+`healCoeff` is above 1 because the only real heal in the game, Mending Touch, is on a **90
+second cooldown** — sustained healing is otherwise almost nonexistent, and raising the
+coefficient from 1.0 to 1.6 is what turns the hardest content from a guaranteed wipe into a
+clear. If healing kits get more throughput later, boss damage can rise again.
+
+This applies to offline Guild content too — it is the same core.

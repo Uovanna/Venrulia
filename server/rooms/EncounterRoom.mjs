@@ -42,6 +42,11 @@ const TICK_MS = 120;           // authoritative sim rate (matches client)
 // sets it; a single client waiting the full window is the point of the default.
 const FILL_TIMEOUT_MS = Number(process.env.ROE_FILL_MS) || 60000;
 
+// How long a dropped player's seat is held for them mid-fight. Long enough to cover a phone
+// moving between networks, short enough that a genuinely gone player is not carried by an idle
+// combatant — their ally is handed to the AI for the gap either way, so nothing stalls.
+const RECONNECT_WINDOW_S = 45;
+
 export class EncounterRoom extends Room {
   onCreate(options) {
     const content = contentById(options?.contentId);
@@ -124,7 +129,7 @@ export class EncounterRoom extends Room {
     // so a party that won't build closes this room only.
     let party;
     try {
-      party = buildPartyFromSeats(this.seats, this.content);
+      party = buildPartyFromSeats(this.seats, this.content, this.seed);
     } catch (e) {
       console.warn("encounter start failed:", e.message);
       this.broadcast("error", { message: "could not start encounter: " + e.message });
@@ -185,22 +190,39 @@ export class EncounterRoom extends Room {
     this.clock.setTimeout(() => this.disconnect(), 4000); // let clients read the result, then dispose
   }
 
-  onLeave(client) {
+  async onLeave(client, consented) {
     const seat = this.seats.find((s) => s.sessionId === client.sessionId);
-    if (seat && !this.started) {
+    if (!seat) return;
+    if (!this.started) {
       // Left while still forming — free the seat and tell the others.
       this.seats = this.seats.filter((s) => s !== seat);
       this.sendLobby();
       return;
     }
-    if (seat && this.started && !this.enc?.cleared && !this.enc?.wiped) {
-      seat.bot = true;
-      seat.intents = [];
-      // Hand the combatant itself back to the AI. Clearing isHuman is the part that matters:
-      // the core lets a human's turn stay open until they tap, so a dropped player's ally
-      // would otherwise stand still for the rest of the fight and stall the party.
-      const ally = this.enc?.allies.find((a) => a.id === seat.allyId);
-      if (ally) ally.isHuman = false;
+    if (this.enc?.cleared || this.enc?.wiped) return;         // fight already over, nothing to hand over
+
+    // Hand the combatant to the AI immediately so the party is not stalled waiting on someone
+    // who may be gone: the core lets a human's turn stay open until they tap, so a dropped
+    // player's ally would otherwise stand still for the rest of the fight.
+    seat.bot = true;
+    seat.intents = [];
+    const ally = this.enc?.allies.find((a) => a.id === seat.allyId);
+    if (ally) ally.isHuman = false;
+
+    // A phone changing network drops the socket without the player choosing to leave. Handing
+    // the seat to a bot permanently meant a two-second blip cost you the rest of the run with no
+    // way back, so hold the seat open and take it back if they return.
+    if (consented) return;                                    // they pressed Leave; do not hold a seat
+    try {
+      await this.allowReconnection(client, RECONNECT_WINDOW_S);
+      seat.sessionId = client.sessionId;                      // may be re-issued on reconnect
+      seat.bot = false;
+      const back = this.enc?.allies.find((a) => a.id === seat.allyId);
+      if (back && !back.down) back.isHuman = true;             // a downed ally stays AI until resurrected
+      console.log(`[room ${this.roomId}] ${seat.name} reconnected → ally ${seat.allyId}`);
+      client.send("assigned", { allyId: seat.allyId, skills: (seat.loadout?.char?.selectedSkills || []).slice(0, 6) });
+    } catch {
+      console.log(`[room ${this.roomId}] ${seat.name} did not return within ${RECONNECT_WINDOW_S}s — ally stays with the AI`);
     }
   }
   onDispose() { this.setSimulationInterval(undefined); if (this._lobbyTimer) this._lobbyTimer.clear(); }

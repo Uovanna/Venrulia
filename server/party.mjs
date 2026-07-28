@@ -11,6 +11,7 @@
 // the earlier hand-written stubs all pointed at BOSS_DEFS.ashen, which made every online run
 // the Ashen Warden regardless of which dungeon you picked.
 import { guildBossDef, SKILLS, buildBotChar, TRINITY_FILL } from "./combat.mjs";
+import { withRng, makeRng } from "./rng.mjs";
 
 const DUNGEONS = [
   { id: "deadmines",  name: "The Sunken Mine",   boss: "Bandit Lord Garrick", minLevel: 15 },
@@ -97,7 +98,18 @@ function botCharFor(role, content, level, name) {
 // and waits on their queued intent instead (see chooseAllyAction / resolveIntent). The array
 // index is the ally id the core assigns ("a0", "a1", …), so the caller can map a seat to its
 // combatant by position — that mapping is how the room routes intents.
-export function buildPartyFromSeats(seats, content) {
+// `seed` makes the bot-fill reproducible. buildBotChar rolls gear through the ambient rng, so
+// without a seed two builds from identical inputs produced different bots and therefore a
+// different fight (measured: 1926 vs 1992 ticks). That broke more than a test: verifyEncounter's
+// whole claim is that a fight replays from (party, boss, seed, timeline), which only holds while
+// the party itself is reproducible. Pass the encounter's own seed and it is.
+export function buildPartyFromSeats(seats, content, seed) {
+  return Number.isFinite(seed)
+    ? withRng(makeRng(seed >>> 0), () => buildPartyInner(seats, content))
+    : buildPartyInner(seats, content);   // unseeded callers keep the old behaviour
+}
+
+function buildPartyInner(seats, content) {
   // Fill the roles the humans have NOT covered, rather than assigning by slot index. Index
   // assignment meant a party whose only human queued as dps got no tank at all — the tank slot
   // was index 0, which the human had taken. Core roles are filled first, then dps.

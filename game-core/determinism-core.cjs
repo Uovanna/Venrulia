@@ -25,6 +25,8 @@ js += `
   // App.jsx-local, which keeps this an integration test of the app's real code path.
   const __core = require(${JSON.stringify(path.join(__dirname, 'combat.mjs').replace(/\\/g, '/'))});
   const createEncounter = __core.createEncounter, stepEncounter = __core.stepEncounter;
+  // buildBotChar / botTier moved into the core too (Stage 5), so they are no longer App.jsx locals.
+  const buildBotChar = __core.buildBotChar, botTier = __core.botTier;
   const party=[
     {char:buildBotChar("warrior","",60,60), role:"tank",   tier:botTier(1800)},
     {char:buildBotChar("paladin","",60,60), role:"healer", tier:botTier(1800)},

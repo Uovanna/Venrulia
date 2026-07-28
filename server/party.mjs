@@ -1,18 +1,16 @@
 // Builds the encounter party from room seats, filling empty slots with disguised bots.
 //
 // Combatants: a seat's `loadout.char` is a full combat-ready character object (the client
-// publishes it on join, same shape the game already uses). Bot seats are built from reference
-// characters of a class that can play the role (see botCharFor). The client's `buildBotChar`
-// — which rolls fresh gear at a content's item level — is still App.jsx-local; extracting it
-// into game-core would let bots scale to the encounter instead of using fixed reference gear.
+// publishes it on join, same shape the game already uses). Bot seats are built by the shared
+// `buildBotChar`, which rolls a character of the right class and spec with gear at the
+// encounter's own item level — so bots scale with the content rather than being fixed 60s.
 
 // Every piece of Guild content, mirroring the client's DUNGEONS / RAIDS / HARD_RAID. Ids match
 // the client's so a room id is stable across both. The boss is built by the SHARED
 // guildBossDef, so an online fight is the same encounter the offline one would have been —
 // the earlier hand-written stubs all pointed at BOSS_DEFS.ashen, which made every online run
 // the Ashen Warden regardless of which dungeon you picked.
-import { readFileSync } from "fs";
-import { guildBossDef, SKILLS } from "./combat.mjs";
+import { guildBossDef, SKILLS, buildBotChar, TRINITY_FILL } from "./combat.mjs";
 
 const DUNGEONS = [
   { id: "deadmines",  name: "The Sunken Mine",   boss: "Bandit Lord Garrick", minLevel: 15 },
@@ -38,7 +36,13 @@ const HARD_RAID = { id: "hr_moltencore", name: "The Molten Heart", boss: "Ignaro
 // and `startsWith("hard")`, so "hard_dungeon" would silently produce a RAID boss.
 const entry = (c, kind, partySize) => {
   const level = c.enemyLvl || (c.minLevel || 60) + 2;
-  return { id: c.id, name: c.name + (kind.startsWith("hard") ? " (Hard)" : ""), kind, partySize, level,
+  // Gear level for bot-fill, mirroring the client's guildLaunch: hard content drops at its own
+  // ilvl, normal dungeons a little above their minimum level.
+  const ilvl = kind === "hard-raid" ? 71
+    : kind === "hard-dungeon" ? (c.dropIlvl || 66)
+    : kind === "raid" ? (c.reqIlvl || 60)
+    : Math.min(63, (c.minLevel || 60) + 3);
+  return { id: c.id, name: c.name + (kind.startsWith("hard") ? " (Hard)" : ""), kind, partySize, level, ilvl,
            boss: guildBossDef(c, kind, level) };
 };
 
@@ -55,16 +59,11 @@ const ROLES = ["tank", "healer", "support", "dps", "dps", "dps"];
 const BOT_NAMES = ["Kaelen", "Sora", "Bran", "Yuki", "Rurik", "Mei", "Torvald", "Aya"];
 
 // Bot-fill used to clone the joining player's character for every empty seat, so a party of
-// warriors would be handed the "healer" and "tank" roles with no heals and no mitigation
-// between them. Bots now come from a class that can actually play the role, with a loadout
-// picked for it — mirroring the client's TRINITY_FILL.
-const ROLE_CLASS = { tank: "warrior", healer: "paladin", support: "mage", dps: "rogue" };
-const REFERENCE = Object.fromEntries(
-  JSON.parse(readFileSync(new URL("./fixtures/party.json", import.meta.url), "utf8"))
-    .map((p) => [p.char.cls, p.char]));
-
-// Score a skill for a role so the bot brings the kit its seat needs. The AI then runs its
-// normal rotation over whatever we hand it.
+// warriors was handed the "healer" and "tank" roles with no heals and no mitigation between
+// them. It then used fixed level-60 reference characters, which trivialised low-level content
+// (a level-17 dungeon boss facing epic-geared 60s). Bots are now BUILT for the encounter:
+// the client's own buildBotChar, now in the shared core, rolls a character of the right class
+// and spec at the content's level and item level.
 const roleScore = (role, s) => {
   const heal = (s.healPct || 0) + (s.hotPct || 0);
   const util = (s.cleanse ? 60 : 0) + (s.wardPct || 0) + (s.empowerPct || 0) + (s.hastePct || 0);
@@ -75,13 +74,16 @@ const roleScore = (role, s) => {
   return dmg;                                             // dps: just the biggest hits
 };
 
-function botCharFor(role, playerChar, name) {
-  const cls = ROLE_CLASS[role] || "rogue";
-  const base = REFERENCE[cls] || playerChar;              // fall back rather than fail a room
-  const level = playerChar.level || base.level || 60;
-  const pool = (SKILLS[base.cls] || []).filter((s) => (s.unlockLevel || 1) <= level);
+// buildBotChar picks a generic loadout, so re-pick for the seat's role — otherwise the
+// "healer" turns up with five damage spells and never heals anybody.
+function botCharFor(role, content, level, name) {
+  const [cls, spec] = TRINITY_FILL[role] || TRINITY_FILL.dps;
+  const bc = buildBotChar(cls, spec, level, content.ilvl || 60);
+  const pool = (SKILLS[cls] || []).filter((s) => (s.unlockLevel || 1) <= level);
   const selected = pool.slice().sort((a, b) => roleScore(role, b) - roleScore(role, a)).slice(0, 5).map((s) => s.name);
-  return { ...base, name, level, selectedSkills: selected.length ? selected : base.selectedSkills };
+  bc.name = name;
+  if (selected.length) bc.selectedSkills = selected;
+  return bc;
 }
 
 // party: [{ char, role, tier, isHuman }] for createRun()
@@ -101,7 +103,7 @@ export function buildPartyFromSeats(seats, content) {
       const template = seats.find((s) => s.loadout && s.loadout.char)?.loadout;
       if (!template) throw new Error("no loadout available to seed a combatant; publish loadout.char on join");
       const role = ROLES[i] || "dps";
-      filled.push({ char: botCharFor(role, template.char, BOT_NAMES[i % BOT_NAMES.length]), role, tier: template.tier });
+      filled.push({ char: botCharFor(role, content, template.char.level || content.level, BOT_NAMES[i % BOT_NAMES.length]), role, tier: template.tier });
       if (seat) seat.bot = true;
     }
   }

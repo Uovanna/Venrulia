@@ -10,9 +10,14 @@
 >   defined `rngPick` / `rngInt` / `makeClock` locally, so the build failed with
 >   "The symbol has already been declared". Those three definitions were removed on adoption.
 >
-> `equivalence.test.mjs` is now tautological — post-cutover the "in-app core" *is* the
-> extracted core, so it compares the module against itself. Its job was done at adoption.
-> **`determinism-core.cjs` remains the live gate** and still reports
+> `equivalence.test.mjs` is **retired**. `equiv_app.cjs` embeds its own frozen copy of the
+> pre-cutover core, so the baseline can never reflect an intentional change: once the group
+> combat log started recording ally casts, the test began reporting DIVERGENCE purely on
+> `logLen` (5 vs 0) while every HP value stayed byte-identical. A test whose baseline cannot
+> move is a false alarm generator, not a gate.
+>
+> **`determinism-core.cjs` is the live gate** — it transpiles the current `App.jsx` and takes
+> the core from the module the app really imports. It still reports
 > `229 | DETERMINISTIC: true | SEED MATTERS: true`.
 
 ## What was done

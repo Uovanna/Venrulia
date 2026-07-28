@@ -3855,7 +3855,12 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     // it renders a live lobby, so players can see each other arrive instead of guessing.
     mpProvider.connectEncounter({ contentId: content.id, char: nc, ilvl, code: partyCode.trim() })
       .then((room) => { setGroupRun({ ...localRun, online: true, room }); setTab("group"); })
-      .catch((e) => { showNotif(`⚠️ Playing offline — ${e?.message || "server unreachable"}`); setGroupRun(localRun); setTab("group"); });
+      .catch((e) => {
+        const why = e?.message || "server unreachable";
+        showNotif(`⚠️ Playing offline — ${why}`);
+        setGroupRun({ ...localRun, offlineReason: why });   // shown on the combat screen, not just a toast
+        setTab("group");
+      });
   };
   // Trinity Trials: 24h lockout each, GDKP reward at the boss's own ilvl
   const startTrial = (bossId) => {
@@ -5787,7 +5792,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           <GroupCombat char={char} commitChar={commitChar} ilvl={groupRun?.ilvl || avgEquippedIlvl(char)}
             bossId={groupRun ? undefined : groupBoss} bossDef={groupRun?.bossDef} party={groupRun?.party}
             label={groupRun?.label} onCleared={onGroupCleared}
-            room={groupRun?.room} myAllyId={groupRun?.myAllyId}
+            room={groupRun?.room} myAllyId={groupRun?.myAllyId} offlineReason={groupRun?.offlineReason}
             onExit={() => { try { groupRun?.room?.leave(); } catch { /* already gone */ } setGroupRun(null); setTab("guild"); }} />
         )}
 
@@ -8047,7 +8052,7 @@ const grpTargetFor = (enc, sk) => {
 // one: the server owns every tick and this renders its snapshots, sending intents instead of
 // mutating state. Everything below the data layer — targeting, the action bar, telegraphs —
 // is identical either way, because both sides run the same game-core.
-function GroupCombat({ char, commitChar, onExit, bossId, bossDef, ilvl, party, onCleared, label, room, myAllyId: myAllyIdProp }) {
+function GroupCombat({ char, commitChar, onExit, bossId, bossDef, ilvl, party, onCleared, label, room, myAllyId: myAllyIdProp, offlineReason }) {
   const networked = !!room;
   // Which combatant is ours arrives with the server's `assigned` message at start, and the
   // lobby tells us who else is waiting. Both are held here so the screen can be opened the
@@ -8140,9 +8145,18 @@ function GroupCombat({ char, commitChar, onExit, bossId, bossDef, ilvl, party, o
     <div style={{ maxWidth: 520, margin: "0 auto", padding: "4px 2px" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
         <button onClick={onExit} style={{ background: "#15132a", border: "1px solid #2a2550", borderRadius: 8, color: "#c9c2e6", fontSize: 12, padding: "6px 12px", cursor: "pointer" }}>← Leave</button>
-        <span style={{ color: "#c8a0ff", fontFamily: "Georgia, serif", fontSize: 15 }}>⚔️ Group Encounter</span>
+        <span style={{ color: "#c8a0ff", fontFamily: "Georgia, serif", fontSize: 15 }}>
+          {networked
+            ? <span style={{ color: "#5fd39a" }} title="Authoritative server — real players">🌐 Online</span>
+            : <span style={{ color: "#c96" }} title={offlineReason || "Local fight with bots"}>🤖 Solo</span>}
+        </span>
         <span style={{ color: "#8a83b8", fontSize: 10 }}>{ROLES[me.role].icon} You: {ROLES[me.role].name}</span>
       </div>
+      {offlineReason && (
+        <div style={{ background: "#2a1a10", border: "1px solid #c96", borderRadius: 9, padding: "7px 10px", marginBottom: 6, color: "#ffb04a", fontSize: 11, lineHeight: 1.4 }}>
+          ⚠️ <b>Offline fight</b> — couldn't reach the game server, so this party is bots. Reason: {offlineReason}
+        </div>
+      )}
       {/* enemies */}
       {enc.enemies.map((en) => { const aggro = enc.allies.find((a) => a.id === en.targetId); const onMe = aggro && isMe(aggro); const sel = target && target.type === "enemy" && target.id === en.id; return (
         <div key={en.id} onClick={() => en.hp > 0 && setTarget({ type: "enemy", id: en.id })} style={{ background: "#160f18", border: `${sel ? 2 : 1}px solid ${sel ? "#ff6b4a" : "#5a2530"}`, borderRadius: 10, padding: "8px 10px", marginBottom: 6, opacity: en.hp <= 0 ? 0.4 : 1, cursor: en.hp > 0 ? "pointer" : "default", boxShadow: sel ? "0 0 8px rgba(255,107,74,0.4)" : "none" }}>

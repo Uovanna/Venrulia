@@ -17,6 +17,7 @@ import { createRun, stepRun, fullSnapshot } from "../sim.mjs";
 import { buildPartyFromSeats, contentById } from "../party.mjs";
 
 const { Room } = colyseus;
+const seatName = (client, options) => `${(options?.name || "Adventurer")}#${client.sessionId.slice(0, 4)}`;
 
 // Colyseus encodes room state with @colyseus/schema, so it must be a Schema instance —
 // handing setState() a plain object makes the first client's join fail to encode.
@@ -87,11 +88,17 @@ export class EncounterRoom extends Room {
       role: options?.role || "dps",
       bot: false,
     });
+    console.log(`[room ${this.roomId}] join ${seatName(client, options)} → ${this.seats.length}/${this.content.partySize} (${this.content.id}${this.code ? ", code " + this.code : ""})`);
     // Start when full, or after the fill window (bot-filled) once at least one human is in.
     if (this.seats.length >= this.content.partySize) this.start();
     else {
       if (!this._fillTimer) this._fillTimer = this.clock.setTimeout(() => this.start(), FILL_TIMEOUT_MS);
-      this.sendLobby();   // so everyone can SEE who has arrived instead of guessing
+      // Broadcast on a ticker rather than only on join. Two reasons: a broadcast issued
+      // during onJoin can miss the very client that is joining (it is not receiving yet), so
+      // a solo player would sit on "Connecting…" and never see a lobby at all; and the
+      // countdown has to actually count down.
+      if (!this._lobbyTimer) this._lobbyTimer = this.clock.setInterval(() => this.sendLobby(), 1000);
+      this.sendLobby();
     }
   }
 
@@ -110,6 +117,7 @@ export class EncounterRoom extends Room {
     if (this.started) return;
     this.started = true;
     if (this._fillTimer) { this._fillTimer.clear(); this._fillTimer = null; }
+    if (this._lobbyTimer) { this._lobbyTimer.clear(); this._lobbyTimer = null; }
     this.lock();
 
     // Fill remaining seats with bots (disguised: player-style names/loadouts), then build the party.
@@ -124,6 +132,7 @@ export class EncounterRoom extends Room {
       this.disconnect();
       return;
     }
+    console.log(`[room ${this.roomId}] START ${this.content.id} — ${this.seats.filter((s) => !s.bot).length} human(s), ${party.length} total`);
     this.enc = createRun({ party, boss: this.content.boss, seed: this.seed });
     this.state.phase = "combat"; // mutate: setState() would swap the encoder out mid-room
     this.timeline = [];          // recorded intents, so the fight can be replayed and validated
@@ -187,7 +196,7 @@ export class EncounterRoom extends Room {
       if (ally) ally.isHuman = false;
     }
   }
-  onDispose() { this.setSimulationInterval(undefined); }
+  onDispose() { this.setSimulationInterval(undefined); if (this._lobbyTimer) this._lobbyTimer.clear(); }
 }
 
 /*

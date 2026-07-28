@@ -1403,6 +1403,30 @@ const GEAR_SLOTS = [
   { id: "relic", name: "Relic", icon: "🔱" },
 ];
 const LOOT_SLOTS = GEAR_SLOTS.filter((s) => s.id !== "relic");
+
+// How often each slot is the one that drops. Every drop site used to pick uniformly, so a weapon
+// — measured at 3.7x the damage value of any armour piece, because it is the only slot carrying a
+// damage range rather than a stat spread — was exactly as common as a pair of boots. The slot a
+// player actually wants was never the slot they had to chase.
+//
+// Weights are inverse to how much a slot is worth, softened: pricing weapons at a strict 1/3.7
+// would put them under 3% of drops and turn the whole game into waiting for one item. Boots and
+// gloves are the filler that keeps a bad session from feeling empty.
+const SLOT_DROP_WEIGHT = {
+  weapon: 0.4,                                    // ~4% of drops — the chase item
+  trinket: 0.7, ring: 0.8,                        // no armour, pure secondaries
+  offhand: 1.0,
+  head: 1.1, chest: 1.1, legs: 1.1,               // the big armour pieces
+  shoulder: 1.2, hands: 1.2, feet: 1.2,           // filler
+};
+// One weighted picker for every drop site. `pick(LOOT_SLOTS)` was repeated at eight call sites
+// across the client and the core, which is eight places to forget when scarcity changes.
+const pickLootSlot = () => {
+  const w = LOOT_SLOTS.map((s) => SLOT_DROP_WEIGHT[s.id] ?? 1);
+  let r = rng() * w.reduce((a, b) => a + b, 0), i = 0;
+  while (r >= w[i] && i < w.length - 1) { r -= w[i]; i++; }
+  return LOOT_SLOTS[i].id;
+};
 const emptyEquipment = () => GEAR_SLOTS.reduce((acc, s) => { acc[s.id] = null; return acc; }, {});
 function generateItem(ilvl, rarity, slotId, clsId) {
   ilvl = Math.max(1, Math.floor(ilvl));
@@ -1568,7 +1592,7 @@ const rollGuildLoot = ({ ilvl, count = 1, clsIds = [], legendaryChance = 0, seed
     for (let i = 0; i < count; i++) {
       const leg = legendaryChance > 0 && rng() < legendaryChance;
       const cls = clsIds.length ? rngPick(clsIds) : "warrior";
-      out.push(generateItem(ilvl, rarityById(leg ? "legendary" : "epic"), rngPick(LOOT_SLOTS).id, cls));
+      out.push(generateItem(ilvl, rarityById(leg ? "legendary" : "epic"), pickLootSlot(), cls));
     }
     return out;
   };
@@ -2101,6 +2125,8 @@ export {
   secondaryWeight,
   pickSlotSecondary,
   SEC_SIZE,
+  SLOT_DROP_WEIGHT,
+  pickLootSlot,
   hasteOf,
   critHeal,
   secPct,

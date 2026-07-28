@@ -172,6 +172,7 @@ import {
   hasteOf,
   pickSlotSecondary,
   SEC_SIZE,
+  pickLootSlot,
   gdkpBotCeiling,
   // These used to be defined a SECOND time in App.jsx. Nothing forced the two copies to agree,
   // so the client and the authoritative server could silently run different rules — which is
@@ -912,8 +913,8 @@ function rollLoot({ level, isBoss, dungeonId, guaranteed, clsId, dropMult = 1 })
   // Normal mode caps at ilvl 63 (Blighted Marches); the raid always drops ilvl 64 → lets you reach avg 64 for Hard Mode.
   const ilvl = isRaid ? 64 : Math.max(1, Math.min(63, Math.round(level + (Math.random() * 4 - 1))));
   const rar = () => (dungeonId ? rollRarityForDungeon(dungeonId) : rollRarityForZone(level));
-  items.push(generateItem(ilvl, rar(), pick(LOOT_SLOTS).id, clsId));
-  if (isBoss && Math.random() < 0.5) items.push(generateItem(isRaid ? 64 : Math.min(63, ilvl + 1), rar(), pick(LOOT_SLOTS).id, clsId));
+  items.push(generateItem(ilvl, rar(), pickLootSlot(), clsId));
+  if (isBoss && Math.random() < 0.5) items.push(generateItem(isRaid ? 64 : Math.min(63, ilvl + 1), rar(), pickLootSlot(), clsId));
   return items;
 }
 
@@ -2724,7 +2725,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       const rate = (b.hardKind === "zone" ? 0.10 : 0.6) * (enemy.isBoss || enemy.isLord ? 1.6 : 1) * (1 + townBonuses(nc).drop);
       if (Math.random() < rate && !(guildRunRef.current && (enemy.isBoss || enemy.hardBoss))) { // Guild boss gear is awarded through the GDKP bid, not auto-looted
         const rar = b.dropIlvl >= 70 ? rollRarityForDungeon("stratholme") : rollRarityForZone(60);
-        nc = grantLoot(nc, [generateItem(b.dropIlvl, rar, pick(LOOT_SLOTS).id, nc.cls)]);
+        nc = grantLoot(nc, [generateItem(b.dropIlvl, rar, pickLootSlot(), nc.cls)]);
       }
       nc = grantGem(nc, rollGem({ level: enemy.level, isBoss: enemy.isBoss || enemy.isLord, dungeonId: "stratholme", dropMult: 1 + townBonuses(nc).drop }));
       // progression tracking
@@ -2861,8 +2862,8 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     if (res.battle === null && guildRunRef.current && (bSnap.mode === "dungeon" || bSnap.mode === "hard") && bSnap.hardKind !== "zone") {
       const gr = guildRunRef.current; guildRunRef.current = null;
       const floor = rarityById("epic");
-      const items = [generateItem(gr.ilvl, floor, pick(LOOT_SLOTS).id, res.char.cls)];
-      if (gr.raid) items.push(generateItem(gr.ilvl, floor, pick(LOOT_SLOTS).id, res.char.cls)); // raids drop two
+      const items = [generateItem(gr.ilvl, floor, pickLootSlot(), res.char.cls)];
+      if (gr.raid) items.push(generateItem(gr.ilvl, floor, pickLootSlot(), res.char.cls)); // raids drop two
       setGuildBid({ items, party: gr.party });
     }
   };
@@ -3492,7 +3493,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     const items = [];
     for (let i = 0; i < n; i++) {
       const leg = run.trial && Math.random() < TRIAL_LEGENDARY_CHANCE;
-      items.push(generateItem(run.ilvl, rarityById(leg ? "legendary" : "epic"), pick(LOOT_SLOTS).id, c.cls));
+      items.push(generateItem(run.ilvl, rarityById(leg ? "legendary" : "epic"), pickLootSlot(), c.cls));
     }
     setGuildBid({ items, party: run.bidParty });
   };
@@ -8052,8 +8053,8 @@ function MultiplayerHub({ char, commitChar, showNotif, onExit, onStartRated }) {
     if (encRef.current && encRef.current._done) return; if (encRef.current) encRef.current._done = true;
     if (!win) { setPhase("done"); setRewardMsg("The party wiped — no loot this time. Regroup and try again."); return; }
     const floor = content.kind === "raid" ? "epic" : (content.ilvl >= 60 ? "epic" : "rare");
-    const drops = [generateItem(content.ilvl, rarityById(floor), pick(LOOT_SLOTS).id, char.cls)];
-    if (content.kind === "raid") drops.push(generateItem(content.ilvl, rarityById("epic"), pick(LOOT_SLOTS).id, char.cls));
+    const drops = [generateItem(content.ilvl, rarityById(floor), pickLootSlot(), char.cls)];
+    if (content.kind === "raid") drops.push(generateItem(content.ilvl, rarityById("epic"), pickLootSlot(), char.cls));
     openBid(drops, 0);
   };
 

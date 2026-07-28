@@ -1,4 +1,8 @@
 # Game-core extraction manifest (Phase 0)
+
+> **Historical.** The extraction described here is done — `combat.mjs` exists and `src/App.jsx`
+> imports it. Kept as the record of what was lifted and why. The live picture is in
+> `README.md`; do not treat the future tense below as outstanding work.
 The deterministic combat core is the transitive module-scope closure of the roots `applySkillCore`, `stepEncounter`, `createEncounter`, `chooseAllyAction`, `applyAllyAction`.
 
 **155 symbols** to lift out of `App.jsx` into `game-core/` — all pure, all React-free, all already deterministic (seeded `rng()` + injected `now`/`dt`). Listed in source order (dependencies first).

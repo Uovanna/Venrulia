@@ -165,6 +165,17 @@ import {
   gambitCondMet,
   executeThreshold,
   migrateGambitKeys,
+  // These used to be defined a SECOND time in App.jsx. Nothing forced the two copies to agree,
+  // so the client and the authoritative server could silently run different rules — which is
+  // exactly how normalizeChar lost the gambit slot migration. One definition now, imported.
+  RARITIES,
+  rarityById,
+  GEAR_SLOTS,
+  LOOT_SLOTS,
+  generateItem,
+  emptyEquipment,
+  createCharacter,
+  normalizeChar,
   mainStatsOf,
   migrateItem,
   migrateSpec,
@@ -224,16 +235,6 @@ const statWeight = (clsId, stat) => {
 
 
 // ---------- RARITIES ----------
-const RARITIES = [
-  { id: "poor", name: "Poor", color: "#9d9d9d", power: 1, valueMult: 0.4, weight: 26 },
-  { id: "common", name: "Common", color: "#ffffff", power: 2, valueMult: 1.0, weight: 40 },
-  { id: "uncommon", name: "Uncommon", color: "#1eff00", power: 4, valueMult: 3.0, weight: 22 },
-  { id: "rare", name: "Rare", color: "#0070dd", power: 7, valueMult: 8.0, weight: 9 },
-  { id: "epic", name: "Epic", color: "#a335ee", power: 15, valueMult: 22.0, weight: 2.5 },
-  { id: "legendary", name: "Legendary", color: "#ff8000", power: 24, valueMult: 60.0, weight: 0.5 },
-  { id: "artifact", name: "Artifact", color: "#c8102e", power: 24, valueMult: 60.0, weight: 0 }, // deep red; never drops — purchased with Ven
-];
-const rarityById = (id) => RARITIES.find((r) => r.id === id) || RARITIES[1];
 
 // ---------- ARTIFACT GEAR (Ven "top-up" reward — weapon & off-hand only) ----------
 // Artifacts re-forge as you level rather than being replaced: ilvl = max(40, level + 5). That gives
@@ -245,7 +246,6 @@ const rarityById = (id) => RARITIES.find((r) => r.id === id) || RARITIES[1];
 // normal mode's ilvl-63 ceiling and clearly outclassed by Hard Mode's ilvl 65+. Rolls at legendary magnitude.
 const ARTIFACT_BASE_ILVL = 40;
 const ARTIFACT_TAPER_LEVEL = 50; // growth halves past this level
-const ARTIFACT_SLOTS = ["weapon", "offhand"];
 const artifactIlvl = (level) => {
   const l = level || 1;
   return l <= ARTIFACT_TAPER_LEVEL
@@ -301,28 +301,13 @@ function GameIcon({ icon, imgKey, size = 28, rounded = true, style }) {
 }
 
 // ---------- GEAR SLOTS ----------
-const GEAR_SLOTS = [
-  { id: "head", name: "Head", icon: "🪖" },
-  { id: "shoulder", name: "Shoulder", icon: "🧣" },
-  { id: "chest", name: "Chest", icon: "👕" },
-  { id: "hands", name: "Hands", icon: "🧤" },
-  { id: "legs", name: "Legs", icon: "👖" },
-  { id: "feet", name: "Feet", icon: "🥾" },
-  { id: "weapon", name: "Weapon", icon: "⚔️" },
-  { id: "offhand", name: "Off-hand", icon: "🛡️" },
-  { id: "ring", name: "Ring", icon: "💍" },
-  { id: "trinket", name: "Trinket", icon: "🔮" },
-  { id: "relic", name: "Relic", icon: "🔱" },
-];
 
 // Relics are rare, gameplay-altering items (one per applicable dungeon). Not enchantable, no random stats.
 const RELICS = [
   { id: "miners_charm", name: "Miner's Charm", icon: "⛏️", dungeonId: "deadmines", color: "#e0a955", desc: "Mining “Smash” cooldown −1s · 50% chance for double ore when manually mining." },
   { id: "verdant_idol", name: "Verdant Idol", icon: "🌿", dungeonId: "scarlet", color: "#5fd35f", desc: "Herbalism “Harvest” cooldown −1s · 50% chance for double herbs when manually harvesting." },
 ];
-const relicById = (id) => RELICS.find((r) => r.id === id);
 const relicForDungeon = (dungeonId) => RELICS.find((r) => r.dungeonId === dungeonId);
-const LOOT_SLOTS = GEAR_SLOTS.filter((s) => s.id !== "relic"); // relics never drop as random loot
 const makeRelic = (def, ilvl) => ({ id: uid(), name: def.name, slotId: "relic", icon: def.icon, rarity: "legendary", ilvl: null, relicId: def.id, relicDesc: def.desc, relicColor: def.color, stats: {}, enchant: null });
 
 
@@ -611,19 +596,6 @@ const MATERIALS = {
   ...ENCHANT_STATS.reduce((m, s) => { m[statDustId(s)] = { name: STAT_DUST_META[s].name, icon: STAT_DUST_META[s].icon, color: STAT_DUST_META[s].color }; return m; }, {}),
 };
 const ARMOR_CRAFT_SLOTS = ["weapon", "head", "shoulder", "chest", "hands", "legs", "feet", "offhand", "trinket"];
-// crafted rarity by skill rank; Rich Ore bumps +1 tier
-const craftRarityIdx = (skill) => (skill < 60 ? 1 : skill < 130 ? 2 : skill < 210 ? 3 : skill < 290 ? 4 : 5);
-// average rarity index of currently equipped gear (rounded)
-const equippedRarityIdxAvg = (c) => {
-  const items = Object.values(c.equipment || {}).filter(Boolean);
-  if (!items.length) return 1;
-  const sum = items.reduce((s, it) => s + Math.max(0, RARITIES.findIndex((r) => r.id === it.rarity)), 0);
-  return Math.round(sum / items.length);
-};
-// armorsmith craft rarity: average equipped rarity, or one step higher when using Rich Ore.
-// Never produces legendary (gold) and never below common.
-const armorCraftIdx = (c, useRich) => clamp(equippedRarityIdxAvg(c) + (useRich ? 1 : 0), 1, 4);
-const enchantStatValue = (ilvl, rarityIdx) => Math.max(1, Math.round((1 + ilvl * 0.2) * (1 + rarityIdx * 0.4)));
 
 // ---------- SKILLS (active abilities) ----------
 // Skill effect model. A skill may carry any combination of:
@@ -675,8 +647,6 @@ const MAX_SKILL_SLOTS = SKILL_SLOT_LEVELS.length;
 
 // every class skill unlocks purely by reaching its level — the choice is which ones you slot
 
-// every skill of the character's class, learned or not (for the training UI)
-const fullSkillPool = (char) => classSkills(char.cls).filter((s) => specVisible(char, s));
 
 // Only skills actually slotted on your bar can be cast — Gambits must never fire an unequipped ability.
 const equippedSkills = (char) => (char.selectedSkills || []).map((n) => skillByName(char, n)).filter(Boolean);
@@ -803,81 +773,6 @@ const enchantAmount = (stat, enchLevel) => { const cap = enchantCap(stat); const
 // back-fill inherent armor / weapon range onto items from older saves
 
 
-function generateItem(ilvl, rarity, slotId, clsId) {
-  ilvl = Math.max(1, Math.floor(ilvl));
-  // Rarity floors: Epic requires ilvl 60+, Legendary requires ilvl 64+ (applies to drops, crafting, and the Auction House)
-  if (rarity.id === "legendary" && ilvl < 64) rarity = rarityById(ilvl >= 60 ? "epic" : "rare");
-  if (rarity.id === "epic" && ilvl < 60) rarity = rarityById("rare");
-  const slot = slotById(slotId);
-  let base = pick(ITEM_BASES[slotId] || ["Trinket"]);
-  if (slotId === "weapon" && clsId === "hunter") base = pick(HUNTER_WEAPONS);
-  const isWeapon = slotId === "weapon";
-
-  const rarityIdx = RARITIES.findIndex((r) => r.id === rarity.id);
-  // Dramatically squished values: small numbers, gentle rarity curve. World-zone gear gives
-  // modest boosts; notable upgrades come from the higher rarities dropped by dungeons & raids.
-  const perStat = Math.max(1, Math.round((1 + ilvl * 0.05) * (RARITY_STAT_MULT[rarityIdx] || 1)));
-  const secBase = Math.max(1, Math.round(perStat * 0.7));
-  const stats = { str: 0, agi: 0, int: 0, sta: 0, armor: 0, dmg: 0, leech: 0, resil: 0, vers: 0, cdr: 0, csd: 0, ap: 0, sp: 0 };
-
-  // ----- MAIN stats (str/agi/int) -----
-  // Always 1 main stat. Purple & Gold have a 50% chance to roll a SECOND main stat, which
-  // replaces one secondary slot (rather than being guaranteed). The class scaling is unchanged.
-  const BASE_STATS = ["str", "agi", "int"];
-  // Any primary stat can drop on any gear — classes no longer gate the main stat.
-  const firstMain = pick(BASE_STATS);
-  const mainStats = [firstMain];
-
-  // ----- SECONDARY stats (armor is now inherent base Armor; weapon damage is a range) -----
-  const SIZE = { sta: 1.0, leech: 0.5, vers: 0.5, resil: 0.5, cdr: 0.5, csd: 0.5 }; // non-stamina weights reset & unified
-  // White 1, Green 2, Blue 3, Purple 3, Gold 4 (Poor 0) — Purple & Gold each dropped one line.
-  let secondaryCount = [0, 1, 2, 3, 3, 4, 4][rarityIdx] ?? 1; // artifact matches legendary
-
-  // Purple & Gold: 50% chance for a 2nd random main stat, replacing one secondary slot
-  if (rarityIdx >= 4 && Math.random() < 0.5) {
-    mainStats.push(pick(BASE_STATS.filter((k) => k !== firstMain)));
-    secondaryCount = Math.max(0, secondaryCount - 1);
-  }
-  mainStats.forEach((k) => { stats[k] += perStat; });
-
-  const pool = ["sta", "leech", "vers", "resil", "cdr", "csd"];
-  const chosen = [];
-  if (secondaryCount === 1) {
-    // gear with a single secondary: ~50% Stamina
-    chosen.push(Math.random() < 0.5 ? "sta" : pick(pool.filter((k) => k !== "sta")));
-  } else {
-    const avail = [...pool];
-    for (let i = 0; i < secondaryCount && avail.length; i++) {
-      const weights = avail.map((k) => (k === "sta" ? 3 : 1)); // stamina favored
-      const total = weights.reduce((a, b) => a + b, 0);
-      let r = Math.random() * total, idx = 0;
-      while (r >= weights[idx]) { r -= weights[idx]; idx++; }
-      chosen.push(avail[idx]); avail.splice(idx, 1);
-    }
-  }
-  chosen.forEach((k) => { stats[k] += Math.max(1, Math.round(secBase * (SIZE[k] || 0.5))); });
-
-  // inherent Armor on all non-weapon gear; weapons instead carry a damage range
-  if (!isWeapon) stats.armor += baseArmorFor(ilvl, rarityIdx, slotId);
-  const wdmg = isWeapon ? weaponRangeFor(ilvl, rarityIdx) : null;
-
-  // ----- POWER AFFIX: focused (single main stat) endgame gear carries flat damage -----
-  // Worth exactly one extra main stat (damage converts at statVal * 1.4), so a focused piece is
-  // the equal of a dual-stat piece for a build that only uses one stat.
-  const mains = MAIN_KEYS.filter((k) => stats[k] > 0);
-  let powerKind = null;
-  if (mains.length === 1 && ilvl >= POWER_AFFIX_MIN_ILVL) {
-    powerKind = mains[0] === "int" ? "sp" : "ap"; // Str/Agi → Attack Power, Int → Spell Power
-    stats[powerKind] += Math.max(1, Math.round(perStat * POWER_PER_STAT));
-  }
-
-  // ----- name states the main stats outright (see MAIN_SUFFIXES); the prefix flags the Power type -----
-  const prefix = powerKind ? (powerKind === "ap" ? "Brutal" : "Arcane") : PREFIXES[clamp(rarityIdx * 2 + Math.floor(Math.random() * 2), 0, PREFIXES.length - 1)];
-  const name = nameWithSuffix(`${prefix} ${base}`, mains);
-  const value = Math.max(1, Math.round(ilvl * rarity.valueMult * (0.8 + Math.random() * 0.4)));
-
-  return { id: uid(), name, slotId, icon: slot.icon, rarity: rarity.id, ilvl, stats, value, enchant: null, wdmg, mains, sockets: emptySockets(socketCountFor(rarity.id, slotId)) };
-}
 
 // Forge an artifact. `existing` re-forges in place on level-up, preserving the item's identity
 // (name + which secondaries it rolled) while its magnitudes scale with the new ilvl.
@@ -953,7 +848,6 @@ const rerollRange = (ilvl, rarityId, stat) => { const n = secNominal(ilvl, rarit
 const rollRerollValue = (ilvl, rarityId, stat) => { const [lo, hi] = rerollRange(ilvl, rarityId, stat); return lo + Math.floor(Math.random() * (hi - lo + 1)); };
 const temperCost = (targetRank) => TEMPER_CFG.cost[targetRank] || 0;
 const rerollCost = (rerollsDone) => { const { start, max, rampRolls } = TEMPER_CFG.reroll; const n = Math.min(rerollsDone, rampRolls - 1); return Math.round(start + (max - start) * (n / (rampRolls - 1))); };
-const temperBonusAt = (rank) => (rank >= 10 ? 15 : Math.max(0, rank)); // clean-run cumulative per line (no fail-stack doubling)
 const doubleChanceFor = (stacks) => Math.min(1, (stacks || 0) * TEMPER_CFG.failStackPct);
 // lazily capture an item's secondary lines + temper fields (base stats → discrete lines) on first shop use
 function ensureTemperData(it) {
@@ -1152,7 +1046,6 @@ const BUFF_META = {
 };
 
 // ---------- TALENT TREES (WoW: WoD-style — one row per tier, pick 1 of 3) ----------
-const TALENT_LEVELS = [10, 20, 30, 40, 50, 60];
 const TALENT_RESPEC_COST = 150; // gold per row change
 // Shared talent rows 10-50 (the old level-60 Signature row is now the Specialization system)
 
@@ -1279,17 +1172,6 @@ const ROLES = {
 };
 
 
-// New skill effect fields the GROUP engine (Phase 3) reads — inert in solo except their `mult` damage:
-//   heal: <frac>        single-target ally heal, fraction of the caster's healing power
-//   healAoe: <frac>     heals the whole party
-//   hot / hotDur        heal-over-time
-//   offheal: <frac>     minor party heal (support)
-//   threatMult: <x>     multiplies threat generated by this cast (tank threat)
-//   taunt: true         forces enemies to target the caster
-//   interrupt: true     cancels an enemy's active cast
-//   partyHastePct/Dur, partyWardPct/Dur, partyEmpowerPct/Dur   raid-wide buffs
-const GROUP_SKILL_FIELDS = ["heal", "healAoe", "hot", "offheal", "threatMult", "taunt", "interrupt", "partyHastePct", "partyWardPct", "partyEmpowerPct"];
-const isGroupSkill = (sk) => !!sk && GROUP_SKILL_FIELDS.some((f) => sk[f] != null);
 
 // ---------- LEGENDARY POWER GEMS ----------
 // The old class-signature "Soul" gems are retired. Legendary gems now grant powerful, STACKING
@@ -1505,156 +1387,13 @@ const savesSummary = (arr) => {
   return `${list.length} character${list.length === 1 ? "" : "s"} · top: ${top.name || "?"} Lv${top.level || 1}`;
 };
 
-const emptyEquipment = () => GEAR_SLOTS.reduce((acc, s) => { acc[s.id] = null; return acc; }, {});
 
 // ---------- starting gear (gray/poor tier, class-appropriate) ----------
 
 
 
 
-const createCharacter = (name, cls, race) => {
-  const c = {
-    id: uid(),
-    name, cls, race,
-    level: 1, xp: 0, gold: 150, kills: 0, bossKills: 0, dungeonClears: 0,
-    honor: 0, honorXp: 0, attrPoints: 0, allocated: { str: 0, agi: 0, int: 0, sta: 0 },
-    currentZoneId: "elwynn",
-    offlineZoneId: null,
-    lastActive: Date.now(),
-    professions: emptyProfessions(),
-    gatherTier: {},
-    unlockedSkills: [SKILLS[cls][0].name],
-    spec: null,
-    talents: {},
-    talentChanges: 0,
-    skillMods: {},
-    specLoadouts: {},
-    skillModRefunds: 0,
-    hardKills: {}, hardBossKills: {}, hardZoneDone: {}, hardDungeonDone: {},
-    gambits: { owned: {}, shards: {}, rules: {}, slots: {}, general: [], generalSlots: 2 },
-    gems: {},
-    talentTutorialDone: false,
-    selectedSkills: [SKILLS[cls][0].name],
-    stats: { ...CLASSES.find((c) => c.id === cls).stats },
-    equipment: { ...emptyEquipment(), ...starterGear(cls) },
-    inventory: [generateItem(3, RARITIES.find((r) => r.id === "common"), "head", cls)], // a white upgrade for the tutorial
-    materials: {},
-    autoEquip: true,
-    autoSellDowngrades: false,
-    upgrades: { autoPotion: false },
-    autoSkills: {},
-    autoSkillsOwned: {},
-    redeemed: {},
-    dungeonRuns: {},
-    raidCooldowns: {},
-    guildDungeonRuns: {}, guildRaidCooldowns: {}, trialCooldowns: {}, // Guild lockouts, independent of solo
-    ahRefreshes: [],
-    ahListings: [],
-    ahMeta: { lastSweep: 0 },
-    mail: [],
-    failStacks: 0,
-    consumables: {},
-    supplies: {},
-    drops: {},
-    killsByType: {},
-    town: { buildings: {}, build: null },
-    ven: 0,
-    mp: { ladderBest: null, rated: { wins: 0, losses: 0, start: Date.now() }, lifetime: { wins: 0, losses: 0 } },
-    arenaTokens: 0,
-    tickets: { dungeonReset: 0, arenaChallenge: 0 },
-    auras: { xp: 0, gold: 0 },
-    quests: { board: [] },
-    tutorial: { step: 0, done: false },
-    buffs: {},
-    hp: 0,
-    createdAt: Date.now(),
-    lastSaved: Date.now(),
-  };
-  c.hp = maxHpFor(c);
-  return c;
-};
 
-// migrate / fill defaults so old saves never crash
-const normalizeChar = (c) => ({
-  ...c,
-  gold: c.gold || 0, kills: c.kills || 0, bossKills: c.bossKills || 0, dungeonClears: c.dungeonClears || 0,
-  honor: c.honor || 0, honorXp: c.honorXp || 0, attrPoints: c.attrPoints || 0, allocated: { str: 0, agi: 0, int: 0, sta: 0, ...(c.allocated || {}) },
-  professions: { ...emptyProfessions(), ...(c.professions || {}) },
-  gatherTier: c.gatherTier || {},
-  offlineZoneId: c.offlineZoneId ?? null,
-  lastActive: c.lastActive || Date.now(),
-  // Skills are purely level-gated, so derive the known list from level. This also
-  // migrates saves made before skills were renamed (old names no longer match).
-  unlockedSkills: (SKILLS[c.cls] || []).filter((s) => s.unlockLevel <= (c.level || 1)).map((s) => s.name),
-  secondaryClass: undefined, // dual-classing retired → drop the stale field on next save
-  spec: (() => {
-    const cs = migrateSpec(c.spec);
-    if (cs && specById(cs) && specClassOf(cs) === c.cls) return cs;
-    const old60 = c.talents && c.talents[60]; // migrate a pre-existing level-60 talent pick into the Specialization
-    if (old60 && specById(migrateSpec(old60)) && specClassOf(migrateSpec(old60)) === c.cls) return migrateSpec(old60);
-    return null;
-  })(),
-  talents: (c.talents && typeof c.talents === "object") ? c.talents : {},
-  talentChanges: c.talentChanges || 0,
-  skillMods: (c.skillMods && typeof c.skillMods === "object") ? c.skillMods : {},
-  specLoadouts: (c.specLoadouts && typeof c.specLoadouts === "object") ? c.specLoadouts : {}, // per-Specialization saved templates
-  skillModRefunds: c.skillModRefunds || 0,
-  equipment: Object.fromEntries(Object.entries(c.equipment || {}).map(([k, it]) => [k, it && !Array.isArray(it.sockets) ? { ...it, sockets: emptySockets(socketCountFor(it.rarity, it.slotId)) } : it])),
-  inventory: (c.inventory || []).map((it) => (it && !Array.isArray(it.sockets) ? { ...it, sockets: emptySockets(socketCountFor(it.rarity, it.slotId)) } : it)),
-  gems: (c.gems && typeof c.gems === "object") ? c.gems : {},
-  tomes: undefined, learnedSkills: undefined, // retired: every skill now unlocks by level
-  // Gambit rules used to be keyed by skill NAME and are now keyed by bar SLOT. Migrate against
-  // the INCOMING selectedSkills (c.selectedSkills, not the recomputed one below) — that is the bar
-  // the old rules were written against. Without this every existing player's gambits go silent,
-  // because the evaluator only looks up rules[1..5].
-  gambits: (c.gambits && typeof c.gambits === "object") ? { owned: c.gambits.owned || {}, shards: c.gambits.shards || {}, rules: migrateGambitKeys(c.gambits.rules, c.selectedSkills), slots: migrateGambitKeys(c.gambits.slots, c.selectedSkills), general: Array.isArray(c.gambits.general) ? c.gambits.general : [], generalSlots: c.gambits.generalSlots || 2 } : { owned: {}, shards: {}, rules: {}, slots: {}, general: [], generalSlots: 2 },
-  hardKills: (c.hardKills && typeof c.hardKills === "object") ? c.hardKills : {},
-  hardBossKills: (c.hardBossKills && typeof c.hardBossKills === "object") ? c.hardBossKills : {},
-  hardZoneDone: (c.hardZoneDone && typeof c.hardZoneDone === "object") ? c.hardZoneDone : {},
-  hardDungeonDone: (c.hardDungeonDone && typeof c.hardDungeonDone === "object") ? c.hardDungeonDone : {},
-  talentTutorialDone: !!c.talentTutorialDone,
-  selectedSkills: (() => {
-    let spec = (migrateSpec(c.spec) && specById(migrateSpec(c.spec)) && specClassOf(migrateSpec(c.spec)) === c.cls) ? migrateSpec(c.spec) : null;
-    if (!spec) { const old60 = c.talents && c.talents[60]; if (old60 && specById(migrateSpec(old60)) && specClassOf(migrateSpec(old60)) === c.cls) spec = migrateSpec(old60); }
-    const sig = spec ? specSkillNames(spec) : [];
-    const base = (c.selectedSkills || c.unlockedSkills || []).filter((n) => !ALL_SPEC_SKILL_NAMES.has(n) || sig.includes(n)); // drop signature skills from other specs
-    return padSelectedSkills({ cls: c.cls, level: c.level || 1, spec }, [...sig, ...base]);
-  })(),
-  equipment: (() => { const eq = { ...emptyEquipment(), ...(c.equipment || {}) }; for (const k in eq) eq[k] = migrateItem(eq[k]); return eq; })(),
-  inventory: (c.inventory || []).map(migrateItem),
-  materials: (() => { const m = { ...(c.materials || {}) }; delete m.poisonHerb; if (m.ore) { m.copper = (m.copper || 0) + m.ore; delete m.ore; } if (m.richOre) { m.iron = (m.iron || 0) + m.richOre; delete m.richOre; } if (m.herb) { m.bluepetal = (m.bluepetal || 0) + m.herb; delete m.herb; } if (m.healingHerb) { m.sunblossom = (m.sunblossom || 0) + m.healingHerb; delete m.healingHerb; } return m; })(),
-  autoEquip: c.autoEquip !== undefined ? c.autoEquip : true,
-  autoSellDowngrades: c.autoSellDowngrades || false,
-  upgrades: { autoPotion: false, ...(c.upgrades || {}) },
-  autoSkills: Object.fromEntries(Object.entries(c.autoSkills || {}).filter(([k]) => (SKILLS[c.cls] || []).some((s) => s.name === k))),
-  autoSkillsOwned: Object.fromEntries(Object.entries(c.autoSkillsOwned || {}).filter(([k]) => (SKILLS[c.cls] || []).some((s) => s.name === k))),
-  redeemed: c.redeemed || {},
-  dungeonRuns: c.dungeonRuns || {},
-  raidCooldowns: c.raidCooldowns || {},
-  guildDungeonRuns: c.guildDungeonRuns || {},
-  guildRaidCooldowns: c.guildRaidCooldowns || {},
-  trialCooldowns: c.trialCooldowns || {},
-  ahRefreshes: c.ahRefreshes || [],
-  ahListings: Array.isArray(c.ahListings) ? c.ahListings : [],
-  ahMeta: (c.ahMeta && typeof c.ahMeta === "object") ? { lastSweep: c.ahMeta.lastSweep || 0 } : { lastSweep: 0 },
-  mail: Array.isArray(c.mail) ? c.mail : [],
-  failStacks: typeof c.failStacks === "number" ? c.failStacks : 0,
-  supplies: c.supplies || {},
-  drops: c.drops || {},
-  kills: typeof c.kills === "number" ? c.kills : 0,
-  killsByType: c.killsByType || (c.kills && typeof c.kills === "object" ? c.kills : {}),
-  town: (c.town && typeof c.town === "object") ? { buildings: c.town.buildings || {}, build: c.town.build || null } : { buildings: {}, build: null },
-  ven: c.ven || 0,
-  mp: { ladderBest: (c.mp && c.mp.ladderBest) || null, rated: { wins: (c.mp && c.mp.rated && c.mp.rated.wins) || 0, losses: (c.mp && c.mp.rated && c.mp.rated.losses) || 0, start: (c.mp && c.mp.rated && c.mp.rated.start) || Date.now() }, lifetime: { wins: (c.mp && c.mp.lifetime && c.mp.lifetime.wins) || 0, losses: (c.mp && c.mp.lifetime && c.mp.lifetime.losses) || 0 } },
-  arenaTokens: c.arenaTokens || 0,
-  tickets: { dungeonReset: (c.tickets && c.tickets.dungeonReset) || 0, arenaChallenge: (c.tickets && c.tickets.arenaChallenge) || 0 },
-  auras: { xp: (c.auras && c.auras.xp) || 0, gold: (c.auras && c.auras.gold) || 0 },
-  quests: { board: (c.quests && c.quests.board) || [] },
-  tutorial: c.tutorial || { step: 0, done: (c.level || 1) > 1 || (c.kills || 0) > 0 },
-  consumables: (() => { const src = c.consumables || {}; const out = {}; const t = Math.min(6, Math.max(0, Math.floor((c.level || 1) / 10))); for (const k in src) { const v = src[k]; if (!v) continue; if (k.includes("@")) out[k] = (out[k] || 0) + v; else out[k + "@" + t] = (out[k + "@" + t] || 0) + v; } return out; })(),
-  buffs: c.buffs || {},
-  hp: typeof c.hp === "number" ? c.hp : maxHpFor(c),
-});
 
 // ============================================================
 // SHARED UI COMPONENTS
@@ -1722,7 +1461,6 @@ function ahBaseValue(item) {
 const ahBand = (base) => [Math.max(1, Math.ceil(base * (1 - AH_ECON.bandPct))), Math.floor(base * (1 + AH_ECON.bandPct))];
 const ahPostFee = (base) => Math.max(1, Math.floor(base * AH_ECON.postFeePct));
 const ahNetAfterTax = (price) => Math.max(1, Math.floor(price * (1 - AH_ECON.saleTaxPct)));
-const ahTaxOf = (price) => price - ahNetAfterTax(price);
 
 // ---- material / drop unit values (mats had no gold value before; derive one) ----
 // Base unit values ×3 (crafting/gathering materials); mob drops unchanged.
@@ -1746,35 +1484,10 @@ function stackMeta(kind, id) {
   if (kind === "drop") return DROP_BY_ID[id] || { name: id, icon: "🎒", color: "#d0a0c0" };
   return MATERIALS[id] || { name: id, icon: "⛏️", color: "#9ad0e0" };
 }
-// every id the player could ever post (used to seed phantom stacks across all tiers)
-const ALL_MAT_IDS = [...ORE_TIERS.map((o) => o.id), ...HERB_TIERS.map((h) => h.id), "dust", ...Object.keys(STAT_DUST_META).map((s) => `dust_${s}`)];
-const ALL_DROP_IDS = Object.values(ENEMY_DROPS).map((d) => d.id);
 
 // phantom demand: chance-per-hour a player's listing sells, by price/base ratio
 const sellChancePerHour = (ratio) => clamp(0.95 * Math.exp(-1.9 * (clamp(ratio, 0.25, 1.75) - 0.4)), 0.02, 0.95);
 const AH_SELLERS = ["Aldric", "Brenna", "Corvus", "Dahlia", "Eamon", "Fenwick", "Greta", "Hollis", "Isolde", "Jarl", "Kestrel", "Lira", "Mordecai", "Nadia", "Osric", "Perrin", "Quill", "Rhoswen", "Soren", "Tamsin", "Ulric", "Vesper", "Wynn", "Yorick", "Zephyra", "Bram", "Cael", "Delyth", "Elowen", "Faelan"];
-const ahSeller = () => pick(AH_SELLERS);
-// build ONE phantom gear listing spread across ilvl bands & classes (never legendary/artifact)
-function makePhantomGear(now) {
-  const band = pick(AH_ECON.ilvlBands);
-  const ilvl = band[0] + Math.floor(Math.random() * (band[1] - band[0] + 1));
-  const rarity = rollWeighted(AH_ECON.marketRarityW); // rollWeighted returns the rarity object
-  const item = generateItem(ilvl, rarity, pick(LOOT_SLOTS).id, pick(CLASSES).id);
-  const base = ahBaseValue(item);
-  const [lo, hi] = ahBand(base);
-  const price = clamp(Math.round(base * (0.7 + Math.random() * 0.7)), lo, hi); // cluster near/below base
-  return { id: uid(), kind: "gear", item, price, base, seller: ahSeller(), phantom: true, postedAt: now, expiresAt: now + AH_ECON.phantomLifeMinMs + Math.random() * (AH_ECON.phantomLifeMaxMs - AH_ECON.phantomLifeMinMs) };
-}
-function makePhantomStack(now) {
-  const isDrop = Math.random() < 0.4;
-  const kind = isDrop ? "drop" : "mat";
-  const id = isDrop ? pick(ALL_DROP_IDS) : pick(ALL_MAT_IDS);
-  const base = stackBaseValue(kind, id);
-  const [lo, hi] = ahBand(base);
-  const price = clamp(Math.round(base * (0.75 + Math.random() * 0.6)), lo, hi);
-  return { id: uid(), kind, matId: id, qty: AH_ECON.stackSize, price, base, seller: ahSeller(), phantom: true, postedAt: now, expiresAt: now + AH_ECON.phantomLifeMinMs + Math.random() * (AH_ECON.phantomLifeMaxMs - AH_ECON.phantomLifeMinMs) };
-}
-const SECONDARY_STATS = ["leech", "resil", "vers", "cdr", "csd"];
 // convert rolled secondary-stat rating totals into capped percentages
  // leech effectiveness (set to 1 to revert the ~33% nerf)
 
@@ -7873,13 +7586,6 @@ const buildTrinityPartyOfSize = (char, ilvl, size) => {
 const partyForBid = (party) => (party || []).map((p, i) => p.isHuman
   ? { id: "me", name: p.char.name, me: true, power: mpPowerOf(p.char) }
   : { id: "p" + i, name: p.char.name, power: mpPowerOf(p.char) });
-const grpTargetFor = (enc, sk) => {
-  if (sk.heal || sk.offheal) { const w = grpInjured(enc.allies); return { targetAllyId: w ? w.id : null }; }
-  if (sk.interrupt) { const c = enc.enemies.find((e) => e.hp > 0 && e.castBar && e.castBar.interruptible) || grpPrimaryEnemy(enc); return { targetEnemyId: c ? c.id : null }; }
-  const p = grpPrimaryEnemy(enc); return { targetEnemyId: p ? p.id : null };
-};
-// Honor a manually-picked target when it's valid; hybrids (e.g. a smite that heals) resolve BOTH a
-// damage target (enemy) and a heal target (ally). Falls back to smart defaults for whatever isn't picked.
 
 // `room` (a Colyseus room) switches this from a locally-simulated fight to an authoritative
 // one: the server owns every tick and this renders its snapshots, sending intents instead of

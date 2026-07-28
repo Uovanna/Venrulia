@@ -5,7 +5,8 @@
 
 let _rng = Math.random;                 // defaults to Math.random → normal play is byte-for-byte unchanged
 export const rng = () => _rng();
-export const setRng = (fn) => { _rng = fn || Math.random; };
+// There is deliberately no unscoped setter. `withRng` below always restores the previous
+// source, so a seeded block cannot leak its RNG into the rest of the app.
 
 // mulberry32 — fast, seedable, well-distributed 32-bit PRNG
 export const makeRng = (seed) => {

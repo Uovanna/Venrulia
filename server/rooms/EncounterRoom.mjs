@@ -31,6 +31,7 @@ defineTypes(EncounterState, {
   seed: "uint32",
 });
 
+const INTENT_QUEUE_MAX = 3;    // how many taps a player may line up ahead of the sim
 const TICK_MS = 120;           // authoritative sim rate (matches client)
 // How long the lobby stays open for other players before empty seats are bot-filled. Eight
 // seconds meant two friends had to press Queue within eight seconds of each other or they were
@@ -69,8 +70,13 @@ export class EncounterRoom extends Room {
       const target = intent.target && (intent.target.type === "enemy" || intent.target.type === "ally") && typeof intent.target.id === "string"
         ? { type: intent.target.type, id: intent.target.id }
         : null;
-      // Last intent before the next tick wins — a player cannot bank actions by spamming.
-      seat.pendingIntent = { skillName: intent.skillName, target };
+      // Queue rather than overwrite. This used to be last-wins, so tapping two skills inside
+      // one 120ms tick silently threw the first away — which reads exactly like "that button
+      // doesn't work". The cap keeps it from becoming a macro: you can line up the next couple
+      // of casts, not bank a rotation.
+      seat.intents = (seat.intents || []).filter((q) => q.skillName !== intent.skillName);
+      seat.intents.push({ skillName: intent.skillName, target });
+      if (seat.intents.length > INTENT_QUEUE_MAX) seat.intents.shift();
     });
   }
 
@@ -152,10 +158,11 @@ export class EncounterRoom extends Room {
       // if the ally is still on GCD.
       let inputs = null;
       for (const seat of this.seats) {
-        if (!seat.pendingIntent || seat.bot || !seat.allyId) continue;
-        (inputs ||= {})[seat.allyId] = seat.pendingIntent;
-        this.timeline.push({ tick: this.enc.tick, allyId: seat.allyId, ...seat.pendingIntent });
-        seat.pendingIntent = null;
+        if (seat.bot || !seat.allyId || !seat.intents?.length) continue;
+        // One tap per tick, in the order they were pressed — nothing is dropped on the floor.
+        const next = seat.intents.shift();
+        (inputs ||= {})[seat.allyId] = next;
+        this.timeline.push({ tick: this.enc.tick, allyId: seat.allyId, ...next });
       }
       this.enc = stepRun(this.enc, TICK_MS, inputs);
       this.broadcast("state", fullSnapshot(this.enc));
@@ -188,7 +195,7 @@ export class EncounterRoom extends Room {
     }
     if (seat && this.started && !this.enc?.cleared && !this.enc?.wiped) {
       seat.bot = true;
-      seat.pendingIntent = null;
+      seat.intents = [];
       // Hand the combatant itself back to the AI. Clearing isHuman is the part that matters:
       // the core lets a human's turn stay open until they tap, so a dropped player's ally
       // would otherwise stand still for the rest of the fight and stall the party.

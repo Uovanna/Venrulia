@@ -3941,9 +3941,10 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     if (battleRef.current) { showNotif("Finish your current fight first"); return; }
     const g = guildGate(content, kind);
     if (!g.ok && !(useTicket && g.ticket)) { showNotif(g.msg || "Unavailable"); return; }
-    const c = charRef.current; const cls = CLASSES.find((x) => x.id === c.cls) || {};
-    const me = { id: "me", name: c.name, icon: cls.icon, specName: specById(c.spec)?.name || cls.name, power: mpPowerOf(c), me: true };
-    setGuildQueue({ content, kind, size, party: [me], countdown: MP_QUEUE_WAIT, useTicket: !!(useTicket && g.ticket) });
+    // Go straight to the server's lobby. The old local countdown backfilled a FAKE party and
+    // said "GO", and then the real server lobby opened behind it — two queues stacked, the
+    // first of them meaningless. The server lobby is the only one that decides anything.
+    guildLaunch(content, kind, null, !!(useTicket && g.ticket));
   };
   useEffect(() => {
     if (!guildQueue) return;
@@ -8091,7 +8092,8 @@ function GroupCombat({ char, commitChar, onExit, bossId, bossDef, ilvl, party, o
   if (!enc) return (
     <div style={{ maxWidth: 520, margin: "0 auto", padding: "18px 14px", textAlign: "center" }}>
       <button onClick={onExit} style={{ float: "left", background: "#15132a", border: "1px solid #2a2550", borderRadius: 8, color: "#c9c2e6", fontSize: 12, padding: "6px 12px", cursor: "pointer" }}>← Leave</button>
-      <div style={{ color: "#c8a0ff", fontFamily: "Georgia, serif", fontSize: 17, marginBottom: 2, paddingTop: 4 }}>⚔️ Forming Party</div>
+      <div style={{ color: "#5fd39a", fontSize: 11, fontWeight: 700, paddingTop: 6 }}>🌐 Online — authoritative server</div>
+      <div style={{ color: "#c8a0ff", fontFamily: "Georgia, serif", fontSize: 17, marginBottom: 2 }}>⚔️ Forming Party</div>
       <div style={{ color: "#e8ddff", fontSize: 13, marginBottom: 10 }}>{lobby?.contentName || label || "Encounter"}</div>
       {lobby?.code ? <div style={{ color: "#f0b429", fontSize: 11, marginBottom: 8 }}>🔑 Party code <b>{lobby.code}</b> — anyone using it joins you</div> : null}
       <div style={{ color: "#8fd0ff", fontSize: 30, fontWeight: 800, margin: "6px 0" }}>{lobby ? `${lobby.players.length}/${lobby.size}` : "…"}</div>

@@ -164,6 +164,8 @@ import {
   HUNTER_WEAPONS,
   gambitCondMet,
   executeThreshold,
+  intentRejection,
+  potionRejection,
   migrateGambitKeys,
   // These used to be defined a SECOND time in App.jsx. Nothing forced the two copies to agree,
   // so the client and the authoritative server could silently run different rules — which is
@@ -7609,16 +7611,40 @@ function GroupCombat({ char, commitChar, onExit, bossId, bossDef, ilvl, party, o
   // NB: must sit above the `!enc` early return — declaring it later changes the hook count
   // between the waiting-room and in-combat renders (React #310).
   const localQueued = useRef(null);
+  // Why the last tap did nothing ("Not enough Rage", "on cooldown", "no potions left"). Online
+  // this arrives as a private `notice` message — it is nobody else's business — and solo it is
+  // read off the state the local step returns. Same core rules produce both.
+  const [notice, setNotice] = useState(null);
+  // Solo drives its own clock, so a potion has to ride the same input path the server uses
+  // rather than being applied here; that keeps ONE implementation of what a potion does.
+  const pendingInput = useRef(null);
   useEffect(() => {
     if (networked) {                                              // server drives time; we only render
       room.onMessage("state", setEnc);
       room.onMessage("assigned", (a) => setMyAllyId(a.allyId));
       room.onMessage("lobby", setLobby);
+      room.onMessage("notice", (n) => setNotice({ ...n, at: Date.now() }));
       return;
     }
-    const iv = setInterval(() => setEnc((p) => (p && !p.cleared && !p.wiped) ? stepEncounter(p, 120) : p), 120); // sim is ~0.13ms/step, so a fine tick is smooth & cheap
+    const iv = setInterval(() => setEnc((p) => {
+      if (!p || p.cleared || p.wiped) return p;
+      const inp = pendingInput.current; pendingInput.current = null;
+      const me = inp && p.allies.find((a) => a.isHuman);
+      return stepEncounter(p, 120, me ? { [me.id]: inp } : undefined);
+    }), 120); // sim is ~0.13ms/step, so a fine tick is smooth & cheap
     return () => clearInterval(iv);
   }, [networked]);
+  // Solo notices ride on the state the step returns (online they come as their own message).
+  useEffect(() => {
+    if (networked || !enc) return;
+    const n = (enc.notices || [])[0];
+    if (n) setNotice({ ...n, at: Date.now() });
+  }, [enc?.tick]);
+  useEffect(() => {
+    if (!notice) return;
+    const t = setTimeout(() => setNotice(null), 2600);
+    return () => clearTimeout(t);
+  }, [notice]);
   useEffect(() => {
     if (!enc?.cleared || rewarded.current) return;
     rewarded.current = true;
@@ -7659,8 +7685,13 @@ function GroupCombat({ char, commitChar, onExit, bossId, bossDef, ilvl, party, o
     ? (me.pendingSkillName || (localQueued.current && localQueued.current.tick + 4 > enc.tick ? localQueued.current.name : null))
     : (me.pendingAction && me.pendingAction.skill && me.pendingAction.skill.name);
   const cast = (sk) => {
+    if (enc.cleared || enc.wiped) return;
+    // Answer immediately from the same rules the server uses, so a refused tap explains itself
+    // instead of looking like a dead button. The server still re-checks online — this is
+    // feedback, not authority.
+    const rej = intentRejection(me, { skillName: sk.name }, enc.elapsed);
+    if (rej) { setNotice({ ...rej, at: Date.now() }); return; }
     if (networked) {
-      if (enc.cleared || enc.wiped || me.down) return;
       localQueued.current = { name: sk.name, tick: enc.tick };   // optimistic echo, expires in ~4 ticks
       // Name the skill; never send the object. The server re-checks it against our own loadout.
       room.send("intent", { skillName: sk.name, target: target || undefined });
@@ -7669,17 +7700,19 @@ function GroupCombat({ char, commitChar, onExit, bossId, bossDef, ilvl, party, o
     setEnc((p) => {
       if (!p || p.cleared || p.wiped) return p;
       const h = p.allies.find((a) => a.isHuman); if (!h || h.down) return p;
-      if ((h.bw.cooldowns[sk.name] || 0) > p.elapsed || !botCanAfford(char, h.bw, sk)) return p; // queue during GCD; block only on the skill's own cooldown / not enough resource
       return { ...p, allies: p.allies.map((a) => a.isHuman ? { ...a, pendingAction: { skill: sk, ...grpResolveTarget(p, sk, target) } } : a) };
     });
   };
-  // Potions mutate authoritative state, so they need their own validated server message.
-  // Until that exists they stay offline-only rather than silently desyncing the room.
-  const potion = () => networked ? undefined : setEnc((p) => {
-    if (!p || p.potionsUsed >= p.potionCap) return p;
-    const h = p.allies.find((a) => a.isHuman); if (!h || h.down) return p;
-    return { ...p, potionsUsed: p.potionsUsed + 1, log: [...p.log, `🧪 ${h.name} drinks a potion`].slice(-40), allies: p.allies.map((a) => a.isHuman ? { ...a, hp: Math.min(a.maxHp, a.hp + Math.round(a.maxHp * 0.5)) } : a) };
-  });
+  // A potion spends a charge belonging to the whole encounter, so online it is asked for and
+  // the server decides. Solo takes the identical path through the local step — the rules for
+  // what a potion does and when it is refused live in the core, once.
+  const potion = () => {
+    if (enc.cleared || enc.wiped) return;
+    const rej = potionRejection(enc, me);
+    if (rej) { setNotice({ ...rej, at: Date.now() }); return; }   // instant answer; the server still re-checks
+    if (networked) room.send("intent", { potion: true });
+    else pendingInput.current = { potion: true };
+  };
   const barPct = (c, m) => Math.max(0, Math.min(100, (c / (m || 1)) * 100));
   return (
     <div style={{ maxWidth: 520, margin: "0 auto", padding: "4px 2px" }}>
@@ -7745,14 +7778,24 @@ function GroupCombat({ char, commitChar, onExit, bossId, bossDef, ilvl, party, o
       <div style={{ color: "#8a83b8", fontSize: 9.5, marginBottom: 4, textAlign: "center" }}>{target ? (() => { const t = target.type === "ally" ? enc.allies.find((a) => a.id === target.id) : enc.enemies.find((e) => e.id === target.id); return t ? `🎯 Target: ${t && isMe(t) ? "You" : t.name}${target.type === "ally" ? " (heal)" : ""} · tap a frame to change` : "tap a frame to target"; })() : "Tap an ally to heal them or an enemy to focus — otherwise skills auto-target"}</div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
         {mySkills.map((sk) => { const cd = (me.bw.cooldowns[sk.name] || 0); const onCd = cd > nowE; const onGcd = nowE < (me.nextGcd || 0); const afford = botCanAfford(char, me.bw, sk); const ready = !onCd && afford && !me.down; const queued = queuedName === sk.name; const util = sk.heal || sk.healAoe ? "#5fd39a" : sk.taunt ? "#5b8fd6" : sk.interrupt ? "#c8a0ff" : "#e0a955"; const cdFrac = onCd && sk.cd ? Math.max(0, Math.min(1, (cd - nowE) / (sk.cd * 1000))) : 0; return (
-          <button key={sk.name} onClick={() => cast(sk)} disabled={!ready} style={{ position: "relative", overflow: "hidden", flex: "1 1 30%", background: ready ? "linear-gradient(135deg,#2a2450,#3a2d6a)" : "#15131f", border: `${queued ? 2 : 1}px solid ${queued ? "#ffd479" : ready ? util : !afford ? "#5a3a3a" : "#2a2550"}`, borderRadius: 9, color: ready ? "#e8ddff" : "#5a5478", fontSize: 11, fontWeight: 700, padding: "9px 5px", cursor: ready ? "pointer" : "default", boxShadow: queued ? "0 0 7px rgba(255,212,121,0.5)" : "none" }}>
+          // Deliberately NOT disabled when unavailable. A greyed-out button answers "you can't"
+          // but never "why", which is the actual complaint — you are left guessing whether the
+          // skill is on cooldown, unaffordable, or the button is simply broken. A tap now says.
+          <button key={sk.name} onClick={() => cast(sk)} style={{ position: "relative", overflow: "hidden", flex: "1 1 30%", background: ready ? "linear-gradient(135deg,#2a2450,#3a2d6a)" : "#15131f", border: `${queued ? 2 : 1}px solid ${queued ? "#ffd479" : ready ? util : !afford ? "#5a3a3a" : "#2a2550"}`, borderRadius: 9, color: ready ? "#e8ddff" : "#5a5478", fontSize: 11, fontWeight: 700, padding: "9px 5px", cursor: "pointer", boxShadow: queued ? "0 0 7px rgba(255,212,121,0.5)" : "none" }}>
             <span style={{ position: "relative", zIndex: 2 }}>{queued ? "▸ " : ""}{sk.icon || "✦"} {sk.name}{onCd ? ` ${Math.ceil((cd - nowE) / 1000)}s` : !afford ? " ·" : ""}</span>
             {onCd && <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${cdFrac * 100}%`, background: "rgba(10,8,18,0.72)", zIndex: 1, transition: "width 0.14s linear" }} />}
             {!onCd && onGcd && !me.down && !queued && <div style={{ position: "absolute", inset: 0, background: "rgba(10,8,18,0.45)", zIndex: 1 }} />}
           </button>
         ); })}
-        <button onClick={potion} disabled={networked || enc.potionsUsed >= enc.potionCap || me.down} title={networked ? "Potions are offline-only for now" : undefined} style={{ flex: "1 1 30%", background: enc.potionsUsed < enc.potionCap ? "linear-gradient(135deg,#3a2a1a,#5a3a1a)" : "#15131f", border: `1px solid ${enc.potionsUsed < enc.potionCap ? "#a8863a" : "#2a2550"}`, borderRadius: 9, color: enc.potionsUsed < enc.potionCap ? "#ffd479" : "#5a5478", fontSize: 11, fontWeight: 700, padding: "9px 5px", cursor: enc.potionsUsed < enc.potionCap ? "pointer" : "default" }}>🧪 Potion ({enc.potionCap - enc.potionsUsed})</button>
+        <button onClick={potion} style={{ flex: "1 1 30%", background: enc.potionsUsed < enc.potionCap ? "linear-gradient(135deg,#3a2a1a,#5a3a1a)" : "#15131f", border: `1px solid ${enc.potionsUsed < enc.potionCap ? "#a8863a" : "#2a2550"}`, borderRadius: 9, color: enc.potionsUsed < enc.potionCap ? "#ffd479" : "#5a5478", fontSize: 11, fontWeight: 700, padding: "9px 5px", cursor: "pointer" }}>🧪 Potion ({enc.potionCap - enc.potionsUsed})</button>
       </div>
+      {/* Why the last tap did nothing. Sits directly under the bar so it reads as an answer to
+          the button you just pressed, and clears itself after a couple of seconds. */}
+      {notice && (
+        <div style={{ background: "#2a1420", border: "1px solid #e0556a", borderRadius: 8, padding: "6px 10px", margin: "6px 0", color: "#ffb3c0", fontSize: 11, fontWeight: 700, textAlign: "center" }}>
+          {notice.code === "resource" ? "⚡" : notice.code === "cooldown" ? "⏳" : notice.code === "nopotions" ? "🧪" : "⛔"} {notice.text}
+        </div>
+      )}
       {/* log */}
       <div style={{ background: "#0a0812", border: "1px solid #1e1a30", borderRadius: 8, padding: 8, height: 96, overflowY: "auto", fontSize: 10.5, color: "#b9b3d6", lineHeight: 1.5, display: "flex", flexDirection: "column-reverse" }}>
         <div>{enc.log.slice(-8).map((l, i) => <div key={i}>{l}</div>)}</div>

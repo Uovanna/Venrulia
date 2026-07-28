@@ -1581,6 +1581,43 @@ const resolveIntent = (st, ally, intent, now) => {
   return { skill: sk, ...grpResolveTarget(st, sk, sel) };
 };
 
+// How much of your health a combat potion restores, and how long a notice stays on screen.
+const POTION_HEAL_FRAC = 0.5;
+
+// WHY an intent produced nothing. resolveIntent collapses every failure to null, which is
+// correct for a trust boundary but leaves the player staring at a button that did nothing —
+// the commonest complaint being a spender tapped with an empty resource bar. This explains it
+// so the caller can tell that one player, without leaking anything they don't already know
+// about their own character.
+//
+// Returns null when the intent is fine (or when it is a potion, which has its own gate).
+const intentRejection = (ally, intent, now) => {
+  if (!ally || !intent || intent.potion) return null;
+  if (ally.down) return { code: "down", text: "You're down — wait for a resurrect" };
+  if (typeof intent.skillName !== "string") return null;
+  const sk = grpSkills(ally).find((s) => s.name === intent.skillName);
+  if (!sk) return { code: "unknown", text: `${intent.skillName} isn't on your bar` };
+  const until = ally.bw.cooldowns[sk.name] || 0;
+  if (until > now) return { code: "cooldown", text: `${sk.name} — ${Math.ceil((until - now) / 1000)}s left`, skillName: sk.name };
+  if (!botCanAfford(ally.char, ally.bw, sk)) {
+    const ri = classResource(ally.char.cls);
+    const need = sk.spend === "all" ? 1 : (typeof sk.spend === "number" ? sk.spend : (typeof sk.cost === "number" ? sk.cost : 0));
+    return { code: "resource", skillName: sk.name,
+             text: `Not enough ${ri.name} for ${sk.name} (${Math.floor(resTotal(ally.bw))}/${need})` };
+  }
+  return null;
+};
+
+// Whether a potion can be drunk right now. The cap lives on the encounter, so this is the
+// server's answer and a client cannot talk its way past it.
+const potionRejection = (st, ally) => {
+  if (!ally) return { code: "noally", text: "No combatant" };
+  if (ally.down) return { code: "down", text: "You're down — wait for a resurrect" };
+  if ((st.potionsUsed || 0) >= st.potionCap) return { code: "nopotions", text: "No potions left this fight" };
+  if (ally.hp >= ally.maxHp) return { code: "fullhp", text: "Already at full health" };
+  return null;
+};
+
 const chooseAllyAction = (st, ally, now) => {
   if (ally.isHuman) { const pa = ally.pendingAction; ally.pendingAction = null; return pa || null; } // humans act on their own taps
   const usable = grpSkills(ally).filter((s) => grpReady(ally, s, now));
@@ -1680,7 +1717,9 @@ const grpRaidDamage = (st, raw) => { for (const a of st.allies) if (!a.down) grp
 const stepEncounter = (state, dt, inputs) => withRng(makeRng((state.seed ^ (state.tick * 2654435761)) >>> 0), () => {
   if (state.wiped || state.cleared) return state;
   // functional clone (purity → reproducible & replayable)
-  const s = { ...state, log: state.log.slice(-40),
+  // `notices` is per-tick feedback addressed to ONE player (why their tap did nothing). It is
+  // rebuilt every tick so a stale message can never be re-delivered from a later snapshot.
+  const s = { ...state, log: state.log.slice(-40), notices: [],
     allies: state.allies.map((a) => ({ ...a, hots: (a.hots || []).map((h) => ({ ...h })), debuffs: (a.debuffs || []).map((d) => ({ ...d })), bw: { ...a.bw, enemy: { ...a.bw.enemy }, playerEffects: a.bw.playerEffects.map((e) => ({ ...e })), enemyEffects: a.bw.enemyEffects.map((e) => ({ ...e })), cooldowns: { ...a.bw.cooldowns }, resQ: a.bw.resQ.map((q) => ({ ...q })) } })),
     enemies: state.enemies.map((e) => ({ ...e, threat: { ...e.threat }, castBar: e.castBar ? { ...e.castBar } : null, abilities: (e.abilities || []).map((ab) => ({ ...ab })) })) };
   const now = state.elapsed + dt;
@@ -1690,8 +1729,21 @@ const stepEncounter = (state, dt, inputs) => withRng(makeRng((state.seed ^ (stat
     for (const id of Object.keys(inputs)) {
       const ally = s.allies.find((a) => a.id === id);
       if (!ally || !ally.isHuman) continue;              // only a human's own combatant is drivable
-      const act = resolveIntent(s, ally, inputs[id], now);
+      const intent = inputs[id];
+      // A potion is authoritative state (it spends a shared per-fight charge), so it travels as
+      // an intent like everything else rather than being applied client-side.
+      if (intent && intent.potion) {
+        const rej = potionRejection(s, ally);
+        if (rej) { s.notices.push({ allyId: id, ...rej }); continue; }
+        const healed = Math.min(ally.maxHp, ally.hp + Math.round(ally.maxHp * POTION_HEAL_FRAC));
+        s.potionsUsed = (s.potionsUsed || 0) + 1;
+        s.log = [...s.log, `🧪 ${ally.name} drinks a potion (+${healed - ally.hp} HP)`].slice(-40);
+        ally.hp = healed;
+        continue;
+      }
+      const act = resolveIntent(s, ally, intent, now);
       if (act) ally.pendingAction = act;                 // illegal intents are simply dropped
+      else { const rej = intentRejection(ally, intent, now); if (rej) s.notices.push({ allyId: id, ...rej }); }
     }
   }
   // 1) allies act on their GCD
@@ -1934,6 +1986,9 @@ export {
   applyAllyAction,
   grpResolveTarget,
   resolveIntent,
+  intentRejection,
+  potionRejection,
+  POTION_HEAL_FRAC,
   grpWardOf,
   grpHitAlly,
   grpRaidDamage,

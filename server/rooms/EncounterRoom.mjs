@@ -15,6 +15,7 @@ import colyseus from "colyseus";
 import { Schema, defineTypes } from "@colyseus/schema";
 import { createRun, stepRun, fullSnapshot } from "../sim.mjs";
 import { buildPartyFromSeats, contentById } from "../party.mjs";
+import { queueIntent, INTENT_QUEUE_MAX } from "../intents.mjs";
 
 const { Room } = colyseus;
 const seatName = (client, options) => `${(options?.name || "Adventurer")}#${client.sessionId.slice(0, 4)}`;
@@ -31,8 +32,8 @@ defineTypes(EncounterState, {
   seed: "uint32",
 });
 
-const INTENT_QUEUE_MAX = 3;    // how many taps a player may line up ahead of the sim
 const TICK_MS = 120;           // authoritative sim rate (matches client)
+
 // How long the lobby stays open for other players before empty seats are bot-filled. Eight
 // seconds meant two friends had to press Queue within eight seconds of each other or they were
 // silently placed in separate rooms — the room locks on start. A minute is long enough to
@@ -66,17 +67,7 @@ export class EncounterRoom extends Room {
     this.onMessage("intent", (client, intent) => {
       const seat = this.seats.find((s) => s.sessionId === client.sessionId);
       if (!seat || !this.started || seat.bot || !seat.allyId) return;   // no seat, not started, or handed to AI
-      if (!intent || typeof intent.skillName !== "string") return;
-      const target = intent.target && (intent.target.type === "enemy" || intent.target.type === "ally") && typeof intent.target.id === "string"
-        ? { type: intent.target.type, id: intent.target.id }
-        : null;
-      // Queue rather than overwrite. This used to be last-wins, so tapping two skills inside
-      // one 120ms tick silently threw the first away — which reads exactly like "that button
-      // doesn't work". The cap keeps it from becoming a macro: you can line up the next couple
-      // of casts, not bank a rotation.
-      seat.intents = (seat.intents || []).filter((q) => q.skillName !== intent.skillName);
-      seat.intents.push({ skillName: intent.skillName, target });
-      if (seat.intents.length > INTENT_QUEUE_MAX) seat.intents.shift();
+      seat.intents = queueIntent(seat.intents, intent);
     });
   }
 
@@ -165,6 +156,13 @@ export class EncounterRoom extends Room {
         this.timeline.push({ tick: this.enc.tick, allyId: seat.allyId, ...next });
       }
       this.enc = stepRun(this.enc, TICK_MS, inputs);
+      // Why a tap did nothing goes ONLY to the player it concerns — "not enough Rage" is not
+      // party business, and broadcasting it would spam three other people per mistap.
+      for (const n of this.enc.notices || []) {
+        const seat = this.seats.find((s) => s.allyId === n.allyId && !s.bot);
+        const client = seat && this.clients.find((c) => c.sessionId === seat.sessionId);
+        if (client) client.send("notice", { code: n.code, text: n.text, skillName: n.skillName || null });
+      }
       this.broadcast("state", fullSnapshot(this.enc));
       if (this.enc.cleared || this.enc.wiped) this.finish();
     }, TICK_MS);
@@ -220,8 +218,18 @@ CLIENT PROTOCOL
 
   → intent    { skillName, target?: { type: "enemy"|"ally", id } }
               Names one of your own skills. Target is optional; the core picks a sensible
-              one (primary enemy, or the most injured ally for heals). Sending again before
-              the next tick replaces the queued intent rather than banking a second action.
+              one (primary enemy, or the most injured ally for heals). Re-sending the SAME
+              skill moves it to the back of the queue rather than banking a second action;
+              the queue is capped at INTENT_QUEUE_MAX. See ../intents.mjs.
+  → intent    { potion: true }
+              The one intent that names no skill. It spends a charge belonging to the whole
+              encounter, so the core decides whether it is allowed (cap, downed, full HP).
+              Mashing it queues one potion, never a stack.
+  ← notice    { code, text, skillName? }
+              Sent to ONE client: why their last tap did nothing ("Not enough Rage for
+              Devastating Blow (12/30)", "on cooldown", "No potions left this fight"). It is
+              deliberately not broadcast — a mistap is not party business — and it is absent
+              from the state snapshot for the same reason.
 
 The server never trusts a skill object from the wire — resolveIntent looks the name up in the
 character's own loadout and applies the same cooldown and resource rules bots obey. Every

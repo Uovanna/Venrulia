@@ -16,6 +16,7 @@ import { Schema, defineTypes } from "@colyseus/schema";
 import { createRun, stepRun, fullSnapshot } from "../sim.mjs";
 import { buildPartyFromSeats, contentById } from "../party.mjs";
 import { queueIntent, INTENT_QUEUE_MAX } from "../intents.mjs";
+import { auctionForClear, placeBid, passLot, tick, lotView } from "../loot.mjs";
 
 const { Room } = colyseus;
 const seatName = (client, options) => `${(options?.name || "Adventurer")}#${client.sessionId.slice(0, 4)}`;
@@ -76,6 +77,21 @@ export class EncounterRoom extends Room {
       if (!seat || !this.started || seat.bot || !seat.allyId) return;   // no seat, not started, or handed to AI
       seat.intents = queueIntent(seat.intents, intent);
     });
+
+    // GDKP bids. The room owns the auction, so a bid is a request: it is checked against the
+    // bidder's real purse (published on join) and the current high before it counts.
+    this.onMessage("bid", (client, msg) => {
+      const seat = this.seats.find((s) => s.sessionId === client.sessionId);
+      if (!seat || !this.auction || !seat.allyId) return;
+      const rej = placeBid(this.auction, seat.allyId, Number(msg && msg.amount) || 0);
+      if (rej) { client.send("notice", { code: rej.code, text: rej.text }); return; }
+      this.broadcast("loot", { phase: "bidding", lot: lotView(this.auction) });
+    });
+    this.onMessage("pass", (client) => {
+      const seat = this.seats.find((s) => s.sessionId === client.sessionId);
+      if (!seat || !this.auction || !seat.allyId) return;
+      passLot(this.auction, seat.allyId);
+    });
   }
 
   onJoin(client, options) {
@@ -90,6 +106,9 @@ export class EncounterRoom extends Room {
       name: (options?.name || "Adventurer").slice(0, 24),
       loadout: options?.loadout || null,   // { cls, spec, level, power, ... } from pvp_snapshot / client
       role: options?.role || "dps",
+      // The purse a bid is checked against. Kept server-side so an inflated bid is refused here
+      // rather than trusted from the wire at settle time.
+      gold: Math.max(0, Math.floor(Number(options?.gold) || 0)),
       bot: false,
     });
     console.log(`[room ${this.roomId}] join ${seatName(client, options)} → ${this.seats.length}/${this.content.partySize} (${this.content.id}${this.code ? ", code " + this.code : ""})`);
@@ -181,12 +200,46 @@ export class EncounterRoom extends Room {
     const outcome = this.enc.cleared ? "cleared" : "wiped";
     this.state.phase = "done";
     this.broadcast("result", { outcome, tick: this.enc.tick, elapsed: this.enc.elapsed });
-    if (outcome === "cleared") {
-      try {
-        const { grantRewards } = await import("../rewards.mjs");
-        await grantRewards(this.content, this.seats.filter((s) => !s.bot), this.enc);
-      } catch (e) { console.warn("reward grant failed:", e.message); }
-    }
+    // A wipe drops nothing, so there is no auction to run.
+    if (outcome !== "cleared") { this.clock.setTimeout(() => this.disconnect(), 4000); return; }
+    this.runAuction();
+  }
+
+  // GDKP, run by the room. The lots are rolled once from the encounter seed and the bidding is
+  // resolved here, so the whole party sees one drop and one auction instead of each client
+  // inventing its own.
+  runAuction() {
+    const { auction, items } = auctionForClear({ content: this.content, enc: this.enc, seats: this.seats, seed: this.seed });
+    this.auction = auction;
+    this.lootResults = [];
+    console.log(`[room ${this.roomId}] LOOT ${items.length} lot(s) → auction open`);
+    this.broadcast("loot", { phase: "open", lot: lotView(this.auction) });
+
+    this._auctionTimer = this.clock.setInterval(() => {
+      const ev = tick(this.auction);
+      if (!ev) return;
+      if (ev.kind === "bid") { this.broadcast("loot", { phase: "bidding", lot: ev.lot }); return; }
+      // hammered
+      this.lootResults.push(ev);
+      this.broadcast("loot", {
+        phase: "sold", item: ev.item, price: ev.price, winnerId: ev.winnerId,
+        winnerName: ev.winnerName, share: ev.share, payouts: ev.payouts,
+      });
+      if (this.auction.done) {
+        this._auctionTimer.clear(); this._auctionTimer = null;
+        this.settle();
+      } else {
+        this.broadcast("loot", { phase: "open", lot: lotView(this.auction) });
+      }
+    }, 1000);
+  }
+
+  async settle() {
+    try {
+      const { grantRewards } = await import("../rewards.mjs");
+      await grantRewards(this.content, this.seats.filter((s) => !s.bot), this.enc, this.lootResults);
+    } catch (e) { console.warn("reward grant failed:", e.message); }
+    this.broadcast("loot", { phase: "done" });
     this.clock.setTimeout(() => this.disconnect(), 4000); // let clients read the result, then dispose
   }
 

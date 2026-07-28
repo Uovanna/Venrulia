@@ -16,24 +16,58 @@ function sb() {
   return _sb;
 }
 
-// content: the encounter def, humanSeats: [{ uid, name }], enc: final authoritative state.
-export async function grantRewards(content, humanSeats, enc) {
+// Build every mail row a cleared run owes, without touching the network. Kept separate from the
+// insert so the payout arithmetic is testable — this is real player currency.
+//
+// content: the encounter def
+// humanSeats: [{ uid, name, allyId }]
+// enc: final authoritative state
+// lootResults: [{ item, price, winnerId, share, payouts }] from the room's GDKP auction
+export function buildRewardRows(content, humanSeats, enc, lootResults = []) {
+  const rows = [];
+  const clearGold = rewardGold(content, enc);
+  for (const seat of humanSeats) {
+    if (!seat.uid) continue;                       // signed-out players get nothing persisted
+    // The clear payment, plus every share taken from lots this player did NOT win, minus what
+    // they paid for the ones they did. One mail per player keeps the mailbox readable.
+    let gold = clearGold;
+    const won = [];
+    for (const lot of lootResults) {
+      if (lot.winnerId && lot.winnerId === seat.allyId) { gold -= lot.price; won.push(lot.item); }
+      else gold += (lot.payouts && lot.payouts[seat.allyId]) || 0;
+    }
+    rows.push({
+      user_id: seat.uid,
+      // NOT "sale" — that kind renders as an auction-house sale ("−15% AH cut") and assumes a
+      // positive net. A GDKP settlement can be negative for the winner, who bought the lot.
+      kind: "gdkp",
+      payload: {
+        gold,
+        items: won,
+        subject: `${content.name} clear`,
+        from: "Group Finder",
+        note: won.length ? `Won ${won.length} lot(s) · GDKP settled` : (lootResults.length ? "GDKP share" : undefined),
+      },
+    });
+  }
+  return rows;
+}
+
+export async function grantRewards(content, humanSeats, enc, lootResults = []) {
   const client = sb(); if (!client) return;
-  const gold = rewardGold(content, enc);
-  const rows = humanSeats.filter((s) => s.uid).map((s) => ({
-    user_id: s.uid,
-    kind: "sale", // mail kind that carries gold; the client's mail claim applies it to the blob
-    payload: { gold, subject: `${content.name} clear`, from: "Group Finder" },
-  }));
+  const rows = buildRewardRows(content, humanSeats, enc, lootResults);
   if (!rows.length) return;
   const { error } = await client.from("mail").insert(rows);
   if (error) throw new Error(error.message);
-  // TODO(stage-4): roll item drops via the core's loot tables and attach { item } payloads;
-  // for GDKP content, run the bid in-room and mail the winner + distribute the pot.
 }
 
-function rewardGold(content, enc) {
-  // placeholder scaled reward; replace with the content's real reward table.
-  const base = content.boss === "ashen" ? 500 : 300;
-  return Math.round(base * (enc.cleared ? 1 : 0));
+export function rewardGold(content, enc) {
+  if (!enc.cleared) return 0;
+  // Scales with the content rather than the old flat 500/300, which paid a six-player raid less
+  // than the tutorial boss. Level stands in for difficulty; raids and hard modes pay more for
+  // the longer, riskier run.
+  const lvl = content.level || 60;
+  const raid = (content.kind || "").includes("raid");
+  const hard = (content.kind || "").startsWith("hard");
+  return Math.round(120 * (1 + lvl / 30) * (raid ? 1.8 : 1) * (hard ? 1.5 : 1));
 }

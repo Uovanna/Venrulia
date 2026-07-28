@@ -1433,6 +1433,42 @@ const createCharacter = (name, cls, race) => {
 // order can drive priority. Existing saves are remapped on load: a skill-name key becomes the
 // position that skill currently occupies, and anything no longer on the bar is dropped —
 // exactly what the old loadout filter did with unslotted skills.
+// ---------- GDKP: loot rolling and reserve pricing ----------
+// These live in the core because an online clear must produce the SAME lot for everyone. Rolled
+// client-side, four players in one run each generated their own item and bid against themselves.
+//
+// Every lot opens at a reserve scaled to its rarity and item level, so a Legendary never goes for
+// pocket change. Epic: 1,000g at ilvl 64, +500g per ilvl above. Legendary: 10,000g, +5,000g.
+const GDKP_RESERVE = { legendary: { base: 10000, step: 5000 }, epic: { base: 1000, step: 500 }, rare: { base: 300, step: 150 }, uncommon: { base: 100, step: 50 }, common: { base: 25, step: 10 } };
+const gdkpReserve = (item) => {
+  const r = (item && item.rarity) || "epic";
+  const cfg = GDKP_RESERVE[r] || GDKP_RESERVE.epic;
+  const over = Math.max(0, ((item && item.ilvl) || 64) - 64); // ilvl 64 is the baseline
+  return cfg.base + over * cfg.step;
+};
+// Rival ceilings scale off the reserve, so high-value lots actually draw competition. Uses rng()
+// rather than Math.random so the server can roll a room's rivals reproducibly.
+const gdkpBotCeiling = (reserve, power) => Math.round(reserve * (0.75 + rng() * 1.35) * (0.9 + Math.min(0.35, (power || 3000) / 15000)));
+
+// The drops for a cleared piece of Guild content. Deterministic given the seed, so the server
+// and every client in the room derive an identical lot list.
+//   ilvl        item level to roll at
+//   count       how many lots (raids drop two)
+//   clsIds      party classes — each lot is rolled for one of them, so loot is party-relevant
+//   legendaryChance  per-lot chance of a legendary instead of an epic (Trials only)
+const rollGuildLoot = ({ ilvl, count = 1, clsIds = [], legendaryChance = 0, seed }) => {
+  const body = () => {
+    const out = [];
+    for (let i = 0; i < count; i++) {
+      const leg = legendaryChance > 0 && rng() < legendaryChance;
+      const cls = clsIds.length ? rngPick(clsIds) : "warrior";
+      out.push(generateItem(ilvl, rarityById(leg ? "legendary" : "epic"), rngPick(LOOT_SLOTS).id, cls));
+    }
+    return out;
+  };
+  return Number.isFinite(seed) ? withRng(makeRng(seed >>> 0), body) : body();
+};
+
 const migrateGambitKeys = (map, selectedSkills) => {
   const out = {};
   for (const k in (map || {})) {
@@ -1796,6 +1832,10 @@ const stepEncounter = (state, dt, inputs) => withRng(makeRng((state.seed ^ (stat
 
 export {
   migrateGambitKeys,
+  GDKP_RESERVE,
+  gdkpReserve,
+  gdkpBotCeiling,
+  rollGuildLoot,
   HUNTER_WEAPONS,
   executeThreshold,
   gambitCondMet,

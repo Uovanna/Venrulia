@@ -167,6 +167,8 @@ import {
   intentRejection,
   potionRejection,
   migrateGambitKeys,
+  gdkpReserve,
+  gdkpBotCeiling,
   // These used to be defined a SECOND time in App.jsx. Nothing forced the two copies to agree,
   // so the client and the authoritative server could silently run different rules — which is
   // exactly how normalizeChar lost the gambit slot migration. One definition now, imported.
@@ -7159,18 +7161,9 @@ const mpName = () => {
 };
 const MP_CHAT_LINES = ["LFM raid need 2 dps", "anyone selling an artifact weapon?", "gg last boss", "that bid war was brutal lol", "who's tanking?", "grats on the drop!", "need heals for hard dungeon", "arena is rough today", "just hit a new power score 🔥", "trading ore for gems, pm me", "wipe on enrage again ugh", "stack on the boss", "nice roll", "anyone doing rated arena?", "new patch when", "my rogue is unstoppable rn", "buff paladins pls", "who wants to run Molten Heart", "gl on your bids", "world boss up?", "that copy-for-ven saved me lol", "climbing the ladder, wish me luck", "pull when ready", "anyone got a spare gem?", "that boss hits like a truck", "almost hit 2k rating", "lf guild, dm me", "the guild finder is so fast now", "who's up for a dungeon"];
 const mpChatLine = () => ({ id: "bot_" + Math.random().toString(36).slice(2), name: mpName(), text: pick(MP_CHAT_LINES), t: Date.now() });
-// ---------- GDKP RESERVE PRICING ----------
-// Every lot opens at a reserve scaled to its rarity and item level, so a Legendary never goes for
-// pocket change. Epic: 1,000g at ilvl 64, +500g per ilvl above. Legendary: 10,000g, +5,000g per ilvl.
-const GDKP_RESERVE = { legendary: { base: 10000, step: 5000 }, epic: { base: 1000, step: 500 }, rare: { base: 300, step: 150 }, uncommon: { base: 100, step: 50 }, common: { base: 25, step: 10 } };
-const gdkpReserve = (item) => {
-  const r = (item && item.rarity) || "epic";
-  const cfg = GDKP_RESERVE[r] || GDKP_RESERVE.epic;
-  const over = Math.max(0, ((item && item.ilvl) || 64) - 64); // ilvl 64 is the baseline
-  return cfg.base + over * cfg.step;
-};
-// Rival ceilings scale off the reserve, so high-value lots actually draw competition.
-const gdkpBotCeiling = (reserve, power) => Math.round(reserve * (0.75 + Math.random() * 1.35) * (0.9 + Math.min(0.35, (power || 3000) / 15000)));
+// GDKP reserve pricing and rival ceilings now live in the core — an online clear is auctioned by
+// the server, so both sides must price a lot identically. (gdkpBotCeiling uses rng() there, which
+// is Math.random outside a seeded scope, so the offline auction is unchanged.)
 const mpPowerOf = (char) => { const e = effectiveStats(char); const dps = Math.round(offlinePlayerDps(char)); return Math.max(50, Math.round(dps * 6 + maxHpFor(char) * 0.5 + (e.str + e.agi + e.int + e.sta))); };
 const mpDpsFromPower = (power) => Math.max(1, Math.round(power / 6));
 const mpBot = (targetPower, level) => {

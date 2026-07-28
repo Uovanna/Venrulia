@@ -3406,7 +3406,10 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     // reached we fall back to the local Trinity run rather than blocking them from playing.
     // Open the combat screen as soon as we are IN the room, not once the party has formed —
     // it renders a live lobby, so players can see each other arrive instead of guessing.
-    mpProvider.connectEncounter({ contentId: content.id, char: nc, ilvl, code: partyCode.trim() })
+    // `uid` is what the server mails rewards to. Without it grantRewards skips the seat and a
+    // cleared run pays nothing, silently — which is exactly what happened on the first live GDKP.
+    ensureUid()
+      .then((uid) => mpProvider.connectEncounter({ contentId: content.id, char: nc, ilvl, uid, code: partyCode.trim() }))
       .then((room) => { setGroupRun({ ...localRun, online: true, room }); setTab("group"); })
       .catch((e) => {
         const why = e?.message || "server unreachable";
@@ -3436,7 +3439,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     setOnlineStatus({ busy: true, label });
     let room;
     try {
-      room = await mpProvider.connectEncounter({ contentId, char, ilvl });
+      room = await mpProvider.connectEncounter({ contentId, char, ilvl, uid: await ensureUid() });
       const assigned = await new Promise((resolve, reject) => {
         room.onMessage("assigned", resolve);
         room.onMessage("error", (e) => reject(new Error(e?.message || "the encounter could not start")));

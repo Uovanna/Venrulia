@@ -56,9 +56,19 @@ export function buildRewardRows(content, humanSeats, enc, lootResults = []) {
 export async function grantRewards(content, humanSeats, enc, lootResults = []) {
   const client = sb(); if (!client) return;
   const rows = buildRewardRows(content, humanSeats, enc, lootResults);
-  if (!rows.length) return;
+  // Say something when a cleared run pays nobody. This returned silently before, so the first
+  // live GDKP auctioned a lot, hammered it, and mailed nothing at all — with no trace anywhere.
+  // A seat without a uid is a client that joined without publishing one; it cannot be mailed.
+  if (!rows.length) {
+    const seats = (humanSeats || []).length;
+    if (seats) console.warn(`[rewards] ${content.id}: ${seats} human seat(s) but NO mail rows — ` +
+      `uid missing on ${(humanSeats || []).filter((s) => !s.uid).length}. Nobody was paid.`);
+    return;
+  }
   const { error } = await client.from("mail").insert(rows);
   if (error) throw new Error(error.message);
+  console.log(`[rewards] ${content.id}: mailed ${rows.length} player(s)` +
+    (lootResults.length ? `, ${lootResults.length} lot(s) settled` : ""));
 }
 
 export function rewardGold(content, enc) {

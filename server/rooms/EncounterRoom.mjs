@@ -17,6 +17,7 @@ import { createRun, stepRun, fullSnapshot } from "../sim.mjs";
 import { buildPartyFromSeats, contentById } from "../party.mjs";
 import { queueIntent, INTENT_QUEUE_MAX } from "../intents.mjs";
 import { auctionForClear, placeBid, passLot, tick, lotView } from "../loot.mjs";
+import { logLoadout } from "../loadout-check.mjs";
 
 const { Room } = colyseus;
 const seatName = (client, options) => `${(options?.name || "Adventurer")}#${client.sessionId.slice(0, 4)}`;
@@ -111,6 +112,9 @@ export class EncounterRoom extends Room {
       gold: Math.max(0, Math.floor(Number(options?.gold) || 0)),
       bot: false,
     });
+    // The published character is still trusted — this only records what looks out of range, so a
+    // testing phase produces the distribution a real validator would need. It rejects nothing.
+    logLoadout(options.loadout.char, this.content, seatName(client, options));
     console.log(`[room ${this.roomId}] join ${seatName(client, options)} → ${this.seats.length}/${this.content.partySize} (${this.content.id}${this.code ? ", code " + this.code : ""})`);
     // Start when full, or after the fill window (bot-filled) once at least one human is in.
     if (this.seats.length >= this.content.partySize) this.start();

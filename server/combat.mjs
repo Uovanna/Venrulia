@@ -940,24 +940,25 @@ function applySkillCore(skill, c, bIn, now, log) {
 //           (Mending Touch) is on a 90s cooldown, so sustain is otherwise almost nil.
 const GRP = { estCal: 1, gcd: 1300, enemyAuto: 1500, threatTank: 2.6, threatDps: 1.0, threatHeal: 0.5, healCoeff: 1.6, resKick: 0, dmg: 0.28 };
 const healPowerOf = (char) => Math.round(maxHpFor(char) * GRP.healCoeff);
-// These predicates drive the whole group-combat role system, and they must key off the
-// property names the SKILLS data actually uses. They previously looked for `heal`, `offheal`,
-// `hot`, `healAoe`, `partyHastePct`, … — none of which exist on a single skill in the game.
-// Every role branch therefore fell through to "just deal damage": healers never healed, and
-// the combat log stayed empty because its lines only fire on these effects. The real data
-// uses healPct / hotPct+hotDur / empowerPct+empowerDur / hastePct+hasteDur / wardPct / cleanse.
-//
-// `taunt` and `interrupt` genuinely do not exist on any skill yet, so the tank's taunt branch
-// and the "interrupt it!" prompt still cannot fire — that needs new skills, not a rename.
-const skHealPct = (s) => (s && s.healPct) || 0;
-const skIsHeal = (s) => !!s && skHealPct(s) > 0;
-const skIsHot = (s) => !!s && !!s.hotPct;
+// Group-combat role predicates. Skills come in TWO shapes and both are real:
+//   class skills  use percentages — healPct: 50, hotPct: 28 (total across hotDur)
+//   spec skills   use fractions   — heal: 0.55, offheal, healAoe, hot: 0.1 (PER SECOND)
+// An earlier pass keyed only on the percentage forms, because the spec skills lived in
+// App.jsx and were missing from the core's table entirely. Now that both are here, these
+// must accept both or a Paladin's Holy Light and Beacon of Light stop working.
+const skHealFrac = (s) => !s ? 0 : (s.heal || 0) + (s.offheal || 0) + (s.healPct || 0) / 100;
+const skHotPerSec = (s) => !s ? 0 : (s.hot || 0) + ((s.hotPct || 0) / 100) / (s.hotDur || 12);
+const skIsHeal = (s) => skHealFrac(s) > 0;
+const skIsHot = (s) => skHotPerSec(s) > 0;
 const skIsCleanse = (s) => !!s && !!s.cleanse;
-const skIsAoeHeal = (s) => !!s && !!s.healAoe;          // no skill has this yet
-const skIsTaunt = (s) => !!s && !!s.taunt;              // ditto
-const skIsInterrupt = (s) => !!s && !!s.interrupt;      // ditto
+const skIsAoeHeal = (s) => !!s && !!s.healAoe;
+const skIsTaunt = (s) => !!s && !!s.taunt;                 // Challenging Shout, Hand of Authority
+const skIsInterrupt = (s) => !!s && !!s.interrupt;         // Counterspell, Disrupting Shot
 const skIsDef = (s) => !!s && !!s.wardPct;
-const skIsPartyBuff = (s) => !!s && !!(s.empowerPct || s.hastePct);
+// Genuine PARTY buffs only. empowerPct / hastePct are self-buffs on ordinary class skills and
+// are applied by applySkillCore; treating them as raid cooldowns would hand 30-odd skills a
+// party-wide effect they were never written to have.
+const skIsPartyBuff = (s) => !!s && !!(s.partyHastePct || s.partyWardPct || s.partyEmpowerPct);
 const skThreatMult = (s) => (s && s.threatMult) || 1;
 const roleThreatBase = (role) => role === "tank" ? GRP.threatTank : role === "healer" ? GRP.threatHeal : role === "support" ? 0.7 : GRP.threatDps;
 const grpSkills = (ally) => (ally.char.selectedSkills || []).map((n) => skillByName(ally.char, n)).filter(Boolean);
@@ -1552,16 +1553,13 @@ const applyAllyAction = (st, ally, act, now) => {
     }
   } else { ally.bw = applySkillCore(sk, ally.char, ally.bw, now, () => {}).battle; }
   // role effects (interpreted by the engine)
-  // healPct / hotPct are PERCENTAGES of the caster's heal power, not raw amounts.
-  if (skIsHeal(sk)) { const amt = Math.round(skHealPct(sk) / 100 * healPowerOf(ally.char)); const tgt = st.allies.find((a) => a.id === act.targetAllyId && !a.down) || grpInjured(st.allies); if (tgt) { const before = tgt.hp; tgt.hp = Math.min(tgt.maxHp, tgt.hp + amt); st.log.push(`💚 ${ally.name} heals ${tgt.isHuman ? "you" : tgt.name} for ${Math.round(tgt.hp - before)}`); for (const en of st.enemies) if (en.hp > 0) grpAddThreat(en, ally.id, amt * GRP.threatHeal / Math.max(1, st.enemies.filter((e) => e.hp > 0).length)); } }
-  if (skIsHot(sk)) { const tgt = st.allies.find((a) => a.id === act.targetAllyId && !a.down) || grpInjured(st.allies); if (tgt) { const dur = sk.hotDur || 12; const per = Math.round(sk.hotPct / 100 * healPowerOf(ally.char) / dur); tgt.hots = [...(tgt.hots || []).filter((h) => h.src !== sk.name), { src: sk.name, healPerTick: per, nextTick: now + 1000, expires: now + dur * 1000 }]; st.log.push(`🕯️ ${ally.name} puts ${sk.name} on ${tgt.isHuman ? "you" : tgt.name}`); } }
+  if (skIsHeal(sk)) { const amt = Math.round(skHealFrac(sk) * healPowerOf(ally.char)); const tgt = st.allies.find((a) => a.id === act.targetAllyId && !a.down) || grpInjured(st.allies); if (tgt) { const before = tgt.hp; tgt.hp = Math.min(tgt.maxHp, tgt.hp + amt); st.log.push(`💚 ${ally.name} heals ${tgt.isHuman ? "you" : tgt.name} for ${Math.round(tgt.hp - before)}`); for (const en of st.enemies) if (en.hp > 0) grpAddThreat(en, ally.id, amt * GRP.threatHeal / Math.max(1, st.enemies.filter((e) => e.hp > 0).length)); } }
+  if (skIsHot(sk)) { const tgt = st.allies.find((a) => a.id === act.targetAllyId && !a.down) || grpInjured(st.allies); if (tgt) { const dur = sk.hotDur || 12; const per = Math.round(skHotPerSec(sk) * healPowerOf(ally.char)); tgt.hots = [...(tgt.hots || []).filter((h) => h.src !== sk.name), { src: sk.name, healPerTick: per, nextTick: now + 1000, expires: now + dur * 1000 }]; st.log.push(`🕯️ ${ally.name} puts ${sk.name} on ${tgt.isHuman ? "you" : tgt.name}`); } }
   if (sk.cleanse) { const tgt = st.allies.find((a) => a.id === act.targetAllyId && !a.down && (a.debuffs || []).length) || st.allies.find((a) => !a.down && (a.debuffs || []).length); if (tgt) { st.log.push(`💧 ${ally.name} cleanses ${tgt.isHuman ? "you" : tgt.name}`); tgt.debuffs = []; } }
   if (sk.healAoe) { const amt = Math.round(sk.healAoe * healPowerOf(ally.char)); for (const a of st.allies) if (!a.down) a.hp = Math.min(a.maxHp, a.hp + amt); for (const en of st.enemies) if (en.hp > 0) grpAddThreat(en, ally.id, amt * GRP.threatHeal); }
   if (sk.taunt) { for (const en of st.enemies) if (en.hp > 0) { const top = Math.max(0, ...Object.values(en.threat), 0); en.threat[ally.id] = top * 1.3 + 100; en.targetId = ally.id; } st.log.push(`🛡️ ${ally.name} taunts!`); }
   if (sk.interrupt) { const en = st.enemies.find((e) => e.id === act.targetEnemyId && e.castBar && e.castBar.interruptible) || st.enemies.find((e) => e.castBar && e.castBar.interruptible); if (en) { st.log.push(`🚫 ${ally.name} interrupted ${en.name}'s ${en.castBar.name}!`); en.castBar = null; en.nextCastAt = now + 11000; } }
-  // Empower/haste read as party-wide in a group fight — that is what the support role's
-  // "keep a buff rolling" branch is for, and what makes a support slot worth a seat.
-  if (skIsPartyBuff(sk)) { const dur = ((sk.hasteDur || sk.empowerDur) || 10) * 1000; for (const a of st.allies) if (!a.down) { if (sk.hastePct) a.bw.playerEffects.push({ kind: "haste", pct: sk.hastePct, expires: now + dur }); if (sk.empowerPct) a.bw.playerEffects.push({ kind: "empower", pct: sk.empowerPct, expires: now + dur }); } st.log.push(`✨ ${ally.name} casts ${sk.name} — the party is empowered!`); }
+  if (skIsPartyBuff(sk)) { const dur = ((sk.partyHasteDur || sk.partyWardDur || sk.partyEmpowerDur) || 10) * 1000; for (const a of st.allies) if (!a.down) { if (sk.partyHastePct) a.bw.playerEffects.push({ kind: "haste", pct: sk.partyHastePct, expires: now + dur }); if (sk.partyWardPct) a.bw.playerEffects.push({ kind: "ward", pct: sk.partyWardPct, expires: now + dur }); if (sk.partyEmpowerPct) a.bw.playerEffects.push({ kind: "empower", pct: sk.partyEmpowerPct, expires: now + dur }); } st.log.push(`✨ ${ally.name} casts ${sk.name} — ${sk.partyWardPct ? "the party is shielded" : sk.partyHastePct ? "the party hastens" : "the party is empowered"}!`); }
   // Defensives were silent too; a mitigation cooldown is exactly the thing a party wants to see.
   if (skIsDef(sk)) st.log.push(`🛡️ ${ally.name} braces with ${sk.name}`);
 };

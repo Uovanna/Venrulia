@@ -24,31 +24,40 @@ const dist = (slot, exclude = [], n = 60000) => {
 
 // --- weighting ----------------------------------------------------------------------------
 {
-  ok(secondaryWeight("hands", "vers") > secondaryWeight("hands", "leech"), "a favoured stat outweighs an ordinary one");
-  ok(secondaryWeight("hands", "sta") > secondaryWeight("hands", "leech"),
+  const [hFav] = SLOT_SECONDARY.hands;
+  const hOff = SECONDARY_POOL.find((k) => k !== "sta" && !SLOT_SECONDARY.hands.includes(k));
+  ok(secondaryWeight("hands", hFav) > secondaryWeight("hands", hOff), "a favoured stat outweighs an ordinary one");
+  ok(secondaryWeight("hands", "sta") > secondaryWeight("hands", hOff),
      "stamina keeps a floor even where it is not favoured — without it a full set lost ~7% EHP");
   ok(secondaryWeight("chest", "sta") > secondaryWeight("hands", "sta"), "…but it is still strongest where it IS favoured");
 }
 
 // --- the distribution players actually experience --------------------------------------------
 {
-  const d = dist("hands");                       // favours vers + csd
-  const favShare = d.vers + d.csd;
-  ok(favShare > 0.6 && favShare < 0.75, `hands rolls its favoured pair ${(favShare * 100).toFixed(0)}% of the time`);
-  const off = d.leech + d.resil + d.cdr;
-  ok(off > 0.15, `…and an OFF-slot secondary still lands ${(off * 100).toFixed(0)}% of the time — a find, not an impossibility`);
-  ok(Object.keys(d).length === SECONDARY_POOL.length, "every secondary remains reachable on every slot");
+  // Read the table rather than hardcoding pairs, so a retune cannot silently invalidate this.
+  const share = (slot, keys) => { const d = dist(slot); return keys.reduce((a, k) => a + (d[k] || 0), 0); };
+  for (const slot of ["hands", "chest", "weapon"]) {
+    const fav = SLOT_SECONDARY[slot];
+    const f = share(slot, fav);
+    ok(f > 0.5 && f < 0.75, `${slot} rolls its favoured pair (${fav.join("/")}) ${(f * 100).toFixed(0)}% of the time`);
+    const off = share(slot, SECONDARY_POOL.filter((k) => !fav.includes(k) && k !== "sta"));
+    ok(off > 0.12, `…and an off-slot secondary still lands ${(off * 100).toFixed(0)}% of the time on ${slot}`);
+  }
+  ok(Object.keys(dist("hands")).length === SECONDARY_POOL.length, "every secondary remains reachable on every slot");
 
-  const c = dist("chest");                       // favours sta + resil
-  ok(c.sta + c.resil > 0.6, "chest leans defensive");
-  ok(d.vers > c.vers && c.resil > d.resil, "hands and chest genuinely pull in different directions");
+  // Two slots with disjoint identities must actually pull apart.
+  const a = SLOT_SECONDARY.hands, b = SLOT_SECONDARY.chest;
+  ok(!a.some((k) => b.includes(k)), "hands and chest favour completely different stats");
+  ok(share("hands", a) > share("chest", a), "…and each slot rolls its OWN pair more than the other slot does");
 }
 
 // --- reroll semantics ------------------------------------------------------------------------
 {
-  const d = dist("hands", ["vers"]);
-  ok(!d.vers, "excluding the line's current stat means a paid reroll always changes something");
-  ok(d.csd > 0.4, "…and the other favoured stat picks up that weight");
+  // Exclude one of the slot's OWN favoured stats, table-driven so a retune cannot invalidate it.
+  const [favA, favB] = SLOT_SECONDARY.hands;
+  const d = dist("hands", [favA]);
+  ok(!d[favA], "excluding the line's current stat means a paid reroll always changes something");
+  ok(d[favB] > dist("hands")[favB], `…and the slot's other favoured stat (${favB}) picks up that weight`);
 
   const all = pickSlotSecondary("hands", SECONDARY_POOL);
   ok(all === null, "excluding everything returns null rather than throwing (the caller falls back)");

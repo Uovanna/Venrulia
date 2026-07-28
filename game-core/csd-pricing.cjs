@@ -23,11 +23,13 @@ js = js.replace(/import\.meta\.env/g, '({})');
 js += `
 ;(function(){
   const pad = (s, n) => String(s).padEnd(n); const rpad = (s, n) => String(s).padStart(n);
-  // Live conversions, mirrored from secondaryPcts / critMultFor.
-  const CAP = { vers: 20, csd: 200 }, RATE = { vers: 0.4, csd: 4 };
+  // Imported from the core, never restated — a copied table silently reports stale numbers.
+  const _c = require("${path.join(__dirname, 'combat.mjs').replace(/\\/g, '/')}");
+  const CAP = _c.SEC_CAP, RATE = _c.SEC_RATE;
   const BASE_CRIT_MULT = 1.8;
-  const versPct = (r) => Math.min(CAP.vers, r * RATE.vers);
-  const csdPct  = (r) => Math.min(CAP.csd,  r * RATE.csd);
+  // Use the core's own conversion (diminishing returns included) rather than re-deriving it.
+  const versPct = (r) => _c.secPct("vers", r);
+  const csdPct  = (r) => _c.secPct("csd", r);
 
   // Expected damage multiplier: crits land 'p' of the time at (1.8 + csd/100)x.
   const dmgMult = (p, csdRating, versRating) =>

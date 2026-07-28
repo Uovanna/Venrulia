@@ -9,9 +9,15 @@ const a = runEncounter({ party, boss: "ashen", seed: 4242 });
 const b = runEncounter({ party, boss: "ashen", seed: 4242 });
 ok(a.outcome === b.outcome && a.steps === b.steps && a.elapsed === b.elapsed, `deterministic run (${a.outcome} in ${a.steps} steps, both runs)`);
 
-// 2) different seed → generally different internal trajectory
-const c = runEncounter({ party, boss: "ashen", seed: 9001 });
-ok(JSON.stringify(a.bossHp) !== JSON.stringify(c.bossHp) || a.steps !== c.steps, "seed changes the fight");
+// 2) different seed → generally different internal trajectory.
+// Compare a SET of seeds, not one pair. Whether any given pair diverges is party-dependent —
+// this fight resolves in 441 steps under most seeds and only some shift it — so a single pair
+// made this assertion a coin toss that failed for reasons unrelated to determinism.
+const trajectories = new Set([4242, 9001, 111, 222, 333, 777].map((sd) => {
+  const r = runEncounter({ party, boss: "ashen", seed: sd });
+  return r.steps + "|" + JSON.stringify(r.bossHp);
+}));
+ok(trajectories.size > 1, `seed changes the fight (${trajectories.size} distinct trajectories across 6 seeds)`);
 
 // 3) tick-by-tick (room loop) matches run-to-completion
 let s = createRun({ party, boss: "ashen", seed: 4242 }), n = 0;

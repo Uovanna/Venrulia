@@ -168,6 +168,8 @@ import {
   potionRejection,
   migrateGambitKeys,
   gdkpReserve,
+  SECONDARY_POOL,
+  hasteOf,
   pickSlotSecondary,
   gdkpBotCeiling,
   // These used to be defined a SECOND time in App.jsx. Nothing forced the two copies to agree,
@@ -803,7 +805,7 @@ function makeArtifact(clsId, slotId, level, existing) {
       secs.push(avail[idx]); avail.splice(idx, 1);
     }
   }
-  const stats = { str: 0, agi: 0, int: 0, sta: 0, armor: 0, dmg: 0, leech: 0, resil: 0, vers: 0, cdr: 0, csd: 0, ap: 0, sp: 0 };
+  const stats = { str: 0, agi: 0, int: 0, sta: 0, armor: 0, dmg: 0, leech: 0, resil: 0, vers: 0, cdr: 0, csd: 0, crit: 0, haste: 0, ap: 0, sp: 0 };
   mains.forEach((k) => { stats[k] += perStat; });
   secs.forEach((k) => { stats[k] += Math.max(1, Math.round(secBase * (SIZE[k] || 0.5))); });
   // focused artifacts earn Power on the same terms as any other gear
@@ -821,7 +823,7 @@ function makeArtifact(clsId, slotId, level, existing) {
   };
 }
 
-const SCORE_STATS = ["str", "agi", "int", "sta", "armor", "leech", "resil", "vers", "cdr", "csd"];
+const SCORE_STATS = ["str", "agi", "int", "sta", "armor", "leech", "resil", "vers", "cdr", "csd", "crit", "haste"];
 
 // ============================================================
 // TEMPERING FORGE — BDO-style enhancement (+N) + secondary reroll
@@ -837,10 +839,12 @@ const TEMPER_CFG = {
   grantAtRank: (r) => (r === 10 ? 6 : 1),                 // stat points added to each secondary line on success → +5 at +5, +15 at +10
   failStackPct: 0.04,       // 4% double-chance per stack → 25 stacks = guaranteed
   failStackMax: 25,
-  reroll: { start: 100000, max: 250000, rampRolls: 10, jitter: 0.30, pool: ["sta", "leech", "resil", "vers", "cdr", "csd"] },
+  reroll: { start: 100000, max: 250000, rampRolls: 10, jitter: 0.30, pool: SECONDARY_POOL },
 };
-const SECONDARY_KEYS = ["sta", "leech", "resil", "vers", "cdr", "csd"];
-const SEC_SIZE = { sta: 1.0, leech: 0.5, resil: 0.5, vers: 0.5, cdr: 0.5, csd: 0.5 };
+// Derived from the core rather than restated: these used to be hand-kept copies, so adding a
+// secondary meant remembering to update the temper shop too or it would silently ignore it.
+const SECONDARY_KEYS = SECONDARY_POOL;
+const SEC_SIZE = Object.fromEntries(SECONDARY_POOL.map((k) => [k, k === "sta" ? 1.0 : 0.5]));
 const isTemperable = (it) => !!it && !it.relicId && it.slotId !== "relic"; // relics excluded; all rarities + artifacts allowed
 // nominal secondary rating for a stat at a given ilvl/rarity (mirrors generateItem's formula)
 function secNominal(ilvl, rarityId, stat) {
@@ -1429,7 +1433,7 @@ const CombatLog = ({ log }) => {
   );
 };
 
-const STAT_LABEL = { str: "Str", agi: "Agi", int: "Int", sta: "Sta", armor: "Armor", dmg: "Dmg", leech: "Leech", resil: "Resilience", vers: "Versatility", cdr: "Cooldown Reduction", csd: "Crit Damage", ap: "Attack Power", sp: "Spell Power" };
+const STAT_LABEL = { str: "Str", agi: "Agi", int: "Int", sta: "Sta", armor: "Armor", dmg: "Dmg", leech: "Leech", resil: "Resilience", vers: "Versatility", cdr: "Cooldown Reduction", csd: "Crit Damage", crit: "Crit Chance", haste: "Haste", ap: "Attack Power", sp: "Spell Power" };
 
 // ============================================================
 // AUCTION HOUSE — economy config, value anchors, catalogs
@@ -1669,7 +1673,7 @@ function ItemTooltip({ item, onClose, actions, onSocket }) {
   const r = rarityById(item.rarity);
   const merged = { ...item.stats }; if (item.enchant) for (const k in item.enchant) merged[k] = (merged[k] || 0) + item.enchant[k];
   const mainKeys = ["str", "agi", "int", "sta"];
-  const secKeys = ["ap", "sp", "leech", "resil", "vers", "cdr", "csd"];
+  const secKeys = ["ap", "sp", "leech", "resil", "vers", "cdr", "csd", "crit", "haste"];
   const temperBonus = item.temperBonus || 0;
   const temperByStat = {};
   if (temperBonus > 0 && Array.isArray(item.lines)) for (const ln of item.lines) temperByStat[ln.stat] = (temperByStat[ln.stat] || 0) + temperBonus;
@@ -3005,7 +3009,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       }
 
       // player auto-attacks (class rate × haste, reduced by enemy slow/stun debuffs)
-      const pSpeed = Math.max(0.1, 1 + agiAtkSpeed(c) + talentMods(c).atkSpeed) * hasteMultOf(w.playerEffects) * playerSpeedMultOf(w.playerEffects);
+      const pSpeed = Math.max(0.1, 1 + agiAtkSpeed(c) + talentMods(c).atkSpeed + hasteOf(c)) * hasteMultOf(w.playerEffects) * playerSpeedMultOf(w.playerEffects);
       const stunned = pSpeed <= 0;
       if (stunned) { if (w.playerNextAt < now + 150) { w.playerNextAt = now + 150; dirty = true; } }
       const pInterval = stunned ? Infinity : PLAYER_BASE_INTERVAL / pSpeed;
@@ -4412,7 +4416,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
         const equipped = char.equipment[slot] || null;
         const merged = (it) => { if (!it) return {}; const m = { ...it.stats }; if (it.enchant) for (const k in it.enchant) m[k] = (m[k] || 0) + it.enchant[k]; return m; };
         const em = merged(equipped), bm = merged(bag);
-        const keys = ["str", "agi", "int", "sta", "armor", "leech", "resil", "vers", "cdr", "csd"];
+        const keys = ["str", "agi", "int", "sta", "armor", "leech", "resil", "vers", "cdr", "csd", "crit", "haste"];
         const wAvg = (it) => (it && it.wdmg ? (it.wdmg.min + it.wdmg.max) / 2 : 0);
         const wDelta = Math.round(wAvg(bag) - wAvg(equipped));
         const statLines = (it) => { const m = merged(it); return keys.filter((k) => (m[k] || 0) > 0).map((k) => `+${m[k]} ${STAT_LABEL[k]}`); };
@@ -7456,7 +7460,7 @@ function LootBidModal({ items, party, char, commitChar, showNotif, onClose, net,
             </div>
             {(() => {
               const merged = { ...(item.stats || {}) }; if (item.enchant) for (const k in item.enchant) merged[k] = (merged[k] || 0) + item.enchant[k];
-              const mainKeys = ["str", "agi", "int", "sta"], secKeys = ["ap", "sp", "leech", "resil", "vers", "cdr", "csd"];
+              const mainKeys = ["str", "agi", "int", "sta"], secKeys = ["ap", "sp", "leech", "resil", "vers", "cdr", "csd", "crit", "haste"];
               const socks = socketsOf(item);
               const bare = mainKeys.concat(secKeys).every((k) => !(merged[k] > 0)) && !item.wdmg && !(merged.armor > 0) && !item.relicDesc;
               return (
@@ -7982,7 +7986,7 @@ function MultiplayerHub({ char, commitChar, showNotif, onExit, onStartRated }) {
         let w = { ...E.w, enemy: { ...E.w.enemy }, playerEffects: (E.w.playerEffects || []).filter((e) => e.expires > now), enemyEffects: (E.w.enemyEffects || []).filter((e) => e.expires > now) };
         let log = E.log; const pushLog = (t) => { log = [...log, t].slice(-9); };
         // player auto-attacks (identical math to the solo loop)
-        const pSpeed = Math.max(0.1, 1 + agiAtkSpeed(c) + talentMods(c).atkSpeed) * hasteMultOf(w.playerEffects) * playerSpeedMultOf(w.playerEffects);
+        const pSpeed = Math.max(0.1, 1 + agiAtkSpeed(c) + talentMods(c).atkSpeed + hasteOf(c)) * hasteMultOf(w.playerEffects) * playerSpeedMultOf(w.playerEffects);
         const pInterval = PLAYER_BASE_INTERVAL / pSpeed;
         const critStackPer = gemAutoCritStack(c), execThresh = gemAutoExec(c);
         let g = 0;

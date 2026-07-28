@@ -30,10 +30,11 @@ js += `
   const core = require("${path.join(__dirname, 'combat.mjs').replace(/\\/g, '/')}");
   const { LOOT_SLOTS, generateItem, rarityById } = core;
   const pad = (s, n) => String(s).padEnd(n); const rpad = (s, n) => String(s).padStart(n);
-  const SEC = ["sta", "leech", "resil", "vers", "cdr", "csd"];
-  // The live conversion, copied from secondaryPcts so the report cannot drift from the game.
-  const CAP  = { leech: 25, resil: 30, vers: 20, cdr: 15, csd: 200 };
-  const RATE = { leech: 0.5, resil: 0.6, vers: 0.4, cdr: 0.3, csd: 4 };
+  // IMPORTED, not restated. An earlier version copied these tables "so the report cannot drift
+  // from the game" and then drifted the moment the rates changed, reporting pre-change numbers
+  // with total confidence. Read them from the core.
+  const SEC = core.SECONDARY_POOL;
+  const CAP = core.SEC_CAP, RATE = core.SEC_RATE;
   const capAt = (k) => CAP[k] / RATE[k];          // rating needed to hard-cap
 
   console.log("\\nSECONDARY SOFT CAPS — ilvl " + ILVL + " " + RARITY + " full set (10 slots)\\n");
@@ -56,7 +57,7 @@ js += `
   console.log(pad("stat", 8) + rpad("rating", 9) + rpad("cap", 7) + rpad("% of cap", 10) + rpad("yields", 10));
   for (const k of Object.keys(CAP)) {
     const r = totals[k] / N;
-    const yielded = Math.min(CAP[k], r * RATE[k]);
+    const yielded = core.secPct(k, r);
     console.log(pad(k, 8) + rpad(r.toFixed(1), 9) + rpad(capAt(k), 7)
       + rpad((r / capAt(k) * 100).toFixed(0) + "%", 10) + rpad(yielded.toFixed(1) + "%", 10));
   }
@@ -73,6 +74,7 @@ js += `
       const present = SEC.filter((k) => (it.stats[k] || 0) > 0);
       lines += present.length;
       // if every one of those lines were rerolled into the same non-stamina stat
+      if (!present.length) continue;
       const per = Math.max(...present.map((k) => (it.stats[k] || 0) / (k === "sta" ? 1.0 : 0.5)));
       ratingIfAll += present.length * Math.round(per * 0.5);
     }
@@ -106,8 +108,8 @@ js += `
     if (r <= S) return r;
     return S + (hard - S) * (r - S) / ((r - S) + D);
   };
-  const nowPct = (k, r) => Math.min(CAP[k], r * RATE[k]);
-  const newPct = (k, r) => eff(k, r) * RATE[k];
+  const nowPct = (k, r) => Math.min(CAP[k], r * RATE[k]);   // the OLD linear+wall, for comparison
+  const newPct = (k, r) => core.secPct(k, r);              // what the game now actually does
 
   console.log("\\nPROPOSED: linear to a soft cap, then a hyperbolic tail to the hard cap");
   console.log("  soft cap S = " + (S_FRAC * 100) + "% of the hard cap (25 rating), tail width D = " + D + "\\n");

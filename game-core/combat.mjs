@@ -701,7 +701,19 @@ const BOT_TIERS = {
 const PVP_TOUGHNESS = 0.25;
 const PVP_SKILL_CUT = 0.60;
 const PVP_SKILL_MULT = (1 - PVP_TOUGHNESS) * PVP_SKILL_CUT;
-const botCanAfford = (bc, bw, s) => { if (s.spend === "all") return resTotal(bw) > 0; if (typeof s.spend === "number") return resTotal(bw) >= s.spend; return true; };
+// Resource check. This gates BOTH the action bar's enabled state and the server's
+// resolveIntent, so it has to agree with what applySkillCore will actually do.
+//
+// It only looked at `spend` (8 skills) and ignored `cost` (17 skills), so a skill you could
+// not pay for looked ready, was accepted, ate your tap and then silently did nothing —
+// applySkillCore refuses it downstream. That is why a Paladin healer, whose kit spends Aegis,
+// found that no skills worked, while a rogue built out of generators found that all of them did.
+const botCanAfford = (bc, bw, s) => {
+  if (s.spend === "all") return resTotal(bw) > 0;
+  if (typeof s.spend === "number") return resTotal(bw) >= s.spend;
+  if (typeof s.cost === "number") return resTotal(bw) >= s.cost;
+  return true;
+};
 const chooseBotSkill = (bc, bw, now, tier) => {
   const skills = (bc.selectedSkills || []).map((n) => skillByName(bc, n)).filter(Boolean);
   const ready = skills.filter((s) => (bw.cooldowns[s.name] || 0) <= now && botCanAfford(bc, bw, s));
@@ -807,16 +819,16 @@ function applySkillCore(skill, c, bIn, now, log) {
     if (skill.cleanse) { const n = b.playerEffects.filter(isPlayerDebuff).length; b.playerEffects = b.playerEffects.filter((e) => !isPlayerDebuff(e)); log(n ? `${skill.icon} ${skill.name} clears ${n} debuff${n > 1 ? "s" : ""}!` : `${skill.icon} ${skill.name}: nothing to cleanse`, "#7CFC9E"); }
     return { battle: b, died: b.enemy.hp <= 0 };
 }
-// Group-encounter balance, calibrated for ~60s fights (see PHASE0.md).
-//   estCal  corrects grpEstDps, which sums offlinePlayerDps — an idle-throughput figure that
-//           under-counts a party actually using its rotation by more than an order of
-//           magnitude. Boss HP is grpEstDps * dur, so this is the time-to-kill dial.
-//   dmg     boss outgoing damage. Was 1.9, which killed a party in 20-40s regardless of how
-//           much HP the boss had, capping every fight well under its target duration.
-//   healCoeff  the healer's throughput. Kept above 1 because the only real heal in the game
-//           (Mending Touch) sits on a 90s cooldown, so sustain is otherwise almost nil — this
-//           is what turns the hardest content from a guaranteed wipe into a clear.
-const GRP = { estCal: 24, gcd: 1300, enemyAuto: 1500, threatTank: 2.6, threatDps: 1.0, threatHeal: 0.5, healCoeff: 1.6, resKick: 0, dmg: 0.28 };
+// Group-encounter balance.
+//   estCal  scales boss HEALTH (boss hp = grpEstDps * dur). The ~60s calibration pushed this
+//           to 24, which produced health pools that read as absurd in play — parked back at 1.
+//   dmg     boss outgoing damage, i.e. how fast the PARTY dies. Left at the calibrated 0.28:
+//           bots are now built at the encounter's own item level rather than as fixed epic
+//           60s, and at the original 1.9 that party is killed on every piece of content
+//           before it can finish anything. This is time-to-die, not time-to-kill.
+//   healCoeff  healer throughput, kept above 1 because the only real heal in the game
+//           (Mending Touch) is on a 90s cooldown, so sustain is otherwise almost nil.
+const GRP = { estCal: 1, gcd: 1300, enemyAuto: 1500, threatTank: 2.6, threatDps: 1.0, threatHeal: 0.5, healCoeff: 1.6, resKick: 0, dmg: 0.28 };
 const healPowerOf = (char) => Math.round(maxHpFor(char) * GRP.healCoeff);
 // These predicates drive the whole group-combat role system, and they must key off the
 // property names the SKILLS data actually uses. They previously looked for `heal`, `offheal`,

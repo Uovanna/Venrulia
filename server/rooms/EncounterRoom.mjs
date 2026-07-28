@@ -38,7 +38,9 @@ const TICK_MS = 120;           // authoritative sim rate (matches client)
 // seconds meant two friends had to press Queue within eight seconds of each other or they were
 // silently placed in separate rooms — the room locks on start. A minute is long enough to
 // coordinate across timezones; a full party still starts instantly.
-const FILL_TIMEOUT_MS = 60000;
+// Overridable so the e2e test can start a room without waiting a real minute. Production never
+// sets it; a single client waiting the full window is the point of the default.
+const FILL_TIMEOUT_MS = Number(process.env.ROE_FILL_MS) || 60000;
 
 export class EncounterRoom extends Room {
   onCreate(options) {

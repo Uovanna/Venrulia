@@ -870,6 +870,417 @@ const mkEncEnemy = (def, allies, id, isAdd) => {
 const allyById = (st, id) => st.allies.find((a) => a.id === id && !a.down);
 const grpAdds = (st) => st.enemies.filter((e) => e.hp > 0 && e.isAdd);
 const grpIncoming = (st, now) => { let raidSoon = false, busterSoon = false; for (const en of st.enemies) { if (en.hp <= 0) continue; if (en.castBar && en.castBar.interruptible && en.castBar.endsAt - now < 1600) raidSoon = true; for (const ab of en.abilities || []) { if (ab.kind === "raidtick" && ab.nextAt - now < 1200) raidSoon = true; if (ab.kind === "tankbuster" && ab.nextAt - now < 2200) busterSoon = true; } } return { raidSoon, busterSoon }; };
+// ---------- character + loot construction (Stage 5 extraction) ----------
+const specSkillNames = (id) => SPEC_SKILLS[id] || [];
+const specClassOf = (id) => { for (const cid in TALENT_L60) if ((TALENT_L60[cid] || []).some((x) => x.id === id)) return cid; return null; };
+const SPEC_MIGRATIONS = { p_king: "p_prot" };
+const TRINITY_FILL = { tank: ["warrior", "w_prot"], healer: ["paladin", "p_holy"], support: ["mage", "m_support"], dps: ["rogue", "r_ambush"] };
+const botTier = (rating) => {
+  const r = rating || 1500;
+  const weights = r < 1400 ? [["new", 0.45], ["experienced", 0.45], ["expert", 0.10]]
+    : r < 1900 ? [["new", 0.15], ["experienced", 0.60], ["expert", 0.25]]
+    : [["new", 0.05], ["experienced", 0.35], ["expert", 0.60]];
+  let x = Math.random(), acc = 0;
+  for (const [k, w] of weights) { acc += w; if (x <= acc) return BOT_TIERS[k]; }
+  return BOT_TIERS.experienced;
+};
+const buildBotChar = (cls, spec, level, ilvl) => {
+  const bc = createCharacter("BotRef", cls, "human");
+  bc.level = level || 60;
+  if (spec) bc.spec = spec;
+  const eq = { ...emptyEquipment() };
+  for (const s of LOOT_SLOTS) eq[s.id] = generateItem(Math.max(1, ilvl || 60), rarityById("epic"), s.id, cls);
+  bc.equipment = eq;
+  return normalizeChar(bc);
+};
+const mainStatsOf = (item) => { const st = (item && item.stats) || {}; return MAIN_KEYS.filter((k) => (st[k] || 0) > 0); };
+const migrateItem = (it) => {
+  if (!it || !it.slotId) return it;
+  if (it.slotId === "relic" || it.relicId) return it; // relics have no ilvl/armor to back-fill
+  const ri = Math.max(0, RARITIES.findIndex((r) => r.id === it.rarity));
+  // Bring older gear onto the naming contract: suffix + mains always match the real stats.
+  const mains = mainStatsOf(it);
+  const renamed = { ...it, mains, name: nameWithSuffix(it.name, mains) };
+  if (it.slotId === "weapon") return { ...renamed, wdmg: weaponRangeFor(it.ilvl, ri) }; // recompute so weapon-damage tuning applies to existing weapons
+  const ba = baseArmorFor(it.ilvl, ri, it.slotId);
+  return ((renamed.stats && renamed.stats.armor) || 0) >= ba ? renamed : { ...renamed, stats: { ...renamed.stats, armor: ba } };
+};
+const padSelectedSkills = (char, list) => {
+  const cap = unlockedSlotCount(char.level);
+  const out = [];
+  for (const n of (list || [])) { if (out.length >= cap) break; if (skillByName(char, n) && !out.includes(n)) out.push(n); } // keep valid, de-duplicated, in order
+  for (const sk of (SKILLS[char.cls] || [])) { if (out.length >= cap) break; if (sk.spec && char.spec !== sk.spec) continue; if (!out.includes(sk.name)) out.push(sk.name); }
+  return out;
+};
+const SPEC_SKILLS = {
+  // Warrior
+  w_berserk:  ["Frenzied Onslaught", "Bloodletting Roar", "Reckless Abandon"],
+  w_champion: ["Cataclysm Slam", "Warbringer", "Unbreakable Momentum"],
+  w_antimage: ["Spell Reflection", "Runic Cleave", "Bulwark Vengeance"],
+  // Mage
+  m_wild:  ["Arcane Surge", "Mana Rupture", "Overcharged Nova"],
+  m_trick: ["Glacial Chains", "Frozen Orb", "Winter's Bite"],
+  m_sword: ["Runeblade Strike", "Blade Cadence", "Arcane Riposte"],
+  // Rogue
+  r_ambush: ["Cold Open", "Killing Intent", "Throat Slit"],
+  r_corr:   ["Virulent Blades", "Festering Wounds", "Toxic Bloom"],
+  r_wild:   ["Relentless Flurry", "Fleetblade", "Twin Daggers"],
+  // Paladin
+  p_just:  ["Verdict of Flame", "Sanctified Zeal", "Judgment Beam"],
+  p_king:  ["Aegis Overflow", "Consecrated Ground", "Retribution Wall"],
+  p_exile: ["Zealot's Flurry", "Righteous Momentum", "Executioner's Verdict"],
+  // Hunter
+  h_snipe: ["Steady Aim", "Piercing Focus", "Deadeye Shot"],
+  h_trap:  ["Savage Companion", "Snake Trap", "Venomous Companion"],
+  h_range: ["Rapid Volley", "Hunter's Rhythm", "Twin Shot"],
+  // Warlock
+  l_scorch: ["Chaos Bolt", "Immolation Burst", "Cataclysm"],
+  l_hex:    ["Unstable Affliction", "Corruption Spread", "Soul Harvest", "Soul Detonation"],
+  l_demon:  ["Summon Fiend", "Demonic Empowerment", "Soul Link"],
+  // ---- Group-role specs (Phase 1) ----
+  w_prot:     ["Shield Slam", "Challenging Shout", "Thunder Clap", "Last Stand", "Shield Wall"],       // Warrior · Tank
+  p_holy:     ["Holy Light", "Divine Radiance", "Beacon of Light", "Cleanse", "Aegis of Light"], // Paladin · Healer (Holy Smite available to swap in)
+  p_prot:     ["Shield of the Righteous", "Hand of Authority", "Consecration", "Guardian's Bulwark", "Ardent Defender"], // Paladin · Tank
+  m_support:  ["Counterspell", "Temporal Surge", "Arcane Ward", "Arcane Barrage", "Dampen Magic"],   // Mage · Support
+  h_support:  ["Disrupting Shot", "Rallying Anthem", "Mending Volley", "Aimed Shot", "Warding Cry"], // Hunter · Support
+};
+const ALL_SPEC_SKILL_NAMES = new Set(Object.values(SPEC_SKILLS).flat());
+const migrateSpec = (id) => (id && SPEC_MIGRATIONS[id]) || id;
+const STARTER_WEAPON = {
+  warrior: "Rusty Shortsword", paladin: "Dented Mace", rogue: "Worn Dagger",
+  hunter: "Frayed Shortbow", mage: "Cracked Wand", warlock: "Gnarled Wand",
+};
+const mkStarter = (slotId, name, stats) => ({ id: uid(), name, slotId, icon: slotById(slotId).icon, rarity: "poor", ilvl: 1, stats: { str: 0, agi: 0, int: 0, sta: 0, armor: 0, dmg: 0, ...stats }, value: 1, enchant: null });
+const starterGear = (clsId) => {
+  const m = CLASSES.find((c) => c.id === clsId).main; // main combat stat
+  const caster = clsId === "mage" || clsId === "warlock";
+  const armorName = {
+    head: caster ? "Tattered Hood" : "Battered Helm",
+    shoulder: caster ? "Frayed Shoulderpads" : "Worn Pauldrons",
+    chest: caster ? "Frayed Robe" : "Worn Tunic",
+    hands: caster ? "Tattered Gloves" : "Worn Gauntlets",
+    legs: caster ? "Frayed Leggings" : "Worn Legguards",
+    feet: caster ? "Tattered Sandals" : "Worn Boots",
+  };
+  const gear = {
+    weapon: mkStarter("weapon", STARTER_WEAPON[clsId] || "Worn Weapon", { dmg: 2, [m]: 1 }),
+    offhand: mkStarter("offhand", caster ? "Cracked Tome" : "Splintered Buckler", caster ? { [m]: 1, sta: 1 } : { armor: 2, sta: 1 }),
+    ring: mkStarter("ring", "Tarnished Band", { [m]: 1, sta: 1 }),
+    trinket: mkStarter("trinket", "Cracked Bauble", { [m]: 1, sta: 1 }),
+  };
+  ["head", "shoulder", "chest", "hands", "legs", "feet"].forEach((slot) => {
+    gear[slot] = mkStarter(slot, armorName[slot], { armor: slot === "chest" || slot === "legs" ? 2 : 1, sta: 1 });
+  });
+  return gear;
+};
+const PROFESSIONS = [
+  { id: "mining", name: "Mining", icon: "⛏️", type: "gathering", color: "#8B7355", desc: "Gather Ore; richer ranks find Rich Ore." },
+  { id: "herbalism", name: "Herbalism", icon: "🌿", type: "gathering", color: "#4a7c3f", desc: "Gather Herbs, plus Healing Herbs." },
+  { id: "salvage", name: "Salvage", icon: "♻️", type: "gathering", color: "#7d8aa0", desc: "Break down downgrade gear (green+) into Dust." },
+  { id: "armorsmith", name: "Armorsmith", icon: "🔨", type: "crafting", color: "#888", desc: "Forge gear from Ore; Rich Ore raises rarity." },
+  { id: "alchemy", name: "Alchemy", icon: "⚗️", type: "crafting", color: "#9482C9", desc: "Brew tiered potions Brew Healing Potions from herbs. scrolls from herbs." },
+  { id: "enchanting", name: "Enchanting", icon: "✨", type: "crafting", color: "#69CCF0", desc: "Enchant equipped gear with an extra stat (uses Dust)." },
+];
+const emptyProfessions = () => PROFESSIONS.reduce((m, p) => { m[p.id] = { level: 1, xp: 0, active: false }; return m; }, {});
+const SOCKETABLE_SLOTS = ["ring", "trinket"];
+const socketCountFor = (rarityId, slotId) => {
+  if (rarityId === "artifact") return 3;
+  if (!SOCKETABLE_SLOTS.includes(slotId)) return 0;
+  return rarityId === "legendary" ? 2 : rarityId === "epic" ? 1 : 0;
+};
+const emptySockets = (n) => Array.from({ length: n }, () => null);
+const uid = () => Math.random().toString(36).slice(2, 10);
+const mainKeyOf = (mains) => [...new Set(mains || [])].filter((k) => MAIN_KEYS.includes(k)).sort().join("+");
+const suffixByMains = (mains) => MAIN_SUFFIXES.find((x) => mainKeyOf(x.stats) === mainKeyOf(mains)) || null;
+const MAIN_SUFFIXES = [
+  { stats: ["str"],        name: "of Power",      desc: "+Strength" },
+  { stats: ["agi"],        name: "of the Falcon", desc: "+Agility" },
+  { stats: ["int"],        name: "of the Owl",    desc: "+Intellect" },
+  { stats: ["str", "agi"], name: "of the Wolf",   desc: "+Strength +Agility" },
+  { stats: ["str", "int"], name: "of the Dragon", desc: "+Strength +Intellect" },
+  { stats: ["agi", "int"], name: "of the Tiger",  desc: "+Agility +Intellect" },
+];
+const ALL_SUFFIX_NAMES = MAIN_SUFFIXES.map((x) => x.name).concat(["of Power", "of the Tiger", "of the Owl", "of the Bear", "of Slaying", "of the Boar"]);
+const POWER_AFFIX_MIN_ILVL = 60;   // focused gear only earns Power at endgame
+const POWER_PER_STAT = 1.4;        // damage converts at statVal * 1.4, so this = one extra main stat
+// A piece's Power is CONDITIONAL: it only applies while the item still carries exactly one main
+// stat once enchants and socketed gems are counted. Stacking MORE of the same stat keeps it active;
+// adding a second main stat trades the Power away for breadth. That is the focused-vs-flexible choice.
+
+
+
+
+
+// Would adding `stat` to this item put its Power dormant? (used to warn before enchant/socket)
+const nameWithSuffix = (rawName, mains) => {
+  let base = String(rawName || "").trim();
+  for (const suf of ALL_SUFFIX_NAMES) { if (base.endsWith(" " + suf)) { base = base.slice(0, -(suf.length + 1)).trim(); break; } }
+  const suf = suffixByMains(mains);
+  return suf ? `${base} ${suf.name}` : base;
+};
+const PREFIXES = ["Worn", "Sturdy", "Gleaming", "Burnished", "Fortified", "Runed", "Savage", "Glacial", "Resplendent", "Doomforged", "Ancient", "Bloodforged"];
+const ARMOR_BASE_MULT = 2.2;
+
+const WEAPON_DMG_MULT = 5.1; // nerfed 15% from 6
+const weaponRangeFor = (ilvl, rarityIdx) => { const avg = gearStatBase(ilvl, rarityIdx) * WEAPON_DMG_MULT; return { min: Math.max(1, Math.round(avg * 0.85)), max: Math.max(2, Math.round(avg * 1.15)) }; };
+const ARMOR_SLOT_WEIGHT = { chest: 1.0, legs: 0.9, offhand: 0.9, head: 0.8, shoulder: 0.7, hands: 0.6, feet: 0.6, ring: 0.3, trinket: 0.3 };
+const gearStatBase = (ilvl, rarityIdx) => (1 + ilvl * 0.05) * (RARITY_STAT_MULT[rarityIdx] || 1);
+const baseArmorFor = (ilvl, rarityIdx, slotId) => (slotId === "weapon" ? 0 : Math.max(1, Math.round(gearStatBase(ilvl, rarityIdx) * (ARMOR_SLOT_WEIGHT[slotId] || 0.5) * ARMOR_BASE_MULT)));
+const RARITY_STAT_MULT = [0.5, 0.8, 1.2, 1.8, 2.6, 3.8, 3.8];
+const ITEM_BASES = {
+  head: ["Helm", "Coif", "Crown", "Hood", "Greathelm", "Circlet"],
+  shoulder: ["Pauldrons", "Mantle", "Spaulders", "Shoulderguards"],
+  chest: ["Breastplate", "Tunic", "Robe", "Chestguard", "Hauberk"],
+  hands: ["Gauntlets", "Gloves", "Grips", "Handwraps"],
+  legs: ["Legplates", "Leggings", "Greaves", "Kilt"],
+  feet: ["Boots", "Sabatons", "Treads", "Striders"],
+  weapon: ["Blade", "Axe", "Warhammer", "Dagger", "Staff", "Mace", "Greatsword", "Longbow"],
+  offhand: ["Shield", "Tome", "Orb", "Bulwark", "Idol"],
+  ring: ["Band", "Ring", "Loop", "Seal", "Signet"],
+  trinket: ["Charm", "Idol", "Talisman", "Insignia", "Figurine"],
+};
+const slotById = (id) => GEAR_SLOTS.find((s) => s.id === id);
+// Lifted from App.jsx so the SERVER can build bots itself. Bot-fill previously reused a
+// fixed reference character, which meant level-60 epic gear in a level-17 dungeon; with
+// these here the server rolls a bot's gear at the encounter's own item level.
+const RARITIES = [
+  { id: "poor", name: "Poor", color: "#9d9d9d", power: 1, valueMult: 0.4, weight: 26 },
+  { id: "common", name: "Common", color: "#ffffff", power: 2, valueMult: 1.0, weight: 40 },
+  { id: "uncommon", name: "Uncommon", color: "#1eff00", power: 4, valueMult: 3.0, weight: 22 },
+  { id: "rare", name: "Rare", color: "#0070dd", power: 7, valueMult: 8.0, weight: 9 },
+  { id: "epic", name: "Epic", color: "#a335ee", power: 15, valueMult: 22.0, weight: 2.5 },
+  { id: "legendary", name: "Legendary", color: "#ff8000", power: 24, valueMult: 60.0, weight: 0.5 },
+  { id: "artifact", name: "Artifact", color: "#c8102e", power: 24, valueMult: 60.0, weight: 0 }, // deep red; never drops — purchased with Ven
+];
+const rarityById = (id) => RARITIES.find((r) => r.id === id) || RARITIES[1];
+const GEAR_SLOTS = [
+  { id: "head", name: "Head", icon: "🪖" },
+  { id: "shoulder", name: "Shoulder", icon: "🧣" },
+  { id: "chest", name: "Chest", icon: "👕" },
+  { id: "hands", name: "Hands", icon: "🧤" },
+  { id: "legs", name: "Legs", icon: "👖" },
+  { id: "feet", name: "Feet", icon: "🥾" },
+  { id: "weapon", name: "Weapon", icon: "⚔️" },
+  { id: "offhand", name: "Off-hand", icon: "🛡️" },
+  { id: "ring", name: "Ring", icon: "💍" },
+  { id: "trinket", name: "Trinket", icon: "🔮" },
+  { id: "relic", name: "Relic", icon: "🔱" },
+];
+const LOOT_SLOTS = GEAR_SLOTS.filter((s) => s.id !== "relic");
+const emptyEquipment = () => GEAR_SLOTS.reduce((acc, s) => { acc[s.id] = null; return acc; }, {});
+function generateItem(ilvl, rarity, slotId, clsId) {
+  ilvl = Math.max(1, Math.floor(ilvl));
+  // Rarity floors: Epic requires ilvl 60+, Legendary requires ilvl 64+ (applies to drops, crafting, and the Auction House)
+  if (rarity.id === "legendary" && ilvl < 64) rarity = rarityById(ilvl >= 60 ? "epic" : "rare");
+  if (rarity.id === "epic" && ilvl < 60) rarity = rarityById("rare");
+  const slot = slotById(slotId);
+  let base = pick(ITEM_BASES[slotId] || ["Trinket"]);
+  if (slotId === "weapon" && clsId === "hunter") base = pick(HUNTER_WEAPONS);
+  const isWeapon = slotId === "weapon";
+
+  const rarityIdx = RARITIES.findIndex((r) => r.id === rarity.id);
+  // Dramatically squished values: small numbers, gentle rarity curve. World-zone gear gives
+  // modest boosts; notable upgrades come from the higher rarities dropped by dungeons & raids.
+  const perStat = Math.max(1, Math.round((1 + ilvl * 0.05) * (RARITY_STAT_MULT[rarityIdx] || 1)));
+  const secBase = Math.max(1, Math.round(perStat * 0.7));
+  const stats = { str: 0, agi: 0, int: 0, sta: 0, armor: 0, dmg: 0, leech: 0, resil: 0, vers: 0, cdr: 0, csd: 0, ap: 0, sp: 0 };
+
+  // ----- MAIN stats (str/agi/int) -----
+  // Always 1 main stat. Purple & Gold have a 50% chance to roll a SECOND main stat, which
+  // replaces one secondary slot (rather than being guaranteed). The class scaling is unchanged.
+  const BASE_STATS = ["str", "agi", "int"];
+  // Any primary stat can drop on any gear — classes no longer gate the main stat.
+  const firstMain = pick(BASE_STATS);
+  const mainStats = [firstMain];
+
+  // ----- SECONDARY stats (armor is now inherent base Armor; weapon damage is a range) -----
+  const SIZE = { sta: 1.0, leech: 0.5, vers: 0.5, resil: 0.5, cdr: 0.5, csd: 0.5 }; // non-stamina weights reset & unified
+  // White 1, Green 2, Blue 3, Purple 3, Gold 4 (Poor 0) — Purple & Gold each dropped one line.
+  let secondaryCount = [0, 1, 2, 3, 3, 4, 4][rarityIdx] ?? 1; // artifact matches legendary
+
+  // Purple & Gold: 50% chance for a 2nd random main stat, replacing one secondary slot
+  if (rarityIdx >= 4 && Math.random() < 0.5) {
+    mainStats.push(pick(BASE_STATS.filter((k) => k !== firstMain)));
+    secondaryCount = Math.max(0, secondaryCount - 1);
+  }
+  mainStats.forEach((k) => { stats[k] += perStat; });
+
+  const pool = ["sta", "leech", "vers", "resil", "cdr", "csd"];
+  const chosen = [];
+  if (secondaryCount === 1) {
+    // gear with a single secondary: ~50% Stamina
+    chosen.push(Math.random() < 0.5 ? "sta" : pick(pool.filter((k) => k !== "sta")));
+  } else {
+    const avail = [...pool];
+    for (let i = 0; i < secondaryCount && avail.length; i++) {
+      const weights = avail.map((k) => (k === "sta" ? 3 : 1)); // stamina favored
+      const total = weights.reduce((a, b) => a + b, 0);
+      let r = Math.random() * total, idx = 0;
+      while (r >= weights[idx]) { r -= weights[idx]; idx++; }
+      chosen.push(avail[idx]); avail.splice(idx, 1);
+    }
+  }
+  chosen.forEach((k) => { stats[k] += Math.max(1, Math.round(secBase * (SIZE[k] || 0.5))); });
+
+  // inherent Armor on all non-weapon gear; weapons instead carry a damage range
+  if (!isWeapon) stats.armor += baseArmorFor(ilvl, rarityIdx, slotId);
+  const wdmg = isWeapon ? weaponRangeFor(ilvl, rarityIdx) : null;
+
+  // ----- POWER AFFIX: focused (single main stat) endgame gear carries flat damage -----
+  // Worth exactly one extra main stat (damage converts at statVal * 1.4), so a focused piece is
+  // the equal of a dual-stat piece for a build that only uses one stat.
+  const mains = MAIN_KEYS.filter((k) => stats[k] > 0);
+  let powerKind = null;
+  if (mains.length === 1 && ilvl >= POWER_AFFIX_MIN_ILVL) {
+    powerKind = mains[0] === "int" ? "sp" : "ap"; // Str/Agi → Attack Power, Int → Spell Power
+    stats[powerKind] += Math.max(1, Math.round(perStat * POWER_PER_STAT));
+  }
+
+  // ----- name states the main stats outright (see MAIN_SUFFIXES); the prefix flags the Power type -----
+  const prefix = powerKind ? (powerKind === "ap" ? "Brutal" : "Arcane") : PREFIXES[clamp(rarityIdx * 2 + Math.floor(Math.random() * 2), 0, PREFIXES.length - 1)];
+  const name = nameWithSuffix(`${prefix} ${base}`, mains);
+  const value = Math.max(1, Math.round(ilvl * rarity.valueMult * (0.8 + Math.random() * 0.4)));
+
+  return { id: uid(), name, slotId, icon: slot.icon, rarity: rarity.id, ilvl, stats, value, enchant: null, wdmg, mains, sockets: emptySockets(socketCountFor(rarity.id, slotId)) };
+}
+const createCharacter = (name, cls, race) => {
+  const c = {
+    id: uid(),
+    name, cls, race,
+    level: 1, xp: 0, gold: 150, kills: 0, bossKills: 0, dungeonClears: 0,
+    honor: 0, honorXp: 0, attrPoints: 0, allocated: { str: 0, agi: 0, int: 0, sta: 0 },
+    currentZoneId: "elwynn",
+    offlineZoneId: null,
+    lastActive: Date.now(),
+    professions: emptyProfessions(),
+    gatherTier: {},
+    unlockedSkills: [SKILLS[cls][0].name],
+    spec: null,
+    talents: {},
+    talentChanges: 0,
+    skillMods: {},
+    specLoadouts: {},
+    skillModRefunds: 0,
+    hardKills: {}, hardBossKills: {}, hardZoneDone: {}, hardDungeonDone: {},
+    gambits: { owned: {}, shards: {}, rules: {}, slots: {}, general: [], generalSlots: 2 },
+    gems: {},
+    talentTutorialDone: false,
+    selectedSkills: [SKILLS[cls][0].name],
+    stats: { ...CLASSES.find((c) => c.id === cls).stats },
+    equipment: { ...emptyEquipment(), ...starterGear(cls) },
+    inventory: [generateItem(3, RARITIES.find((r) => r.id === "common"), "head", cls)], // a white upgrade for the tutorial
+    materials: {},
+    autoEquip: true,
+    autoSellDowngrades: false,
+    upgrades: { autoPotion: false },
+    autoSkills: {},
+    autoSkillsOwned: {},
+    redeemed: {},
+    dungeonRuns: {},
+    raidCooldowns: {},
+    guildDungeonRuns: {}, guildRaidCooldowns: {}, trialCooldowns: {}, // Guild lockouts, independent of solo
+    ahRefreshes: [],
+    ahListings: [],
+    ahMeta: { lastSweep: 0 },
+    mail: [],
+    failStacks: 0,
+    consumables: {},
+    supplies: {},
+    drops: {},
+    killsByType: {},
+    town: { buildings: {}, build: null },
+    ven: 0,
+    mp: { ladderBest: null, rated: { wins: 0, losses: 0, start: Date.now() }, lifetime: { wins: 0, losses: 0 } },
+    arenaTokens: 0,
+    tickets: { dungeonReset: 0, arenaChallenge: 0 },
+    auras: { xp: 0, gold: 0 },
+    quests: { board: [] },
+    tutorial: { step: 0, done: false },
+    buffs: {},
+    hp: 0,
+    createdAt: Date.now(),
+    lastSaved: Date.now(),
+  };
+  c.hp = maxHpFor(c);
+  return c;
+};
+const normalizeChar = (c) => ({
+  ...c,
+  gold: c.gold || 0, kills: c.kills || 0, bossKills: c.bossKills || 0, dungeonClears: c.dungeonClears || 0,
+  honor: c.honor || 0, honorXp: c.honorXp || 0, attrPoints: c.attrPoints || 0, allocated: { str: 0, agi: 0, int: 0, sta: 0, ...(c.allocated || {}) },
+  professions: { ...emptyProfessions(), ...(c.professions || {}) },
+  gatherTier: c.gatherTier || {},
+  offlineZoneId: c.offlineZoneId ?? null,
+  lastActive: c.lastActive || Date.now(),
+  // Skills are purely level-gated, so derive the known list from level. This also
+  // migrates saves made before skills were renamed (old names no longer match).
+  unlockedSkills: (SKILLS[c.cls] || []).filter((s) => s.unlockLevel <= (c.level || 1)).map((s) => s.name),
+  secondaryClass: undefined, // dual-classing retired → drop the stale field on next save
+  spec: (() => {
+    const cs = migrateSpec(c.spec);
+    if (cs && specById(cs) && specClassOf(cs) === c.cls) return cs;
+    const old60 = c.talents && c.talents[60]; // migrate a pre-existing level-60 talent pick into the Specialization
+    if (old60 && specById(migrateSpec(old60)) && specClassOf(migrateSpec(old60)) === c.cls) return migrateSpec(old60);
+    return null;
+  })(),
+  talents: (c.talents && typeof c.talents === "object") ? c.talents : {},
+  talentChanges: c.talentChanges || 0,
+  skillMods: (c.skillMods && typeof c.skillMods === "object") ? c.skillMods : {},
+  specLoadouts: (c.specLoadouts && typeof c.specLoadouts === "object") ? c.specLoadouts : {}, // per-Specialization saved templates
+  skillModRefunds: c.skillModRefunds || 0,
+  equipment: Object.fromEntries(Object.entries(c.equipment || {}).map(([k, it]) => [k, it && !Array.isArray(it.sockets) ? { ...it, sockets: emptySockets(socketCountFor(it.rarity, it.slotId)) } : it])),
+  inventory: (c.inventory || []).map((it) => (it && !Array.isArray(it.sockets) ? { ...it, sockets: emptySockets(socketCountFor(it.rarity, it.slotId)) } : it)),
+  gems: (c.gems && typeof c.gems === "object") ? c.gems : {},
+  tomes: undefined, learnedSkills: undefined, // retired: every skill now unlocks by level
+  gambits: (c.gambits && typeof c.gambits === "object") ? { owned: c.gambits.owned || {}, shards: c.gambits.shards || {}, rules: c.gambits.rules || {}, slots: c.gambits.slots || {}, general: Array.isArray(c.gambits.general) ? c.gambits.general : [], generalSlots: c.gambits.generalSlots || 2 } : { owned: {}, shards: {}, rules: {}, slots: {}, general: [], generalSlots: 2 },
+  hardKills: (c.hardKills && typeof c.hardKills === "object") ? c.hardKills : {},
+  hardBossKills: (c.hardBossKills && typeof c.hardBossKills === "object") ? c.hardBossKills : {},
+  hardZoneDone: (c.hardZoneDone && typeof c.hardZoneDone === "object") ? c.hardZoneDone : {},
+  hardDungeonDone: (c.hardDungeonDone && typeof c.hardDungeonDone === "object") ? c.hardDungeonDone : {},
+  talentTutorialDone: !!c.talentTutorialDone,
+  selectedSkills: (() => {
+    let spec = (migrateSpec(c.spec) && specById(migrateSpec(c.spec)) && specClassOf(migrateSpec(c.spec)) === c.cls) ? migrateSpec(c.spec) : null;
+    if (!spec) { const old60 = c.talents && c.talents[60]; if (old60 && specById(migrateSpec(old60)) && specClassOf(migrateSpec(old60)) === c.cls) spec = migrateSpec(old60); }
+    const sig = spec ? specSkillNames(spec) : [];
+    const base = (c.selectedSkills || c.unlockedSkills || []).filter((n) => !ALL_SPEC_SKILL_NAMES.has(n) || sig.includes(n)); // drop signature skills from other specs
+    return padSelectedSkills({ cls: c.cls, level: c.level || 1, spec }, [...sig, ...base]);
+  })(),
+  equipment: (() => { const eq = { ...emptyEquipment(), ...(c.equipment || {}) }; for (const k in eq) eq[k] = migrateItem(eq[k]); return eq; })(),
+  inventory: (c.inventory || []).map(migrateItem),
+  materials: (() => { const m = { ...(c.materials || {}) }; delete m.poisonHerb; if (m.ore) { m.copper = (m.copper || 0) + m.ore; delete m.ore; } if (m.richOre) { m.iron = (m.iron || 0) + m.richOre; delete m.richOre; } if (m.herb) { m.bluepetal = (m.bluepetal || 0) + m.herb; delete m.herb; } if (m.healingHerb) { m.sunblossom = (m.sunblossom || 0) + m.healingHerb; delete m.healingHerb; } return m; })(),
+  autoEquip: c.autoEquip !== undefined ? c.autoEquip : true,
+  autoSellDowngrades: c.autoSellDowngrades || false,
+  upgrades: { autoPotion: false, ...(c.upgrades || {}) },
+  autoSkills: Object.fromEntries(Object.entries(c.autoSkills || {}).filter(([k]) => (SKILLS[c.cls] || []).some((s) => s.name === k))),
+  autoSkillsOwned: Object.fromEntries(Object.entries(c.autoSkillsOwned || {}).filter(([k]) => (SKILLS[c.cls] || []).some((s) => s.name === k))),
+  redeemed: c.redeemed || {},
+  dungeonRuns: c.dungeonRuns || {},
+  raidCooldowns: c.raidCooldowns || {},
+  guildDungeonRuns: c.guildDungeonRuns || {},
+  guildRaidCooldowns: c.guildRaidCooldowns || {},
+  trialCooldowns: c.trialCooldowns || {},
+  ahRefreshes: c.ahRefreshes || [],
+  ahListings: Array.isArray(c.ahListings) ? c.ahListings : [],
+  ahMeta: (c.ahMeta && typeof c.ahMeta === "object") ? { lastSweep: c.ahMeta.lastSweep || 0 } : { lastSweep: 0 },
+  mail: Array.isArray(c.mail) ? c.mail : [],
+  failStacks: typeof c.failStacks === "number" ? c.failStacks : 0,
+  supplies: c.supplies || {},
+  drops: c.drops || {},
+  kills: typeof c.kills === "number" ? c.kills : 0,
+  killsByType: c.killsByType || (c.kills && typeof c.kills === "object" ? c.kills : {}),
+  town: (c.town && typeof c.town === "object") ? { buildings: c.town.buildings || {}, build: c.town.build || null } : { buildings: {}, build: null },
+  ven: c.ven || 0,
+  mp: { ladderBest: (c.mp && c.mp.ladderBest) || null, rated: { wins: (c.mp && c.mp.rated && c.mp.rated.wins) || 0, losses: (c.mp && c.mp.rated && c.mp.rated.losses) || 0, start: (c.mp && c.mp.rated && c.mp.rated.start) || Date.now() }, lifetime: { wins: (c.mp && c.mp.lifetime && c.mp.lifetime.wins) || 0, losses: (c.mp && c.mp.lifetime && c.mp.lifetime.losses) || 0 } },
+  arenaTokens: c.arenaTokens || 0,
+  tickets: { dungeonReset: (c.tickets && c.tickets.dungeonReset) || 0, arenaChallenge: (c.tickets && c.tickets.arenaChallenge) || 0 },
+  auras: { xp: (c.auras && c.auras.xp) || 0, gold: (c.auras && c.auras.gold) || 0 },
+  quests: { board: (c.quests && c.quests.board) || [] },
+  tutorial: c.tutorial || { step: 0, done: (c.level || 1) > 1 || (c.kills || 0) > 0 },
+  consumables: (() => { const src = c.consumables || {}; const out = {}; const t = Math.min(6, Math.max(0, Math.floor((c.level || 1) / 10))); for (const k in src) { const v = src[k]; if (!v) continue; if (k.includes("@")) out[k] = (out[k] || 0) + v; else out[k + "@" + t] = (out[k + "@" + t] || 0) + v; } return out; })(),
+  buffs: c.buffs || {},
+  hp: typeof c.hp === "number" ? c.hp : maxHpFor(c),
+});
+
 // Builds a boss definition for a piece of group content. Lives in the core so the server
 // generates byte-identical encounters from the same catalogue entry — passing `boss` as an
 // object is already supported by createEncounter.
@@ -1096,6 +1507,8 @@ const stepEncounter = (state, dt, inputs) => withRng(makeRng((state.seed ^ (stat
 });
 
 export {
+  weaponRangeFor,
+  POWER_PER_STAT,
   CLASSES,
   RACES,
   GEMS,
@@ -1230,6 +1643,49 @@ export {
   allyById,
   grpAdds,
   grpIncoming,
+  slotById,
+  ITEM_BASES,
+  RARITY_STAT_MULT,
+  baseArmorFor,
+  gearStatBase,
+  ARMOR_SLOT_WEIGHT,
+  ARMOR_BASE_MULT,
+  PREFIXES,
+  nameWithSuffix,
+  POWER_AFFIX_MIN_ILVL,
+  ALL_SUFFIX_NAMES,
+  MAIN_SUFFIXES,
+  suffixByMains,
+  mainKeyOf,
+  uid,
+  emptySockets,
+  socketCountFor,
+  SOCKETABLE_SLOTS,
+  emptyProfessions,
+  PROFESSIONS,
+  starterGear,
+  mkStarter,
+  STARTER_WEAPON,
+  migrateSpec,
+  ALL_SPEC_SKILL_NAMES,
+  SPEC_SKILLS,
+  padSelectedSkills,
+  migrateItem,
+  mainStatsOf,
+  buildBotChar,
+  botTier,
+  TRINITY_FILL,
+  SPEC_MIGRATIONS,
+  specClassOf,
+  specSkillNames,
+  RARITIES,
+  rarityById,
+  GEAR_SLOTS,
+  LOOT_SLOTS,
+  emptyEquipment,
+  generateItem,
+  createCharacter,
+  normalizeChar,
   createEncounter,
   guildBossDef,
   chooseAllyAction,

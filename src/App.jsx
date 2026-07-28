@@ -142,8 +142,32 @@ import {
   grpHitAlly,
   grpRaidDamage,
   grpResolveTarget,
+  ALL_SPEC_SKILL_NAMES,
+  ITEM_BASES,
+  MAIN_SUFFIXES,
+  POWER_AFFIX_MIN_ILVL,
+  POWER_PER_STAT,
+  PREFIXES,
+  PROFESSIONS,
+  RARITY_STAT_MULT,
+  SPEC_SKILLS,
+  baseArmorFor,
+  emptyProfessions,
+  emptySockets,
+  gearStatBase,
   guildBossDef,
-  stepEncounter
+  mainStatsOf,
+  migrateItem,
+  migrateSpec,
+  nameWithSuffix,
+  padSelectedSkills,
+  slotById,
+  socketCountFor,
+  starterGear,
+  stepEncounter,
+  suffixByMains,
+  uid,
+  weaponRangeFor,
 } from "../game-core/combat.mjs";
 
 // ============================================================
@@ -232,13 +256,9 @@ const ARTIFACT_STATS = {
 // ---------- SOCKETS ----------
 // Only Epic/Legendary/Artifact gear has sockets. Rings & trinkets are the only *droppable* gear that
 // can roll them; artifacts always carry a full three. Gems slot in later — this is the framework.
-const SOCKETABLE_SLOTS = ["ring", "trinket"];
-const socketCountFor = (rarityId, slotId) => {
-  if (rarityId === "artifact") return 3;
-  if (!SOCKETABLE_SLOTS.includes(slotId)) return 0;
-  return rarityId === "legendary" ? 2 : rarityId === "epic" ? 1 : 0;
-};
-const emptySockets = (n) => Array.from({ length: n }, () => null); // null = empty socket, else a gem id
+
+
+ // null = empty socket, else a gem id
 const REFORGE_SOCKET_VEN = 100; // Ven to burn a bonded gem out of a socket (the gem is destroyed)
 
 // ---------- GEMS ----------
@@ -252,7 +272,7 @@ const REFORGE_SOCKET_VEN = 100; // Ven to burn a bonded gem out of a socket (the
 const openSockets = (item) => socketsOf(item).filter((g) => !g).length;
 // Squished, roughly-linear rarity scaling (replaces the old 2^rarity curve). Zone gear (low
 // rarity) keeps you afloat; the big jumps live in Rare/Epic/Legendary from dungeons & raids.
-const RARITY_STAT_MULT = [0.5, 0.8, 1.2, 1.8, 2.6, 3.8, 3.8]; // poor..legendary, artifact (artifact matches legendary)
+ // poor..legendary, artifact (artifact matches legendary)
 
 // ================= UNIT ICON FRAMEWORK =================
 // Swap emoji icons for custom art WITHOUT touching render sites. Register an image here and
@@ -285,7 +305,7 @@ const GEAR_SLOTS = [
   { id: "trinket", name: "Trinket", icon: "🔮" },
   { id: "relic", name: "Relic", icon: "🔱" },
 ];
-const slotById = (id) => GEAR_SLOTS.find((s) => s.id === id);
+
 // Relics are rare, gameplay-altering items (one per applicable dungeon). Not enchantable, no random stats.
 const RELICS = [
   { id: "miners_charm", name: "Miner's Charm", icon: "⛏️", dungeonId: "deadmines", color: "#e0a955", desc: "Mining “Smash” cooldown −1s · 50% chance for double ore when manually mining." },
@@ -296,60 +316,27 @@ const relicForDungeon = (dungeonId) => RELICS.find((r) => r.dungeonId === dungeo
 const LOOT_SLOTS = GEAR_SLOTS.filter((s) => s.id !== "relic"); // relics never drop as random loot
 const makeRelic = (def, ilvl) => ({ id: uid(), name: def.name, slotId: "relic", icon: def.icon, rarity: "legendary", ilvl: null, relicId: def.id, relicDesc: def.desc, relicColor: def.color, stats: {}, enchant: null });
 
-const ITEM_BASES = {
-  head: ["Helm", "Coif", "Crown", "Hood", "Greathelm", "Circlet"],
-  shoulder: ["Pauldrons", "Mantle", "Spaulders", "Shoulderguards"],
-  chest: ["Breastplate", "Tunic", "Robe", "Chestguard", "Hauberk"],
-  hands: ["Gauntlets", "Gloves", "Grips", "Handwraps"],
-  legs: ["Legplates", "Leggings", "Greaves", "Kilt"],
-  feet: ["Boots", "Sabatons", "Treads", "Striders"],
-  weapon: ["Blade", "Axe", "Warhammer", "Dagger", "Staff", "Mace", "Greatsword", "Longbow"],
-  offhand: ["Shield", "Tome", "Orb", "Bulwark", "Idol"],
-  ring: ["Band", "Ring", "Loop", "Seal", "Signet"],
-  trinket: ["Charm", "Idol", "Talisman", "Insignia", "Figurine"],
-};
-const PREFIXES = ["Worn", "Sturdy", "Gleaming", "Burnished", "Fortified", "Runed", "Savage", "Glacial", "Resplendent", "Doomforged", "Ancient", "Bloodforged"];
+
+
 // ---------- GEAR NAMING: the suffix IS the main-stat contract ----------
 // Every item's suffix maps 1:1 to the primary stats it carries, so a player (or an Auction House
 // filter) can read "of the Tiger" and know it rolled +Agi +Int without opening the tooltip.
-const MAIN_SUFFIXES = [
-  { stats: ["str"],        name: "of Power",      desc: "+Strength" },
-  { stats: ["agi"],        name: "of the Falcon", desc: "+Agility" },
-  { stats: ["int"],        name: "of the Owl",    desc: "+Intellect" },
-  { stats: ["str", "agi"], name: "of the Wolf",   desc: "+Strength +Agility" },
-  { stats: ["str", "int"], name: "of the Dragon", desc: "+Strength +Intellect" },
-  { stats: ["agi", "int"], name: "of the Tiger",  desc: "+Agility +Intellect" },
-];
-
-const POWER_AFFIX_MIN_ILVL = 60;   // focused gear only earns Power at endgame
-const POWER_PER_STAT = 1.4;        // damage converts at statVal * 1.4, so this = one extra main stat
-// A piece's Power is CONDITIONAL: it only applies while the item still carries exactly one main
-// stat once enchants and socketed gems are counted. Stacking MORE of the same stat keeps it active;
-// adding a second main stat trades the Power away for breadth. That is the focused-vs-flexible choice.
 
 
 
-
-
-// Would adding `stat` to this item put its Power dormant? (used to warn before enchant/socket)
 const wouldDormantPower = (it, stat) => {
   if (!itemPowerActive(it) || !MAIN_KEYS.includes(stat)) return false;
   const t = itemMainTotals(it); t[stat] = (t[stat] || 0) + 1;
   return MAIN_KEYS.filter((k) => t[k] > 0).length > 1;
 };
 // Keys are DERIVED from each entry's stat list, so a suffix can never drift out of sync with it.
-const mainKeyOf = (mains) => [...new Set(mains || [])].filter((k) => MAIN_KEYS.includes(k)).sort().join("+");
-const suffixByMains = (mains) => MAIN_SUFFIXES.find((x) => mainKeyOf(x.stats) === mainKeyOf(mains)) || null;
+
+
 // Derive an item's main stats from what it actually carries (works for gear made before this system).
-const mainStatsOf = (item) => { const st = (item && item.stats) || {}; return MAIN_KEYS.filter((k) => (st[k] || 0) > 0); };
-const ALL_SUFFIX_NAMES = MAIN_SUFFIXES.map((x) => x.name).concat(["of Power", "of the Tiger", "of the Owl", "of the Bear", "of Slaying", "of the Boar"]); // incl. legacy
+
+ // incl. legacy
 // Rebuild a name so its suffix matches the item's real stats (idempotent).
-const nameWithSuffix = (rawName, mains) => {
-  let base = String(rawName || "").trim();
-  for (const suf of ALL_SUFFIX_NAMES) { if (base.endsWith(" " + suf)) { base = base.slice(0, -(suf.length + 1)).trim(); break; } }
-  const suf = suffixByMains(mains);
-  return suf ? `${base} ${suf.name}` : base;
-};
+
 
 // ---------- ZONES ----------
 const ZONES = [
@@ -560,16 +547,9 @@ const tutorialHighlight = (c) => { const s = tutorialStep(c); return s ? s.highl
 
 
 // ---------- PROFESSIONS ----------
-const PROFESSIONS = [
-  { id: "mining", name: "Mining", icon: "⛏️", type: "gathering", color: "#8B7355", desc: "Gather Ore; richer ranks find Rich Ore." },
-  { id: "herbalism", name: "Herbalism", icon: "🌿", type: "gathering", color: "#4a7c3f", desc: "Gather Herbs, plus Healing Herbs." },
-  { id: "salvage", name: "Salvage", icon: "♻️", type: "gathering", color: "#7d8aa0", desc: "Break down downgrade gear (green+) into Dust." },
-  { id: "armorsmith", name: "Armorsmith", icon: "🔨", type: "crafting", color: "#888", desc: "Forge gear from Ore; Rich Ore raises rarity." },
-  { id: "alchemy", name: "Alchemy", icon: "⚗️", type: "crafting", color: "#9482C9", desc: "Brew tiered potions Brew Healing Potions from herbs. scrolls from herbs." },
-  { id: "enchanting", name: "Enchanting", icon: "✨", type: "crafting", color: "#69CCF0", desc: "Enchant equipped gear with an extra stat (uses Dust)." },
-];
+
 const PROF_MAX = 100;
-const emptyProfessions = () => PROFESSIONS.reduce((m, p) => { m[p.id] = { level: 1, xp: 0, active: false }; return m; }, {});
+
 // Ore tiers: unlock by Mining rank, each maps to a crafting rarity distribution.
 const ORE_TIERS = [
   { id: "copper", name: "Copper Ore", node: "Copper Vein", icon: "🟤", color: "#b87333", unlock: 1, craft: { common: 80, uncommon: 20 } },
@@ -815,13 +795,7 @@ const primaryModAvail = (char) => primaryModTotal(char) - skillModSpent(char, ch
 
 
 
-const padSelectedSkills = (char, list) => {
-  const cap = unlockedSlotCount(char.level);
-  const out = [];
-  for (const n of (list || [])) { if (out.length >= cap) break; if (skillByName(char, n) && !out.includes(n)) out.push(n); } // keep valid, de-duplicated, in order
-  for (const sk of (SKILLS[char.cls] || [])) { if (out.length >= cap) break; if (sk.spec && char.spec !== sk.spec) continue; if (!out.includes(sk.name)) out.push(sk.name); }
-  return out;
-};
+
 
 // ============================================================
 // HELPERS
@@ -835,7 +809,7 @@ const padSelectedSkills = (char, list) => {
 // ../game-core/rng.mjs (imported above) — the same module the server ticks.
 
 
-const uid = () => Math.random().toString(36).slice(2, 10);
+
 
 
 // XP per level. Retention-tuned shape (exponent 2.6): very fast early, moderate mid, longer
@@ -911,28 +885,15 @@ const DROP_RATE_MULT = 0.4; // gear drop rate greatly reduced
 // Every non-weapon piece carries base Armor that scales with the gear/rarity curve (helps
 // survivability, esp. levels 1-30, and makes upgrades clearer). Weapons carry a min–max
 // damage range instead of Armor.
-const gearStatBase = (ilvl, rarityIdx) => (1 + ilvl * 0.05) * (RARITY_STAT_MULT[rarityIdx] || 1);
+
 // enchant scaling: never exceeds what an ilvl-65 legendary item can roll for that stat
 const ENCH_SIZE = { str: 1, agi: 1, int: 1, sta: 1, leech: 0.65, vers: 0.55, resil: 0.45 };
 const enchantCap = (stat) => Math.max(1, Math.round(gearStatBase(65, 5) * (ENCH_SIZE[stat] || 1)));
 const enchantAmount = (stat, enchLevel) => { const cap = enchantCap(stat); const frac = Math.min(1, ((enchLevel || 1) - 1) / 99); return Math.max(1, Math.min(cap, Math.round(1 + (cap - 1) * frac))); };
-const ARMOR_SLOT_WEIGHT = { chest: 1.0, legs: 0.9, offhand: 0.9, head: 0.8, shoulder: 0.7, hands: 0.6, feet: 0.6, ring: 0.3, trinket: 0.3 };
-const ARMOR_BASE_MULT = 2.2;
-const baseArmorFor = (ilvl, rarityIdx, slotId) => (slotId === "weapon" ? 0 : Math.max(1, Math.round(gearStatBase(ilvl, rarityIdx) * (ARMOR_SLOT_WEIGHT[slotId] || 0.5) * ARMOR_BASE_MULT)));
-const WEAPON_DMG_MULT = 5.1; // nerfed 15% from 6
-const weaponRangeFor = (ilvl, rarityIdx) => { const avg = gearStatBase(ilvl, rarityIdx) * WEAPON_DMG_MULT; return { min: Math.max(1, Math.round(avg * 0.85)), max: Math.max(2, Math.round(avg * 1.15)) }; };
+
+
 // back-fill inherent armor / weapon range onto items from older saves
-const migrateItem = (it) => {
-  if (!it || !it.slotId) return it;
-  if (it.slotId === "relic" || it.relicId) return it; // relics have no ilvl/armor to back-fill
-  const ri = Math.max(0, RARITIES.findIndex((r) => r.id === it.rarity));
-  // Bring older gear onto the naming contract: suffix + mains always match the real stats.
-  const mains = mainStatsOf(it);
-  const renamed = { ...it, mains, name: nameWithSuffix(it.name, mains) };
-  if (it.slotId === "weapon") return { ...renamed, wdmg: weaponRangeFor(it.ilvl, ri) }; // recompute so weapon-damage tuning applies to existing weapons
-  const ba = baseArmorFor(it.ilvl, ri, it.slotId);
-  return ((renamed.stats && renamed.stats.armor) || 0) >= ba ? renamed : { ...renamed, stats: { ...renamed.stats, armor: ba } };
-};
+
 
 function generateItem(ilvl, rarity, slotId, clsId) {
   ilvl = Math.max(1, Math.floor(ilvl));
@@ -1291,38 +1252,7 @@ const TALENT_RESPEC_COST = 150; // gold per row change
 // Each class's three level-60 signatures (TALENT_L60 above) are now its Specializations. Selecting
 // one (unlocks at level 10) applies its passive AND auto-grants three signature skills. Free to swap.
 // Signature skills per spec (each is defined in SKILLS[cls] with a matching `spec` tag).
-const SPEC_SKILLS = {
-  // Warrior
-  w_berserk:  ["Frenzied Onslaught", "Bloodletting Roar", "Reckless Abandon"],
-  w_champion: ["Cataclysm Slam", "Warbringer", "Unbreakable Momentum"],
-  w_antimage: ["Spell Reflection", "Runic Cleave", "Bulwark Vengeance"],
-  // Mage
-  m_wild:  ["Arcane Surge", "Mana Rupture", "Overcharged Nova"],
-  m_trick: ["Glacial Chains", "Frozen Orb", "Winter's Bite"],
-  m_sword: ["Runeblade Strike", "Blade Cadence", "Arcane Riposte"],
-  // Rogue
-  r_ambush: ["Cold Open", "Killing Intent", "Throat Slit"],
-  r_corr:   ["Virulent Blades", "Festering Wounds", "Toxic Bloom"],
-  r_wild:   ["Relentless Flurry", "Fleetblade", "Twin Daggers"],
-  // Paladin
-  p_just:  ["Verdict of Flame", "Sanctified Zeal", "Judgment Beam"],
-  p_king:  ["Aegis Overflow", "Consecrated Ground", "Retribution Wall"],
-  p_exile: ["Zealot's Flurry", "Righteous Momentum", "Executioner's Verdict"],
-  // Hunter
-  h_snipe: ["Steady Aim", "Piercing Focus", "Deadeye Shot"],
-  h_trap:  ["Savage Companion", "Snake Trap", "Venomous Companion"],
-  h_range: ["Rapid Volley", "Hunter's Rhythm", "Twin Shot"],
-  // Warlock
-  l_scorch: ["Chaos Bolt", "Immolation Burst", "Cataclysm"],
-  l_hex:    ["Unstable Affliction", "Corruption Spread", "Soul Harvest", "Soul Detonation"],
-  l_demon:  ["Summon Fiend", "Demonic Empowerment", "Soul Link"],
-  // ---- Group-role specs (Phase 1) ----
-  w_prot:     ["Shield Slam", "Challenging Shout", "Thunder Clap", "Last Stand", "Shield Wall"],       // Warrior · Tank
-  p_holy:     ["Holy Light", "Divine Radiance", "Beacon of Light", "Cleanse", "Aegis of Light"], // Paladin · Healer (Holy Smite available to swap in)
-  p_prot:     ["Shield of the Righteous", "Hand of Authority", "Consecration", "Guardian's Bulwark", "Ardent Defender"], // Paladin · Tank
-  m_support:  ["Counterspell", "Temporal Surge", "Arcane Ward", "Arcane Barrage", "Dampen Magic"],   // Mage · Support
-  h_support:  ["Disrupting Shot", "Rallying Anthem", "Mending Volley", "Aimed Shot", "Warding Cry"], // Hunter · Support
-};
+
 // One-line combat identity for each spec (shown in the Class Hall spec picker).
 const SPEC_CURVE = {
   w_berserk:  "Haste snowball — swinging faster the longer you fight. Ramps hard, opens slow.",
@@ -1352,12 +1282,12 @@ const SPEC_CURVE = {
 const SPEC_LEVEL = 10;
 const specsFor = (clsId) => TALENT_L60[clsId] || [];
 
-const SPEC_MIGRATIONS = { p_king: "p_prot" }; // removed specs remap to their replacement
-const migrateSpec = (id) => (id && SPEC_MIGRATIONS[id]) || id;
-const specClassOf = (id) => { for (const cid in TALENT_L60) if ((TALENT_L60[cid] || []).some((x) => x.id === id)) return cid; return null; };
-const specSkillNames = (id) => SPEC_SKILLS[id] || [];
+ // removed specs remap to their replacement
+
+
+
 const specCurve = (id) => SPEC_CURVE[id] || "";
-const ALL_SPEC_SKILL_NAMES = new Set(Object.values(SPEC_SKILLS).flat()); // every signature-skill name (for pruning on swap)
+ // every signature-skill name (for pruning on swap)
 
 // ---------- SPEC LOADOUTS ----------
 // Each Specialization remembers its own template: equipped skills, auto-cast toggles, skill-mod
@@ -1649,33 +1579,9 @@ const savesSummary = (arr) => {
 const emptyEquipment = () => GEAR_SLOTS.reduce((acc, s) => { acc[s.id] = null; return acc; }, {});
 
 // ---------- starting gear (gray/poor tier, class-appropriate) ----------
-const STARTER_WEAPON = {
-  warrior: "Rusty Shortsword", paladin: "Dented Mace", rogue: "Worn Dagger",
-  hunter: "Frayed Shortbow", mage: "Cracked Wand", warlock: "Gnarled Wand",
-};
-const mkStarter = (slotId, name, stats) => ({ id: uid(), name, slotId, icon: slotById(slotId).icon, rarity: "poor", ilvl: 1, stats: { str: 0, agi: 0, int: 0, sta: 0, armor: 0, dmg: 0, ...stats }, value: 1, enchant: null });
-const starterGear = (clsId) => {
-  const m = CLASSES.find((c) => c.id === clsId).main; // main combat stat
-  const caster = clsId === "mage" || clsId === "warlock";
-  const armorName = {
-    head: caster ? "Tattered Hood" : "Battered Helm",
-    shoulder: caster ? "Frayed Shoulderpads" : "Worn Pauldrons",
-    chest: caster ? "Frayed Robe" : "Worn Tunic",
-    hands: caster ? "Tattered Gloves" : "Worn Gauntlets",
-    legs: caster ? "Frayed Leggings" : "Worn Legguards",
-    feet: caster ? "Tattered Sandals" : "Worn Boots",
-  };
-  const gear = {
-    weapon: mkStarter("weapon", STARTER_WEAPON[clsId] || "Worn Weapon", { dmg: 2, [m]: 1 }),
-    offhand: mkStarter("offhand", caster ? "Cracked Tome" : "Splintered Buckler", caster ? { [m]: 1, sta: 1 } : { armor: 2, sta: 1 }),
-    ring: mkStarter("ring", "Tarnished Band", { [m]: 1, sta: 1 }),
-    trinket: mkStarter("trinket", "Cracked Bauble", { [m]: 1, sta: 1 }),
-  };
-  ["head", "shoulder", "chest", "hands", "legs", "feet"].forEach((slot) => {
-    gear[slot] = mkStarter(slot, armorName[slot], { armor: slot === "chest" || slot === "legs" ? 2 : 1, sta: 1 });
-  });
-  return gear;
-};
+
+
+
 
 const createCharacter = (name, cls, race) => {
   const c = {
@@ -7711,25 +7617,9 @@ const arenaRating = (wins, losses) => {
 // Every bot behaves as one of three archetypes. Higher rating skews toward the sharper players:
 // tankier, hits harder, and works its rotation faster. Used for PvP now, reusable for PvE bots later.
 
-const botTier = (rating) => {
-  const r = rating || 1500;
-  const weights = r < 1400 ? [["new", 0.45], ["experienced", 0.45], ["expert", 0.10]]
-    : r < 1900 ? [["new", 0.15], ["experienced", 0.60], ["expert", 0.25]]
-    : [["new", 0.05], ["experienced", 0.35], ["expert", 0.60]];
-  let x = Math.random(), acc = 0;
-  for (const [k, w] of weights) { acc += w; if (x <= acc) return BOT_TIERS[k]; }
-  return BOT_TIERS.experienced;
-};
+
 // a reference "geared player" of a class/spec at a given ilvl — gives realistic HP & DPS to size a bot
-const buildBotChar = (cls, spec, level, ilvl) => {
-  const bc = createCharacter("BotRef", cls, "human");
-  bc.level = level || 60;
-  if (spec) bc.spec = spec;
-  const eq = { ...emptyEquipment() };
-  for (const s of LOOT_SLOTS) eq[s.id] = generateItem(Math.max(1, ilvl || 60), rarityById("epic"), s.id, cls);
-  bc.equipment = eq;
-  return normalizeChar(bc);
-};
+
 // ---------- BOT ROTATION (real skill engine) ----------
 // Bots run their actual class kit through applySkillCore with real resources & cooldowns. The rotation
 // chooser's quality scales with tier: experts spend on cooldown and pool resources for spenders;
@@ -7999,7 +7889,7 @@ const grpYourCall = (enc, me, now) => {
 
 
 // Build a trinity party: the human plays their own role; bots fill the remaining tank/healer/support/dps.
-const TRINITY_FILL = { tank: ["warrior", "w_prot"], healer: ["paladin", "p_holy"], support: ["mage", "m_support"], dps: ["rogue", "r_ambush"] };
+
 const buildTrinityParty = (char, ilvl) => {
   const myRole = roleOf(char);
   const party = [{ char, role: myRole, isHuman: true, tier: BOT_TIERS.expert }];

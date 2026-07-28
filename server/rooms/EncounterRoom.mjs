@@ -215,7 +215,11 @@ export class EncounterRoom extends Room {
     console.log(`[room ${this.roomId}] LOOT ${items.length} lot(s) → auction open`);
     this.broadcast("loot", { phase: "open", lot: lotView(this.auction) });
 
-    this._auctionTimer = this.clock.setInterval(() => {
+    // Drive the auction on the room's SIMULATION interval, not this.clock. finish() clears the
+    // simulation interval, and that loop is what ticks the clock — so clock.setInterval callbacks
+    // registered afterwards never fire at all. The auction opened and bids registered (both are
+    // message-driven) but no lot ever hammered, which looked like the auction hanging.
+    this.setSimulationInterval(() => {
       const ev = tick(this.auction);
       if (!ev) return;
       if (ev.kind === "bid") { this.broadcast("loot", { phase: "bidding", lot: ev.lot }); return; }
@@ -225,12 +229,8 @@ export class EncounterRoom extends Room {
         phase: "sold", item: ev.item, price: ev.price, winnerId: ev.winnerId,
         winnerName: ev.winnerName, share: ev.share, payouts: ev.payouts,
       });
-      if (this.auction.done) {
-        this._auctionTimer.clear(); this._auctionTimer = null;
-        this.settle();
-      } else {
-        this.broadcast("loot", { phase: "open", lot: lotView(this.auction) });
-      }
+      if (this.auction.done) { this.setSimulationInterval(undefined); this.settle(); }
+      else this.broadcast("loot", { phase: "open", lot: lotView(this.auction) });
     }, 1000);
   }
 

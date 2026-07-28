@@ -3475,6 +3475,11 @@ function GameScreen({ character: initChar, onSave, onBack }) {
         commitChar(c);
       }
     }
+    // Online, the ROOM rolls the loot and runs the auction — every player must see one drop and
+    // bid in one sale. Rolling here as well is what produced four different "drops" per run, each
+    // player bidding against simulated rivals in a private auction. The server's `loot` messages
+    // drive the modal instead (see the groupRun.room handler below).
+    if (run.online && run.room) return;
     const n = run.raid ? 2 : 1;
     const items = [];
     for (let i = 0; i < n; i++) {
@@ -3483,6 +3488,28 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     }
     setGuildBid({ items, party: run.bidParty });
   };
+
+  // Online GDKP: the room broadcasts the lot, the running high, and the hammer. This holds the
+  // latest server view so LootBidModal can render it instead of simulating its own auction.
+  const [netBid, setNetBid] = useState(null);   // { lot, sold, done, myAllyId }
+  useEffect(() => {
+    const run = groupRun;
+    if (!run?.online || !run.room) { setNetBid(null); return; }
+    const room = run.room;
+    room.onMessage("loot", (m) => {
+      if (m.phase === "done") { setNetBid((p) => p && { ...p, done: true }); return; }
+      if (m.phase === "sold") {
+        setNetBid((p) => ({ ...(p || {}), sold: m, lot: null, myAllyId: run.myAllyId }));
+        // The winner's item and everyone's share are settled by the server into mail; this is
+        // just the announcement, so nothing is granted locally.
+        addLog(m.winnerName
+          ? `🔨 ${m.item?.name || "Lot"} sold to ${m.winnerName} for ${m.price}g — your share is in the mail`
+          : `🔨 ${m.item?.name || "Lot"} went unsold (reserve not met)`, "#f0b429");
+        return;
+      }
+      setNetBid({ lot: m.lot, sold: null, done: false, myAllyId: run.myAllyId });
+    });
+  }, [groupRun?.room]);
   // Can this Guild content be entered right now? (Guild lockouts are separate from solo.)
   const guildGate = (content, kind) => {
     const c = charRef.current;
@@ -3829,8 +3856,13 @@ function GameScreen({ character: initChar, onSave, onBack }) {
   };
   // apply a claimed/returned goods payload to the trusted blob
   const applyGoods = (c, p) => {
-    let inv = c.inventory, mats = { ...c.materials }, drops = { ...c.drops }, gold = c.gold + (p.gold || 0);
+    // GDKP settlements can carry a NEGATIVE gold delta — the winner bought the lot. The room
+    // refused any bid beyond the purse when it was placed, but gold can be spent elsewhere in
+    // between, so the floor keeps a claim from ever pushing a character below zero.
+    let inv = c.inventory, mats = { ...c.materials }, drops = { ...c.drops };
+    let gold = Math.max(0, c.gold + (p.gold || 0));
     if (p.item) inv = [...inv, p.item].slice(-120);
+    if (Array.isArray(p.items)) inv = [...inv, ...p.items].slice(-120);   // a run can win several lots
     if (p.mat_id) { if (p.mat_kind === "drop") drops[p.mat_id] = (drops[p.mat_id] || 0) + p.qty; else mats[p.mat_id] = (mats[p.mat_id] || 0) + p.qty; }
     return { ...c, gold, inventory: inv, materials: mats, drops };
   };
@@ -4280,6 +4312,11 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       )}
       {guildBid && (
         <LootBidModal items={guildBid.items} party={guildBid.party} char={char} commitChar={commitChar} showNotif={showNotif} onClose={() => { setGuildBid(null); setTab("guild"); }} />
+      )}
+      {/* Online GDKP is the same modal reading the room's auction instead of simulating one. */}
+      {!guildBid && netBid && (netBid.lot || netBid.sold || netBid.done) && (
+        <LootBidModal net={netBid} room={groupRun?.room} char={char} commitChar={commitChar} showNotif={showNotif}
+                      onClose={() => { setNetBid(null); setTab("guild"); }} />
       )}
       {offlineReport && (
         <div onClick={() => setOfflineReport(null)} style={{ position: "fixed", inset: 0, background: "#000a", zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
@@ -6417,7 +6454,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
               {!getSbC() && <div style={{ color: "#e0a955", fontSize: 12, textAlign: "center", padding: 20 }}>📡 Connection required — your mail is online.</div>}
               {getSbC() && srvMail.length === 0 && <div style={{ color: "#555", fontSize: 12, textAlign: "center", padding: 24 }}>Your mailbox is empty.</div>}
               {srvMail.map((m) => {
-                const tone = m.kind === "sale" ? { icon: "💰", c: "#FFD700", tag: "Auction sold" } : m.kind === "purchase" ? { icon: "📦", c: "#69CCF0", tag: "Purchase" } : { icon: "↩️", c: "#e0a955", tag: "Expired — returned" };
+                const tone = m.kind === "gdkp" ? { icon: "🔨", c: "#c8a0ff", tag: "Group loot settled" } : m.kind === "sale" ? { icon: "💰", c: "#FFD700", tag: "Auction sold" } : m.kind === "purchase" ? { icon: "📦", c: "#69CCF0", tag: "Purchase" } : { icon: "↩️", c: "#e0a955", tag: "Expired — returned" };
                 return (
                   <div key={m.id} style={{ background: "#100e1c", border: `1px solid ${tone.c}44`, borderLeft: `3px solid ${tone.c}`, borderRadius: 8, padding: "10px 12px" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
@@ -6426,10 +6463,12 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                     </div>
                     <div style={{ color: "#e8dcc0", fontSize: 12, marginBottom: 3 }}>{m.subject}</div>
                     {m.kind === "sale" && <div style={{ color: "#9a93b3", fontSize: 10.5, marginBottom: 6 }}>Sold to {m.from} for {m.gross}g · −{m.tax}g AH cut (15%) · <b style={{ color: "#7CFC9E" }}>Net {m.gold}g</b></div>}
+                    {m.kind === "gdkp" && <div style={{ color: "#9a93b3", fontSize: 10.5, marginBottom: 6 }}>{m.note || "GDKP settlement"} · <b style={{ color: (m.gold || 0) < 0 ? "#ff8a7a" : "#7CFC9E" }}>{(m.gold || 0) < 0 ? `−${mpFmt(Math.abs(m.gold))}g` : `+${mpFmt(m.gold || 0)}g`}</b>{Array.isArray(m.items) && m.items.length ? ` · ${m.items.length} item(s)` : ""}</div>}
                     {m.kind === "purchase" && <div style={{ color: "#9a93b3", fontSize: 10.5, marginBottom: 6 }}>Bought from {m.from} for {m.gross}g — collect your goods below.</div>}
                     {m.kind === "expired" && <div style={{ color: "#9a93b3", fontSize: 10.5, marginBottom: 6 }}>Your listing expired unsold. The deposit was not refunded.</div>}
                     <button onClick={() => collectMail(m)} style={{ width: "100%", background: "linear-gradient(135deg,#122015,#183020)", border: "1.5px solid #7CFC9E", borderRadius: 8, color: "#7CFC9E", fontSize: 12, fontWeight: 700, padding: 8, cursor: "pointer" }}>
-                      {m.kind === "sale" ? `Collect ${m.gold}g` : m.item ? "Collect item" : `Collect ${m.qty}× goods`}
+                      {m.kind === "gdkp" ? (Array.isArray(m.items) && m.items.length ? `Collect ${m.items.length} item(s) & settle ${m.gold >= 0 ? "+" : ""}${m.gold}g` : `Settle ${m.gold >= 0 ? "+" : ""}${m.gold}g`)
+                        : m.kind === "sale" ? `Collect ${m.gold}g` : m.item ? "Collect item" : `Collect ${m.qty}× goods`}
                     </button>
                   </div>
                 );
@@ -7210,6 +7249,9 @@ const mpProvider = {
       name: char.name,
       role: role || roleOf(char),
       uid: uid || null,
+      // The purse the room checks GDKP bids against. Sent once on join and held server-side, so a
+      // bid beyond it is refused when it is made rather than discovered at settlement.
+      gold: char.gold || 0,
       // The server builds the combatant from this and never trusts anything else the client says.
       loadout: { char, tier: botTier(mpPowerOf(char)), ilvl },
     });
@@ -7291,18 +7333,39 @@ const PVP_GCD = 1250;                                          // ms between the
 
 
 // ---------- GDKP loot bid modal (Guild boss kills): bid gold vs the party; buy a copy for Ven on a loss ----------
-function LootBidModal({ items, party, char, commitChar, showNotif, onClose }) {
+// `net` switches this from a locally simulated auction to a spectator of the ROOM's auction:
+// the lot, the running high and the hammer all arrive from the server, bids go back over the
+// wire, and nothing is granted here because the server settles into mail. Everything below the
+// data layer — the item card, the bid buttons — is identical either way.
+function LootBidModal({ items, party, char, commitChar, showNotif, onClose, net, room }) {
+  const online = !!net;
   const queue = (items || []).filter(Boolean);
   const [idx, setIdx] = useState(0);
   const [bid, setBid] = useState(null);
-  const [done, setDone] = useState(queue.length === 0);
-  const item = queue[idx];
+  const [done, setDone] = useState(online ? false : queue.length === 0);
+  const item = online ? (net.lot?.item || net.sold?.item || null) : queue[idx];
   useEffect(() => {
-    if (!item || done) return;
+    if (online || !item || done) return;
     const reserve = gdkpReserve(item);
     const bidders = (party || []).filter((m) => !m.me).map((m) => ({ name: m.name, maxBid: gdkpBotCeiling(reserve, m.power) }));
     setBid({ timeLeft: 15, high: 0, highName: null, min: reserve, bidders, resolved: false, iWon: false, payout: 0 });
-  }, [idx, done]);
+  }, [idx, done, online]);
+  // Online, `bid` is a projection of the server's view rather than state this component owns.
+  useEffect(() => {
+    if (!online) return;
+    if (net.done) { setDone(true); return; }
+    if (net.sold) {
+      const iWon = net.sold.winnerId && net.sold.winnerId === net.myAllyId;
+      setBid((B) => ({ ...(B || {}), resolved: true, iWon, high: net.sold.price,
+                       highName: net.sold.winnerName, payout: iWon ? 0 : (net.sold.share || 0) }));
+      return;
+    }
+    if (net.lot) {
+      setBid((B) => ({ ...(B || {}), resolved: false, passed: B?.passed && B?.lotIndex === net.lot.index,
+                       lotIndex: net.lot.index, high: net.lot.high, highName: net.lot.highBidderName,
+                       min: net.lot.reserve, minNext: net.lot.minNext, timeLeft: net.lot.secondsLeft }));
+    }
+  }, [net, online]);
   const resolveBid = () => setBid((B) => {
     if (!B || B.resolved) return B;
     const iWon = !B.passed && B.highName === char.name && B.high > 0;
@@ -7312,6 +7375,7 @@ function LootBidModal({ items, party, char, commitChar, showNotif, onClose }) {
     return { ...B, resolved: true, iWon: false, payout: share };
   });
   useEffect(() => {
+    if (online) return;               // the room owns the clock and the rivals
     if (!bid || bid.resolved || done) return;
     if (bid.timeLeft <= 0) { if (!bid.passed) setBid((B) => (B && !B.resolved) ? { ...B, passed: B.highName !== char.name, autoPassed: B.highName !== char.name } : B); resolveBid(); return; } // no action by 0s = pass
     const t = setTimeout(() => setBid((B) => {
@@ -7324,16 +7388,32 @@ function LootBidModal({ items, party, char, commitChar, showNotif, onClose }) {
     }), 1000);
     return () => clearTimeout(t);
   }, [bid, done]);
-  const placeBid = (amt) => setBid((B) => {
-    if (!B || B.resolved || B.passed) return B;
-    const target = Math.max(B.high > 0 ? B.high + 20 : (B.min || 0), amt);     // can't bid under the reserve
-    if (target > (char.gold || 0)) { showNotif && showNotif("Not enough gold to bid that much"); return B; }
-    return { ...B, high: target, highName: char.name, timeLeft: Math.max(B.timeLeft, 4) };
-  });
+  const placeBid = (amt) => {
+    // Online the bid is a request: the room re-checks it against the purse it was told on join
+    // and against the current high, and answers with a `notice` if it refuses.
+    if (online) {
+      if (!bid || bid.resolved || bid.passed) return;
+      room && room.send("bid", { amount: Math.max(bid.minNext || bid.min || 0, amt) });
+      return;
+    }
+    setBid((B) => {
+      if (!B || B.resolved || B.passed) return B;
+      const target = Math.max(B.high > 0 ? B.high + 20 : (B.min || 0), amt);   // can't bid under the reserve
+      if (target > (char.gold || 0)) { showNotif && showNotif("Not enough gold to bid that much"); return B; }
+      return { ...B, high: target, highName: char.name, timeLeft: Math.max(B.timeLeft, 4) };
+    });
+  };
   // Passing steps you out of the bidding but keeps you in the room until the hammer falls —
   // the auction plays out in full so your cut is a share of the FINAL price, not an early one.
-  const passBid = () => setBid((B) => (!B || B.resolved) ? B : { ...B, passed: true });
-  const next = () => { if (idx + 1 < queue.length) setIdx(idx + 1); else setDone(true); };
+  const passBid = () => {
+    if (online) { room && room.send("pass", {}); setBid((B) => B && { ...B, passed: true }); return; }
+    setBid((B) => (!B || B.resolved) ? B : { ...B, passed: true });
+  };
+  // Online the room decides when the next lot opens; "next" is just acknowledging the result.
+  const next = () => {
+    if (online) { setBid((B) => B && { ...B, resolved: false, acked: true }); return; }
+    if (idx + 1 < queue.length) setIdx(idx + 1); else setDone(true);
+  };
   const buyCopy = () => {
     if ((char.ven || 0) < COPY_ITEM_VEN) { showNotif && showNotif(`Need ${COPY_ITEM_VEN} 💎 Ven for a copy`); return; }
     commitChar({ ...char, ven: (char.ven || 0) - COPY_ITEM_VEN, inventory: [...(char.inventory || []), { ...item }].slice(-120) });

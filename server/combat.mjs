@@ -1419,6 +1419,22 @@ const SLOT_DROP_WEIGHT = {
   head: 1.1, chest: 1.1, legs: 1.1,               // the big armour pieces
   shoulder: 1.2, hands: 1.2, feet: 1.2,           // filler
 };
+// Zone-scaled drop rate. Gear used to drop at one flat rate everywhere — the level-10 starter
+// wood and the level-60 endgame zone both paid out ~18 items per 100 kills — so a solo player's
+// gear never got harder to come by, only higher in ilvl. Levelling should stay generous (the
+// drops are what makes those zones readable); the endgame is where gear is supposed to be worth
+// chasing, so that is where the tap closes.
+//
+// Linear from the first zone to the last. The raid is deliberately exempt at its own 0.85: it is
+// the designed bridge from normal mode to hard mode, and starving it would close the only route
+// out of normal mode rather than making the route feel earned.
+const ZONE_DROP_MIN = 0.4;      // level-60 zones pay 40% of a level-10 zone's rate
+const ZONE_DROP_FLOOR_LEVEL = 10, ZONE_DROP_CAP_LEVEL = 60;
+const zoneDropScale = (level) => {
+  const t = (Math.max(1, level || 1) - ZONE_DROP_FLOOR_LEVEL) / (ZONE_DROP_CAP_LEVEL - ZONE_DROP_FLOOR_LEVEL);
+  return clamp(1 - clamp(t, 0, 1) * (1 - ZONE_DROP_MIN), ZONE_DROP_MIN, 1);
+};
+
 // One weighted picker for every drop site. `pick(LOOT_SLOTS)` was repeated at eight call sites
 // across the client and the core, which is eight places to forget when scarcity changes.
 const pickLootSlot = () => {
@@ -2127,6 +2143,8 @@ export {
   SEC_SIZE,
   SLOT_DROP_WEIGHT,
   pickLootSlot,
+  ZONE_DROP_MIN,
+  zoneDropScale,
   hasteOf,
   critHeal,
   secPct,

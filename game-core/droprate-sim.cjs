@@ -56,7 +56,8 @@ js += `
   const RAR = ["common", "uncommon", "rare", "epic", "legendary"];
   console.log("\\nSOLO ADVENTURE-GATE GEAR DROPS  —  " + KILLS.toLocaleString() + " kills per row"
     + (TOWN_DROP ? ", town drop bonus +" + pct(TOWN_DROP) : ", no town bonus"));
-  console.log("Every 10th kill is a boss. dropChance = (boss ? 1 : 0.34) x DROP_RATE_MULT x rewardMult.\\n");
+  console.log("Every 10th kill is a boss. dropChance = (boss ? 1 : 0.34) x DROP_RATE_MULT x rewardMult x zoneDropScale(level).");
+  console.log("zoneDropScale is imported from the core, never restated here — a copied curve reports stale numbers.\\n");
 
   const header = pad("zone", 22) + rpad("lvl", 4) + rpad("items/100", 11) + rpad("kills/item", 11)
     + rpad("avg ilvl", 9) + "   " + RAR.map((r) => rpad(r.slice(0, 4), 7)).join("");
@@ -134,7 +135,15 @@ js += `
   const g = gearUp(last, last.maxLevel, 20000);
   console.log("  after 20,000 kills in " + last.name + ": avg equipped ilvl " + g.avgIlvl.toFixed(1)
     + " (normal-mode gear is hard-capped at 63)");
-  console.log("  the normal RAID drops ilvl 64 at an 85% rate — the intended bridge");
+  // Measure the raid rather than restating its constant. It is the ONLY route from normal-mode
+  // ilvl 63 to the ilvl 64 hard mode expects, so if the zone-scaling curve ever reached it the
+  // bridge would close and nothing else here would notice.
+  let raidItems = 0; const RAID_KILLS = 20000;
+  for (let k = 0; k < RAID_KILLS; k++)
+    raidItems += rollLoot({ level: 60, isBoss: k % 8 === 0, dungeonId: "moltencore", guaranteed: false, clsId: "warrior", dropMult: 1 }).length;
+  const raidRate = raidItems / RAID_KILLS;
+  console.log("  the normal RAID pays " + raidRate.toFixed(2) + " items per kill at ilvl 64 — the intended bridge,"
+    + (raidRate > 0.8 ? " exempt from the zone curve as designed" : " WHICH THE ZONE CURVE HAS CLOSED"));
   console.log("  Hard dungeons drop ilvl 66 and their bosses are level 63-68; the hard raid drops 71");
   console.log("");
 })();`;

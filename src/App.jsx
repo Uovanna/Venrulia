@@ -173,6 +173,7 @@ import {
   pickSlotSecondary,
   SEC_SIZE,
   pickLootSlot,
+  zoneDropScale,
   gdkpBotCeiling,
   // These used to be defined a SECOND time in App.jsx. Nothing forced the two copies to agree,
   // so the client and the authoritative server could silently run different rules — which is
@@ -907,8 +908,9 @@ function rollLoot({ level, isBoss, dungeonId, guaranteed, clsId, dropMult = 1 })
   const items = [];
   const inst = dungeonId ? instanceById(dungeonId) : null;
   const isRaid = !!inst?.raid;
-  // The normal-mode raid is the bridge to Hard Mode: it drops frequently so one clear yields several pieces.
-  const dropChance = guaranteed ? 1 : isRaid ? 0.85 : (isBoss ? 1 : 0.34) * DROP_RATE_MULT * dropMult;
+  // The normal-mode raid is the bridge to Hard Mode: it drops frequently so one clear yields
+  // several pieces, and it is exempt from the zone scaling below for exactly that reason.
+  const dropChance = guaranteed ? 1 : isRaid ? 0.85 : (isBoss ? 1 : 0.34) * DROP_RATE_MULT * dropMult * zoneDropScale(level);
   if (Math.random() > dropChance) return items;
   // Normal mode caps at ilvl 63 (Blighted Marches); the raid always drops ilvl 64 → lets you reach avg 64 for Hard Mode.
   const ilvl = isRaid ? 64 : Math.max(1, Math.min(63, Math.round(level + (Math.random() * 4 - 1))));

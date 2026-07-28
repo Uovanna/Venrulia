@@ -171,6 +171,7 @@ import {
   SECONDARY_POOL,
   hasteOf,
   pickSlotSecondary,
+  SEC_SIZE,
   gdkpBotCeiling,
   // These used to be defined a SECOND time in App.jsx. Nothing forced the two copies to agree,
   // so the client and the authoritative server could silently run different rules — which is
@@ -844,7 +845,6 @@ const TEMPER_CFG = {
 // Derived from the core rather than restated: these used to be hand-kept copies, so adding a
 // secondary meant remembering to update the temper shop too or it would silently ignore it.
 const SECONDARY_KEYS = SECONDARY_POOL;
-const SEC_SIZE = Object.fromEntries(SECONDARY_POOL.map((k) => [k, k === "sta" ? 1.0 : 0.5]));
 const isTemperable = (it) => !!it && !it.relicId && it.slotId !== "relic"; // relics excluded; all rarities + artifacts allowed
 // nominal secondary rating for a stat at a given ilvl/rarity (mirrors generateItem's formula)
 function secNominal(ilvl, rarityId, stat) {

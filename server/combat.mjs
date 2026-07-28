@@ -1334,6 +1334,16 @@ const SLOT_SECONDARY = {
 const SEC_FAV_WEIGHT = 5;    // a favoured stat is this many times as likely as an ordinary one
 const SEC_STA_WEIGHT = 2;    // stamina's floor on slots that do not favour it
 
+// How large one line of a stat rolls, relative to the ilvl/rarity budget. Stamina rolls big
+// because it is now favoured on only four slots instead of being biased on all ten: a full set
+// carries roughly a third fewer stamina lines than it used to, and without a bigger roll behind
+// each one that reads as a silent ~5% EHP cut to every existing character. Measured against a
+// full epic set: 1.3 lands within 1% of the old effective health (2313 hp vs 2332), and the
+// per-line rounding is coarse enough that 1.35 already overshoots by +1.4%.
+// One table, exported — the drop generator and the temper shop both read it. Two copies drifting
+// apart is the failure this project keeps having.
+const SEC_SIZE = { sta: 1.3, leech: 0.5, vers: 0.5, resil: 0.5, cdr: 0.5, csd: 0.5, crit: 0.5, haste: 0.5 };
+
 const secondaryWeight = (slotId, stat) => {
   const fav = SLOT_SECONDARY[slotId];
   if (fav && fav.includes(stat)) return SEC_FAV_WEIGHT;
@@ -1420,7 +1430,6 @@ function generateItem(ilvl, rarity, slotId, clsId) {
   const mainStats = [firstMain];
 
   // ----- SECONDARY stats (armor is now inherent base Armor; weapon damage is a range) -----
-  const SIZE = { sta: 1.0, leech: 0.5, vers: 0.5, resil: 0.5, cdr: 0.5, csd: 0.5, crit: 0.5, haste: 0.5 }; // non-stamina weights unified
   // White 1, Green 2, Blue 3, Purple 3, Gold 4 (Poor 0) — Purple & Gold each dropped one line.
   let secondaryCount = [0, 1, 2, 3, 3, 4, 4][rarityIdx] ?? 1; // artifact matches legendary
 
@@ -1431,22 +1440,17 @@ function generateItem(ilvl, rarity, slotId, clsId) {
   }
   mainStats.forEach((k) => { stats[k] += perStat; });
 
-  const pool = SECONDARY_POOL;
+  // Secondaries follow the SLOT's identity rather than one flat stamina-favoured roll shared by
+  // every slot. Before this, a helm and a chest of the same ilvl were the same item with a
+  // different name — nothing about the slot changed what could roll on it. Excluding what is
+  // already placed keeps a single piece from stacking the same stat on two lines.
   const chosen = [];
-  if (secondaryCount === 1) {
-    // gear with a single secondary: ~50% Stamina
-    chosen.push(rng() < 0.5 ? "sta" : pick(pool.filter((k) => k !== "sta")));
-  } else {
-    const avail = [...pool];
-    for (let i = 0; i < secondaryCount && avail.length; i++) {
-      const weights = avail.map((k) => (k === "sta" ? 3 : 1)); // stamina favored
-      const total = weights.reduce((a, b) => a + b, 0);
-      let r = rng() * total, idx = 0;
-      while (r >= weights[idx]) { r -= weights[idx]; idx++; }
-      chosen.push(avail[idx]); avail.splice(idx, 1);
-    }
+  for (let i = 0; i < secondaryCount; i++) {
+    const k = pickSlotSecondary(slotId, chosen);
+    if (!k) break;
+    chosen.push(k);
   }
-  chosen.forEach((k) => { stats[k] += Math.max(1, Math.round(secBase * (SIZE[k] || 0.5))); });
+  chosen.forEach((k) => { stats[k] += Math.max(1, Math.round(secBase * (SEC_SIZE[k] || 0.5))); });
 
   // inherent Armor on all non-weapon gear; weapons instead carry a damage range
   if (!isWeapon) stats.armor += baseArmorFor(ilvl, rarityIdx, slotId);
@@ -2096,6 +2100,7 @@ export {
   SECONDARY_POOL,
   secondaryWeight,
   pickSlotSecondary,
+  SEC_SIZE,
   hasteOf,
   critHeal,
   secPct,

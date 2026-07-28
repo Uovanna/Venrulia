@@ -1,5 +1,7 @@
 // Slot identity: which secondaries a slot leans toward, shared by drops and the reroll shop.
-import { SLOT_SECONDARY, SECONDARY_POOL, secondaryWeight, pickSlotSecondary, LOOT_SLOTS } from "./combat.mjs";
+import { SLOT_SECONDARY, SECONDARY_POOL, secondaryWeight, pickSlotSecondary, LOOT_SLOTS,
+         generateItem, rarityById, SEC_SIZE, buildBotChar, maxHpFor } from "./combat.mjs";
+import { withRng, makeRng } from "./rng.mjs";
 
 let fail = 0;
 const ok = (c, m) => { console.log(`  ${c ? "✓" : "✗"} ${m}`); if (!c) fail++; };
@@ -68,5 +70,58 @@ const dist = (slot, exclude = [], n = 60000) => {
   ok(u.sta > u.leech, "…with stamina still favoured, matching the old global bias");
 }
 
-console.log(fail ? `\n❌ ${fail} slot-identity check(s) failed` : "\n✅ slot identity: two favoured per slot, off-stats reachable, reroll shares the table");
+// --- drops carry the identity too ---------------------------------------------------------------
+// The table is only worth having if it reaches DROPS. While it drove the reroll shop alone, a
+// player could launder any slot into any stat and the identity never existed in practice.
+{
+  const secsOf = (it) => SECONDARY_POOL.filter((k) => (it.stats[k] || 0) > 0);
+  const roll = (slot, n = 4000) => {
+    const hit = {}; let lines = 0, dupes = 0;
+    for (let i = 0; i < n; i++) {
+      const it = generateItem(63, rarityById("epic"), slot, "warrior");
+      const s = secsOf(it);
+      lines += s.length;
+      // A duplicate would be invisible: two lines of the same stat just sum in stats{}.
+      if (new Set(s).size !== s.length) dupes++;
+      for (const k of s) hit[k] = (hit[k] || 0) + 1;
+    }
+    for (const k in hit) hit[k] /= n;
+    return { hit, lines: lines / n, dupes };
+  };
+
+  for (const slot of ["head", "weapon", "legs"]) {
+    const { hit, dupes } = roll(slot);
+    const fav = SLOT_SECONDARY[slot];
+    const favRate = fav.reduce((a, k) => a + (hit[k] || 0), 0) / fav.length;
+    const off = SECONDARY_POOL.filter((k) => !fav.includes(k) && k !== "sta");
+    const offRate = off.reduce((a, k) => a + (hit[k] || 0), 0) / off.length;
+    ok(favRate > offRate * 1.8,
+       `${slot} drops carry its own pair (${fav.join("/")}) ${(favRate * 100).toFixed(0)}% of the time vs ${(offRate * 100).toFixed(0)}% for an off-stat`);
+    ok(offRate > 0.05, `…and an off-stat still lands on ${(offRate * 100).toFixed(0)}% of ${slot} drops — no slot is a fixed template`);
+    ok(dupes === 0, `${slot} never rolls the same secondary on two lines (a duplicate would silently just add up)`);
+  }
+
+  // Two slots must produce visibly different loot, which is the whole point.
+  const h = roll("head").hit, l = roll("legs").hit;
+  ok(h.crit > l.crit && l.sta > h.sta, "a helm reads as crit gear and legs read as stamina gear");
+
+  // Identity decides WHICH stats roll, never how many — the rarity budget is untouched.
+  const epic = roll("chest", 1500);
+  ok(epic.lines >= 2.4 && epic.lines <= 3.05, `an epic chest still carries ~3 secondary lines (${epic.lines.toFixed(2)})`);
+}
+
+// --- identity must not be a stealth nerf ---------------------------------------------------------
+// Stamina went from "biased on all ten slots" to "favoured on four", which on its own cut a full
+// set's effective health by ~5%. SEC_SIZE.sta compensates. If someone retunes the table without
+// re-measuring, this is the check that says so.
+{
+  ok(SEC_SIZE.sta > 1, `a stamina line rolls ${SEC_SIZE.sta}x an ordinary one, offsetting how much rarer stamina now is`);
+  let hp = 0; const n = 300;
+  for (let i = 0; i < n; i++) withRng(makeRng(1000 + i), () => { hp += maxHpFor(buildBotChar("warrior", "w_berserk", 60, 63)); });
+  const avg = hp / n, WAS = 2332;   // measured on the commit before slot identity reached drops
+  ok(Math.abs(avg / WAS - 1) < 0.02,
+     `a full epic set is worth ${Math.round(avg)} hp, within 2% of the ${WAS} it was worth before slot identity`);
+}
+
+console.log(fail ? `\n❌ ${fail} slot-identity check(s) failed` : "\n✅ slot identity: two favoured per slot, off-stats reachable, drops and reroll share the table");
 process.exit(fail ? 1 : 0);

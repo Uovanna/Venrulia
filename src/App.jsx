@@ -168,6 +168,7 @@ import {
   potionRejection,
   migrateGambitKeys,
   gdkpReserve,
+  pickSlotSecondary,
   gdkpBotCeiling,
   // These used to be defined a SECOND time in App.jsx. Nothing forced the two copies to agree,
   // so the client and the authoritative server could silently run different rules — which is
@@ -4023,7 +4024,12 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     const ln = item.lines[lineIdx]; if (!ln) return;
     const cost = rerollCost(item.rerolls);
     if (c.gold < cost) { showNotif(`Need ${cost.toLocaleString()}g to reroll.`); return; }
-    const newStat = pick(TEMPER_CFG.reroll.pool);
+    // Reroll follows the SAME slot weighting drops use, so the shop cannot launder slot identity
+    // back out — rerolling a chest into pure crit damage would make the whole table meaningless.
+    // Off-stats stay reachable (~1 roll in 3), so an off-spec piece is a find, not an impossibility.
+    // The line's current stat is excluded so a paid reroll always changes something; that is not
+    // the same as de-duplicating ACROSS lines, which is still allowed and still stacks.
+    const newStat = pickSlotSecondary(item.slotId, [ln.stat]) || pick(TEMPER_CFG.reroll.pool);
     ln.stat = newStat;
     ln.base = rollRerollValue(item.ilvl, item.rarity, newStat);
     item.rerolls += 1;

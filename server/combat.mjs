@@ -1248,6 +1248,51 @@ const ARMOR_BASE_MULT = 2.2;
 const WEAPON_DMG_MULT = 5.1; // nerfed 15% from 6
 const weaponRangeFor = (ilvl, rarityIdx) => { const avg = gearStatBase(ilvl, rarityIdx) * WEAPON_DMG_MULT; return { min: Math.max(1, Math.round(avg * 0.85)), max: Math.max(2, Math.round(avg * 1.15)) }; };
 const ARMOR_SLOT_WEIGHT = { chest: 1.0, legs: 0.9, offhand: 0.9, head: 0.8, shoulder: 0.7, hands: 0.6, feet: 0.6, ring: 0.3, trinket: 0.3 };
+
+// ---------- SLOT IDENTITY ----------
+// Which secondaries each slot leans toward. Before this, main stats and secondaries rolled
+// identically on every slot and ARMOR_SLOT_WEIGHT was the ONLY thing separating a helm from a
+// chest — measured spread across non-weapon slots was x1.03 in damage, i.e. noise. Two favoured
+// stats per slot gives each piece a recognisable character.
+//
+// Every secondary has at least two homes so nothing becomes unfindable, and stamina keeps a floor
+// everywhere: confining it to its four favoured slots quietly cost ~7% of a full set's effective
+// HP, which is a balance change hiding inside a flavour change.
+//
+// Shared by BOTH the drop generator and the reroll shop — if only drops used it, a player could
+// reroll a chest into pure crit damage and launder the identity straight back out.
+const SECONDARY_POOL = ["sta", "leech", "vers", "resil", "cdr", "csd"];
+const SLOT_SECONDARY = {
+  head:     ["csd",   "cdr"],    // Precision
+  shoulder: ["sta",   "vers"],   // Bulwark-lite
+  chest:    ["sta",   "resil"],  // Bulwark
+  hands:    ["vers",  "csd"],    // Aggression
+  legs:     ["sta",   "leech"],  // Endurance
+  feet:     ["cdr",   "vers"],   // Uptime
+  weapon:   ["csd",   "vers"],   // Lethality
+  offhand:  ["resil", "sta"],    // Guard
+  ring:     ["cdr",   "csd"],    // Attunement
+  trinket:  ["leech", "resil"],  // Esoteric
+};
+const SEC_FAV_WEIGHT = 5;    // a favoured stat is this many times as likely as an ordinary one
+const SEC_STA_WEIGHT = 2;    // stamina's floor on slots that do not favour it
+
+const secondaryWeight = (slotId, stat) => {
+  const fav = SLOT_SECONDARY[slotId];
+  if (fav && fav.includes(stat)) return SEC_FAV_WEIGHT;
+  return stat === "sta" ? SEC_STA_WEIGHT : 1;
+};
+
+// Weighted pick for one secondary line on a slot. `exclude` keeps a single roll from repeating a
+// stat the caller has already placed. Returns null only if everything is excluded.
+const pickSlotSecondary = (slotId, exclude = []) => {
+  const avail = SECONDARY_POOL.filter((k) => !exclude.includes(k));
+  if (!avail.length) return null;
+  const w = avail.map((k) => secondaryWeight(slotId, k));
+  let r = rng() * w.reduce((a, b) => a + b, 0), i = 0;
+  while (r >= w[i] && i < w.length - 1) { r -= w[i]; i++; }
+  return avail[i];
+};
 const gearStatBase = (ilvl, rarityIdx) => (1 + ilvl * 0.05) * (RARITY_STAT_MULT[rarityIdx] || 1);
 const baseArmorFor = (ilvl, rarityIdx, slotId) => (slotId === "weapon" ? 0 : Math.max(1, Math.round(gearStatBase(ilvl, rarityIdx) * (ARMOR_SLOT_WEIGHT[slotId] || 0.5) * ARMOR_BASE_MULT)));
 const RARITY_STAT_MULT = [0.5, 0.8, 1.2, 1.8, 2.6, 3.8, 3.8];
@@ -1988,6 +2033,10 @@ export {
   baseArmorFor,
   gearStatBase,
   ARMOR_SLOT_WEIGHT,
+  SLOT_SECONDARY,
+  SECONDARY_POOL,
+  secondaryWeight,
+  pickSlotSecondary,
   ARMOR_BASE_MULT,
   PREFIXES,
   nameWithSuffix,

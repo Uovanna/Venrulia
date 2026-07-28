@@ -52,6 +52,20 @@ room.onMessage("loot", (m) => {
   if (!lots.some((l) => l.index === m.lot.index)) lots.push(m.lot);
 });
 
+// The client's own pre-check runs against a SNAPSHOT ally, which has no `char`. Prove the shape
+// the client actually receives does not crash the check that gates every tap — this is the exact
+// regression that made skills dead online while potions still worked.
+{
+  const { intentRejection } = await import("./combat.mjs");
+  const snap = await new Promise((res) => { const h = (m) => res(m); room.onMessage("state", h); setTimeout(() => res(null), 8000); });
+  const mine = snap && snap.allies.find((a) => a.id === assigned.allyId);
+  ok(!!mine, "we can find our own ally in the broadcast snapshot");
+  ok(mine && mine.char === undefined, "the snapshot ally has no char (that is why the client must re-attach its own)");
+  let threw = null;
+  try { intentRejection(mine, { skillName: assigned.skills[0] }, snap.elapsed); } catch (e) { threw = e; }
+  ok(!threw, `the tap gate survives a real snapshot ally — threw: ${threw && threw.message}`);
+}
+
 // Play until the boss dies. Drive real skills so the fight actually clears.
 let sent = 0;
 const spam = setInterval(() => {

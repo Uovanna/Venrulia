@@ -55,6 +55,28 @@ const human = (st) => st.allies.find((a) => a.isHuman);
   ok(intentRejection(me, { potion: true }, 0) === null, "a potion intent is not judged as a skill");
 }
 
+// --- the server snapshot shape: what the CLIENT actually holds online -------------------------
+// fullSnapshot strips `char` from allies (the client already has its own), so a snapshot ally is
+// NOT a core ally. Passing one straight to intentRejection threw on ally.char.selectedSkills,
+// which killed the tap handler before it could send — every skill looked dead online while
+// potions, which never read char, kept working. Shipped once; pinned here.
+{
+  const st = mkEnc(); const me = human(st);
+  const { char, pendingAction, ...snapshotAlly } = me;      // exactly what fullSnapshot sends
+  ok(snapshotAlly.char === undefined, "a snapshot ally really has no char (guarding the premise)");
+
+  let threw = null;
+  try { intentRejection(snapshotAlly, { skillName: char.selectedSkills[0] }, 0); }
+  catch (e) { threw = e; }
+  ok(!threw, `a snapshot-shaped ally must not throw — it did: ${threw && threw.message}`);
+
+  // and re-attaching the local character is what the client does, so that path must work
+  ok(intentRejection({ ...snapshotAlly, char }, { skillName: char.selectedSkills[0] }, 0) === null,
+     "with the local char put back, a legal skill is accepted");
+  const bad = intentRejection({ ...snapshotAlly, char }, { skillName: "Nope" }, 0);
+  ok(bad && bad.code === "unknown", "…and an unknown one is still refused");
+}
+
 // --- potions ----------------------------------------------------------------------------------
 {
   const st = mkEnc(); const me = human(st);

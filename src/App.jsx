@@ -3494,8 +3494,14 @@ function GameScreen({ character: initChar, onSave, onBack }) {
   const [netBid, setNetBid] = useState(null);   // { lot, sold, done, myAllyId }
   useEffect(() => {
     const run = groupRun;
-    if (!run?.online || !run.room) { setNetBid(null); return; }
+    // Deliberately NOT clearing netBid when the run goes away. Leaving the combat screen tears
+    // groupRun down while the auction is still running, and wiping here closed the bid modal
+    // mid-sale. A live auction outlives its encounter; it clears itself on `phase: "done"`, and
+    // starting a new online run replaces it below.
+    if (!run?.online || !run.room) return;
     const room = run.room;
+    setNetBid(null);                                   // a NEW run starts with no auction
+
     room.onMessage("loot", (m) => {
       if (m.phase === "done") { setNetBid((p) => p && { ...p, done: true }); return; }
       if (m.phase === "sold") {
@@ -7421,7 +7427,7 @@ function LootBidModal({ items, party, char, commitChar, showNotif, onClose, net,
   };
   const rc = (r) => rarityById(r) || { color: "#888", name: "" };
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(4,3,10,0.86)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 460, padding: 18 }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(4,3,10,0.86)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 560, padding: 18 }}>
       <div style={{ background: "#120f24", border: "2px solid #7a5aa8", borderRadius: 16, padding: "20px 18px", maxWidth: 380, width: "100%", boxShadow: "0 14px 46px rgba(0,0,0,0.7)", textAlign: "center" }}>
         {done || !item ? (
           <>
@@ -7762,7 +7768,13 @@ function GroupCombat({ char, commitChar, onExit, bossId, bossDef, ilvl, party, o
     // Answer immediately from the same rules the server uses, so a refused tap explains itself
     // instead of looking like a dead button. The server still re-checks online — this is
     // feedback, not authority.
-    const rej = intentRejection(me, { skillName: sk.name }, enc.elapsed);
+    //
+    // `me` comes from the SERVER SNAPSHOT online, and fullSnapshot strips `char` (the client
+    // already has its own). intentRejection reads ally.char.selectedSkills, so passing the bare
+    // snapshot ally threw on every tap and killed the handler before it could send — skills
+    // appeared completely dead online while potions, which never touch char, kept working.
+    // The character is ours and local, so put it back; bw (cooldowns, resource) is in the snapshot.
+    const rej = intentRejection({ ...me, char }, { skillName: sk.name }, enc.elapsed);
     if (rej) { setNotice({ ...rej, at: Date.now() }); return; }
     if (networked) {
       localQueued.current = { name: sk.name, tick: enc.tick };   // optimistic echo, expires in ~4 ticks

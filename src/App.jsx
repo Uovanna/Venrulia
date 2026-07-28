@@ -161,6 +161,10 @@ import {
   specClassOf,
   specSkillNames,
   guildBossDef,
+  HUNTER_WEAPONS,
+  gambitCondMet,
+  executeThreshold,
+  migrateGambitKeys,
   mainStatsOf,
   migrateItem,
   migrateSpec,
@@ -782,7 +786,7 @@ const DUNGEON_RARITY = {
 const rollRarityForZone = (level) => rollWeighted((ZONE_RARITY_BANDS.find((b) => level <= b.max) || ZONE_RARITY_BANDS[ZONE_RARITY_BANDS.length - 1]).w);
 const rollRarityForDungeon = (dungeonId) => rollWeighted(DUNGEON_RARITY[dungeonId] || { uncommon: 100 });
 
-const HUNTER_WEAPONS = ["Longbow", "Recurve Bow", "Hunting Bow", "Heavy Crossbow"];
+
 const DROP_RATE_MULT = 0.4; // gear drop rate greatly reduced
 
 // ---- inherent Armor (all non-weapon gear) & weapon damage range (WoW-style) ----
@@ -1054,12 +1058,28 @@ const GAMBIT_IFS = [
   { id: "if_no_agi",   label: "Agility scroll inactive",   icon: "📜", rarity: "uncommon" },
   { id: "if_no_int",   label: "Intellect scroll inactive", icon: "📜", rarity: "uncommon" },
   { id: "if_no_sta",   label: "Health scroll inactive",    icon: "📜", rarity: "uncommon" },
+  // Execute range is per-spec, read from that spec's own talents (Assassin 20%, Exile 30%,
+  // Berserker 35%, Wild 40%…) rather than a flat number — see executeThreshold in the core.
+  { id: "if_execute",  label: "Target in execute range",   icon: "🗡️", rarity: "legendary" },
+  { id: "if_resfull",  label: "Class resource full",       icon: "⚡", rarity: "rare" },
+  { id: "if_res80",    label: "Class resource ≥ 80%",      icon: "🔋", rarity: "uncommon" },
+  { id: "if_res50",    label: "Class resource < 50%",      icon: "🔌", rarity: "uncommon" },
+  { id: "if_res20",    label: "Class resource < 20%",      icon: "🪫", rarity: "rare" },
+  // Slot-based cooldown checks. These reference the BAR POSITION, so a rule keeps working when
+  // you swap which ability sits in that slot.
+  ...Array.from({ length: MAX_SKILL_SLOTS }, (_, i) => i + 1).flatMap((n) => [
+    { id: `if_sk${n}_cd`,  label: `Skill ${n} on cooldown`,  icon: "⏳", rarity: "uncommon" },
+    { id: `if_sk${n}_rdy`, label: `Skill ${n} off cooldown`, icon: "✅", rarity: "uncommon" },
+  ]),
 ];
 const _gslug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, "");
 const GAMBIT_THENS = (() => {
   const out = [], seen = new Set();
   for (const cid in SKILLS) for (const s of SKILLS[cid]) if (!seen.has(s.name)) { seen.add(s.name); out.push({ id: "then_sk_" + _gslug(s.name), label: "Use " + s.name, icon: s.icon || "✨", rarity: s.unlockLevel >= 40 ? "rare" : s.unlockLevel >= 20 ? "uncommon" : "common", kind: "skill", skill: s.name }); }
   for (const d of CONSUMABLE_DEFS) out.push({ id: "then_con_" + d.id, label: "Use " + d.name, icon: d.icon, rarity: "common", kind: "consumable", consumable: d.id });
+  // A veto rather than an action: while its condition holds, the skill this rule is equipped to
+  // is held back, letting a higher-priority slot take the cast instead.
+  out.push({ id: "then_skip", label: "Do NOT use this skill", icon: "⛔", rarity: "rare", kind: "veto" });
   return out;
 })();
 const ALL_GAMBITS = [...GAMBIT_IFS.map((g) => ({ ...g, type: "if" })), ...GAMBIT_THENS.map((g) => ({ ...g, type: "then" }))];
@@ -1216,9 +1236,12 @@ const applyLoadout = (c, L, sigNames) => {
   nc.selectedSkills = padSelectedSkills(nc, [...(L.selectedSkills || []).filter(okSkill), ...sigNames]);
   nc.autoSkills = Object.fromEntries(Object.entries(L.autoSkills || {}).filter(([k]) => okSkill(k)));
   nc.skillMods = Object.fromEntries(Object.entries(L.skillMods || {}).filter(([k]) => okSkill(k)));
+  // Gambit maps are keyed by BAR SLOT now, so they travel with the loadout as-is — the old
+  // okSkill() filter was for skill-name keys and would have discarded every rule.
+  const okSlot = (k) => /^[1-9]$/.test(k) && Number(k) <= unlockedSlotCount(nc.level);
   const rules = {}, slots = {};
-  for (const k in ((L.gambits && L.gambits.rules) || {})) if (okSkill(k)) rules[k] = L.gambits.rules[k];
-  for (const k in ((L.gambits && L.gambits.slots) || {})) if (okSkill(k)) slots[k] = L.gambits.slots[k];
+  for (const k in ((L.gambits && L.gambits.rules) || {})) if (okSlot(k)) rules[k] = L.gambits.rules[k];
+  for (const k in ((L.gambits && L.gambits.slots) || {})) if (okSlot(k)) slots[k] = L.gambits.slots[k];
   nc.gambits = { ...(c.gambits || {}), rules, slots, general: [...((L.gambits && L.gambits.general) || [])] };
   return nc;
 };
@@ -1235,9 +1258,11 @@ const switchSpecCore = (c, specId) => {
   const kept = (c.selectedSkills || []).filter((n) => !ALL_SPEC_SKILL_NAMES.has(n));
   nc.selectedSkills = padSelectedSkills(nc, [...newSig, ...kept]);
   if (nc.gambits) {
-    const okSkill = (n) => !ALL_SPEC_SKILL_NAMES.has(n) || newSig.includes(n);
-    const rules = {}; for (const k in (nc.gambits.rules || {})) if (okSkill(k)) rules[k] = nc.gambits.rules[k];
-    const slots = {}; for (const k in (nc.gambits.slots || {})) if (okSkill(k)) slots[k] = nc.gambits.slots[k];
+    // Slot-keyed rules survive a spec change — the bar position is still yours even though the
+    // signature skill sitting in it just swapped.
+    const okSlot = (k) => /^[1-9]$/.test(k) && Number(k) <= unlockedSlotCount(nc.level);
+    const rules = {}; for (const k in (nc.gambits.rules || {})) if (okSlot(k)) rules[k] = nc.gambits.rules[k];
+    const slots = {}; for (const k in (nc.gambits.slots || {})) if (okSlot(k)) slots[k] = nc.gambits.slots[k];
     nc.gambits = { ...nc.gambits, rules, slots };
   }
   return { char: nc, restored: false };
@@ -1578,7 +1603,11 @@ const normalizeChar = (c) => ({
   inventory: (c.inventory || []).map((it) => (it && !Array.isArray(it.sockets) ? { ...it, sockets: emptySockets(socketCountFor(it.rarity, it.slotId)) } : it)),
   gems: (c.gems && typeof c.gems === "object") ? c.gems : {},
   tomes: undefined, learnedSkills: undefined, // retired: every skill now unlocks by level
-  gambits: (c.gambits && typeof c.gambits === "object") ? { owned: c.gambits.owned || {}, shards: c.gambits.shards || {}, rules: c.gambits.rules || {}, slots: c.gambits.slots || {}, general: Array.isArray(c.gambits.general) ? c.gambits.general : [], generalSlots: c.gambits.generalSlots || 2 } : { owned: {}, shards: {}, rules: {}, slots: {}, general: [], generalSlots: 2 },
+  // Gambit rules used to be keyed by skill NAME and are now keyed by bar SLOT. Migrate against
+  // the INCOMING selectedSkills (c.selectedSkills, not the recomputed one below) — that is the bar
+  // the old rules were written against. Without this every existing player's gambits go silent,
+  // because the evaluator only looks up rules[1..5].
+  gambits: (c.gambits && typeof c.gambits === "object") ? { owned: c.gambits.owned || {}, shards: c.gambits.shards || {}, rules: migrateGambitKeys(c.gambits.rules, c.selectedSkills), slots: migrateGambitKeys(c.gambits.slots, c.selectedSkills), general: Array.isArray(c.gambits.general) ? c.gambits.general : [], generalSlots: c.gambits.generalSlots || 2 } : { owned: {}, shards: {}, rules: {}, slots: {}, general: [], generalSlots: 2 },
   hardKills: (c.hardKills && typeof c.hardKills === "object") ? c.hardKills : {},
   hardBossKills: (c.hardBossKills && typeof c.hardBossKills === "object") ? c.hardBossKills : {},
   hardZoneDone: (c.hardZoneDone && typeof c.hardZoneDone === "object") ? c.hardZoneDone : {},
@@ -2389,21 +2418,21 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     commitChar({ ...c, gambits: { ...c.gambits, shards, owned: { ...(c.gambits.owned || {}), [targetId]: true } } });
     showNotif(`✨ Unlocked ${gambitById(targetId)?.label}!`);
   };
-  const gambitSlotsFor = (c, skillName) => (c.gambits?.slots?.[skillName]) || 1;
-  const buyGambitSlot = (skillName) => {
+  const gambitSlotsFor = (c, slotNo) => (c.gambits?.slots?.[slotNo]) || 1;
+  const buyGambitSlot = (slotNo) => {
     const c = charRef.current;
-    if (gambitSlotsFor(c, skillName) >= 2) { showNotif("Already at 2 gambits"); return; }
+    if (gambitSlotsFor(c, slotNo) >= 2) { showNotif("Already at 2 gambits"); return; }
     if ((c.ven || 0) < GAMBIT_SLOT_VEN) { showNotif(`Costs ${GAMBIT_SLOT_VEN} 💎 Ven`); return; }
-    commitChar({ ...c, ven: c.ven - GAMBIT_SLOT_VEN, gambits: { ...c.gambits, slots: { ...(c.gambits.slots || {}), [skillName]: 2 } } });
+    commitChar({ ...c, ven: c.ven - GAMBIT_SLOT_VEN, gambits: { ...c.gambits, slots: { ...(c.gambits.slots || {}), [slotNo]: 2 } } });
     showNotif("🎯 Second gambit unlocked for this skill");
   };
-  const setGambitPart = (skillName, slotIdx, part, gambitId) => {
+  const setGambitPart = (slotNo, slotIdx, part, gambitId) => {
     const c = charRef.current;
     const rules = { ...(c.gambits.rules || {}) };
-    const arr = [...(rules[skillName] || [])];
+    const arr = [...(rules[slotNo] || [])];
     while (arr.length <= slotIdx) arr.push({ if: null, then: null });
     arr[slotIdx] = { ...arr[slotIdx], [part]: (arr[slotIdx]?.[part] === gambitId ? null : gambitId) };
-    rules[skillName] = arr;
+    rules[slotNo] = arr;
     commitChar({ ...c, gambits: { ...c.gambits, rules } });
   };
   const generalSlotsFor = (c) => c.gambits?.generalSlots || 2;
@@ -2423,13 +2452,13 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     arr[slotIdx] = { ...arr[slotIdx], [part]: (arr[slotIdx]?.[part] === gambitId ? null : gambitId) };
     commitChar({ ...c, gambits: { ...c.gambits, general: arr } });
   };
-  const moveGambitRule = (skillName, idx, dir) => {
-    const c = charRef.current; const cnt = gambitSlotsFor(c, skillName);
-    const arr = [...((c.gambits.rules || {})[skillName] || [])];
+  const moveGambitRule = (slotNo, idx, dir) => {
+    const c = charRef.current; const cnt = gambitSlotsFor(c, slotNo);
+    const arr = [...((c.gambits.rules || {})[slotNo] || [])];
     while (arr.length < cnt) arr.push({ if: null, then: null });
     const j = idx + dir; if (j < 0 || j >= cnt) return;
     [arr[idx], arr[j]] = [arr[j], arr[idx]];
-    commitChar({ ...c, gambits: { ...c.gambits, rules: { ...(c.gambits.rules || {}), [skillName]: arr } } });
+    commitChar({ ...c, gambits: { ...c.gambits, rules: { ...(c.gambits.rules || {}), [slotNo]: arr } } });
   };
   const moveGeneralRule = (idx, dir) => {
     const c = charRef.current; const cnt = generalSlotsFor(c);
@@ -3289,28 +3318,11 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       if (!stunned && (c.level || 1) >= GAMBIT_UNLOCK_LEVEL) {
         const rules = c.gambits?.rules || {};
         const gMaxHp = maxHpFor(c);
-        const condMet = (ifId) => {
-          const e = w.enemy; const ab = activeBuffs(charRef.current);
-          switch (ifId) {
-            case "if_always": return true;
-            case "if_ehp50": return e.hp <= e.maxHp * 0.5;
-            case "if_ehp20": return e.hp <= e.maxHp * 0.2;
-            case "if_selfhp50": return w.hp <= gMaxHp * 0.5;
-            case "if_selfhp30": return w.hp <= gMaxHp * 0.3;
-            case "if_selfhp20": return w.hp <= gMaxHp * 0.2;
-            case "if_debuffed": return (w.playerEffects || []).some(isPlayerDebuff);
-            case "if_champion": return !!(e.isChampion || e.isLord);
-            case "if_boss": return !!e.isBoss;
-            case "if_hard": return w.mode === "hard";
-            case "if_no_might": return !ab.dmgpct;
-            case "if_no_ward": return !ab.reducepct;
-            case "if_no_str": return !ab.str;
-            case "if_no_agi": return !ab.agi;
-            case "if_no_int": return !ab.int;
-            case "if_no_sta": return !ab.sta;
-            default: return false;
-          }
-        };
+        // Conditions are evaluated by the shared core so they can be unit-tested headlessly.
+        const slotSkills = c.selectedSkills || [];
+        const condMet = (ifId) => gambitCondMet(ifId, {
+          char: c, w, now, maxHp: gMaxHp, buffs: activeBuffs(charRef.current), slotSkills,
+        });
         const fireConsumable = (tg) => {
           const cc = charRef.current; const def = consumableById(tg.consumable); if (!def) return;
           const t = bestTier(cc, def.id); if (t < 0 || conCount(cc, def.id, t) <= 0) return;
@@ -3333,6 +3345,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           }
         };
         const runRule = (rule) => {
+          if (gambitById(rule?.then)?.kind === "veto") return false;   // handled by the veto pass
           if (w.pvp) return false; // gambits are disabled in Rated PvP — play it by hand
           if (!rule || !rule.if || !rule.then || !condMet(rule.if)) return false;
           const tg = gambitById(rule.then); if (!tg) return false;
@@ -3345,9 +3358,22 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           } else if (tg.kind === "consumable") { fireConsumable(tg); }
           return false;
         };
-        // General gambits (consumable-focused) then per-skill gambits
+        // General gambits (consumable-focused) first, then the bar in SLOT ORDER — slot 1 is
+        // highest priority, so you shape your rotation by arranging the bar. Evaluation used to
+        // walk `rules` in object key order, which made "which rule wins" effectively arbitrary.
         for (const rule of (c.gambits?.general || [])) { if (runRule(rule)) return; }
-        for (const skName in rules) { for (const rule of (rules[skName] || [])) { if (runRule(rule)) return; } }
+        // Veto pass: a "do NOT use" rule holds its own slot back for this tick, so a lower slot
+        // can take the cast instead. Resolved up front so priority order stays predictable.
+        const vetoed = new Set();
+        for (let n = 1; n <= MAX_SKILL_SLOTS; n++) {
+          for (const rule of (rules[n] || [])) {
+            if (gambitById(rule.then)?.kind === "veto" && rule.if && condMet(rule.if)) { vetoed.add(n); break; }
+          }
+        }
+        for (let n = 1; n <= MAX_SKILL_SLOTS; n++) {
+          if (vetoed.has(n)) continue;
+          for (const rule of (rules[n] || [])) { if (runRule(rule)) return; }
+        }
       }
 
       // class resource is volatile — unspent power decays away
@@ -6066,10 +6092,13 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           const ownedIfs = GAMBIT_IFS.filter((x) => g.owned?.[x.id]);
           const skillIfs = ownedIfs.filter((x) => !x.id.startsWith("if_no_")); // buff-check IFs are General-only
           // Skill mode THEN: only this skill's own "use" gambit (potions/scrolls live in the General tab)
-          const ownedThens = GAMBIT_THENS.filter((x) => g.owned?.[x.id] && x.skill === skName);
+          // The veto is offered alongside this skill's own "use" gambit; consumables stay General.
+          const ownedThens = GAMBIT_THENS.filter((x) => g.owned?.[x.id] && (x.skill === skName || x.kind === "veto"));
           const sk = pool.find((s) => s.name === skName);
-          const rules = g.rules?.[skName] || [];
-          const slots = gambitSlotsFor(char, skName);
+          // Gambits are keyed by BAR SLOT, so a rule stays put when you swap the ability in it.
+          const slotNo = Math.max(1, (char.selectedSkills || []).indexOf(skName) + 1);
+          const rules = g.rules?.[slotNo] || [];
+          const slots = gambitSlotsFor(char, slotNo);
           if ((char.level || 1) < GAMBIT_UNLOCK_LEVEL) return (
             <div>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
@@ -6110,27 +6139,36 @@ function GameScreen({ character: initChar, onSave, onBack }) {
               {gambitMode === "skill" && (<>
                 <div style={{ color: "#9a93b3", fontSize: 11, marginBottom: 8 }}>Pick a skill, then set its <b style={{ color: "#fff" }}>IF</b> condition and <b style={{ color: "#fff" }}>THEN</b> action. It fires automatically in combat.</div>
                 <select value={skName} onChange={(e) => setGambitSkill(e.target.value)} style={{ width: "100%", background: "#0a0a14", border: "1px solid #46407a", borderRadius: 8, color: "#fff", fontSize: 13, padding: "8px 10px", marginBottom: 12, cursor: "pointer" }}>
-                  {pool.map((s) => <option key={s.name} value={s.name}>{s.icon} {s.name}{g.rules?.[s.name]?.some((r) => r?.if && r?.then) ? " ✓" : ""}</option>)}
+                  {pool.map((s) => {
+                    // Slots are addressed by number now — the same numbers the "Skill N on
+                    // cooldown" conditions refer to, and the order gambits are evaluated in.
+                    const n = (char.selectedSkills || []).indexOf(s.name) + 1;
+                    const configured = g.rules?.[n]?.some((r) => r?.if && r?.then);
+                    return <option key={s.name} value={s.name}>{`Skill ${n}`} · {s.icon} {s.name}{configured ? " ✓" : ""}</option>;
+                  })}
                 </select>
+                {sk && <div style={{ color: "#8a83b8", fontSize: 10.5, marginBottom: 8 }}>
+                  ⚙️ <b style={{ color: "#c8a0ff" }}>Skill {slotNo}</b> — gambits fire in slot order, so Skill 1 has the highest priority.
+                </div>}
                 {sk && Array.from({ length: slots }).map((_, i) => (
                   <div key={i} style={{ background: "#0e0c1a", border: "1px solid #2a2740", borderRadius: 10, padding: "10px 12px", marginBottom: 8 }}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
                       <div style={{ color: "#c8a0ff", fontSize: 11, fontWeight: 700 }}>Priority {i + 1}</div>
                       {slots > 1 && (
                         <div style={{ display: "flex", gap: 4 }}>
-                          <button onClick={() => moveGambitRule(skName, i, -1)} disabled={i === 0} style={{ background: "#12102a", border: "1px solid #46407a", borderRadius: 5, color: i === 0 ? "#444" : "#c8a0ff", fontSize: 11, padding: "2px 7px", cursor: i === 0 ? "default" : "pointer" }}>▲</button>
-                          <button onClick={() => moveGambitRule(skName, i, 1)} disabled={i === slots - 1} style={{ background: "#12102a", border: "1px solid #46407a", borderRadius: 5, color: i === slots - 1 ? "#444" : "#c8a0ff", fontSize: 11, padding: "2px 7px", cursor: i === slots - 1 ? "default" : "pointer" }}>▼</button>
+                          <button onClick={() => moveGambitRule(slotNo, i, -1)} disabled={i === 0} style={{ background: "#12102a", border: "1px solid #46407a", borderRadius: 5, color: i === 0 ? "#444" : "#c8a0ff", fontSize: 11, padding: "2px 7px", cursor: i === 0 ? "default" : "pointer" }}>▲</button>
+                          <button onClick={() => moveGambitRule(slotNo, i, 1)} disabled={i === slots - 1} style={{ background: "#12102a", border: "1px solid #46407a", borderRadius: 5, color: i === slots - 1 ? "#444" : "#c8a0ff", fontSize: 11, padding: "2px 7px", cursor: i === slots - 1 ? "default" : "pointer" }}>▼</button>
                         </div>
                       )}
                     </div>
                     <div style={{ color: "#e0556a", fontSize: 10.5, fontWeight: 700 }}>IF</div>
-                    {partBtn("if", i, skillIfs, (id) => setGambitPart(skName, i, "if", id), rules[i]?.if)}
+                    {partBtn("if", i, skillIfs, (id) => setGambitPart(slotNo, i, "if", id), rules[i]?.if)}
                     <div style={{ color: "#8fd0e0", fontSize: 10.5, fontWeight: 700, marginTop: 8 }}>THEN</div>
-                    {partBtn("then", i, ownedThens, (id) => setGambitPart(skName, i, "then", id), rules[i]?.then)}
+                    {partBtn("then", i, ownedThens, (id) => setGambitPart(slotNo, i, "then", id), rules[i]?.then)}
                   </div>
                 ))}
                 {slots < 2 && (
-                  <button onClick={() => buyGambitSlot(skName)} style={{ width: "100%", background: (char.ven || 0) >= GAMBIT_SLOT_VEN ? "linear-gradient(135deg,#1a2a4a,#24406a)" : "#15131f", border: `1.5px solid ${(char.ven || 0) >= GAMBIT_SLOT_VEN ? "#7fd0ff" : "#333"}`, borderRadius: 8, color: (char.ven || 0) >= GAMBIT_SLOT_VEN ? "#9ad0e0" : "#666", fontSize: 12, fontWeight: 700, padding: 10, cursor: "pointer" }}>➕ Second gambit for this skill · 💎 {GAMBIT_SLOT_VEN}</button>
+                  <button onClick={() => buyGambitSlot(slotNo)} style={{ width: "100%", background: (char.ven || 0) >= GAMBIT_SLOT_VEN ? "linear-gradient(135deg,#1a2a4a,#24406a)" : "#15131f", border: `1.5px solid ${(char.ven || 0) >= GAMBIT_SLOT_VEN ? "#7fd0ff" : "#333"}`, borderRadius: 8, color: (char.ven || 0) >= GAMBIT_SLOT_VEN ? "#9ad0e0" : "#666", fontSize: 12, fontWeight: 700, padding: 10, cursor: "pointer" }}>➕ Second gambit for this skill · 💎 {GAMBIT_SLOT_VEN}</button>
                 )}
               </>)}
 

@@ -183,6 +183,79 @@ const PHYSICAL_SKILLS = new Set([
   "Hunter's Focus", "Camouflage", "Herbal Salve", "Trail Ward", "Rapid Fire", "Snap Shot", "Barbed Arrow", "Sundering Shot", "Hail of Arrows", "Predator's Mark",
 ]);
 
+// ---------- GAMBIT CONDITIONS ----------
+// The gambit DATA (which ifs/thens exist, what you own) is client-side, but evaluating a
+// condition is pure combat logic, so it lives here where it can be tested headlessly.
+
+// A spec's real execute window, read from its own talents rather than invented: several
+// talents already say "+X% to enemies below Y%", so the widest of those Y values is what that
+// build actually treats as execute range (Assassin 20%, Exile 30%, Berserker 35%, …).
+// Falls back to the class-wide executeNN talent flag, then to a neutral 20%.
+const EXECUTE_DEFAULT = 0.20;
+const executeThreshold = (char) => {
+  // Prefer talents that boost NUKES below a threshold — those describe the spec's general
+  // execute window. Single-skill talents are ignored for this: Berserker has one that reads
+  // "below 50%", but that is one ability's bonus, not the point at which the spec executes.
+  let nuke = 0, any = 0;
+  const walk = (o) => {
+    if (!o || typeof o !== "object") return;
+    const c = o.cond;
+    if (c && typeof c.hpBelow === "number") {
+      any = Math.max(any, c.hpBelow);
+      if (c.kind === "nuke" || c.kind === "all" || c.kind === "auto") nuke = Math.max(nuke, c.hpBelow);
+    }
+    if (typeof o.f === "string") { const m = o.f.match(/^execute(\d+)$/); if (m) nuke = Math.max(nuke, Number(m[1]) / 100); }
+    for (const k in o) walk(o[k]);
+  };
+  if (char && char.spec) walk(SPEC_TREES[char.spec]);
+  if (!nuke && !any && char) walk(TALENT_L60[char.cls]);   // class-wide executeNN flag
+  return nuke || any || EXECUTE_DEFAULT;
+};
+
+// ctx: { char, w, now, maxHp, buffs, slotSkills } — slotSkills is the bar, index 0 = "Skill 1".
+const gambitCondMet = (ifId, ctx) => {
+  const { char, w, now, maxHp, buffs } = ctx;
+  const e = w.enemy || {};
+  const eFrac = e.maxHp > 0 ? e.hp / e.maxHp : 1;
+  const ri = classResource(char.cls) || { max: 100 };
+  const resFrac = (ri.max || 100) > 0 ? resTotal(w) / (ri.max || 100) : 0;
+  // "Skill N on/off cooldown" resolves N against the bar, so a rule survives swapping which
+  // ability sits in that slot.
+  const slotCd = (n) => {
+    const name = (ctx.slotSkills || [])[n - 1];
+    if (!name) return null;                       // empty slot: neither on nor off cooldown
+    return (w.cooldowns?.[name] || 0) > now;
+  };
+  switch (ifId) {
+    case "if_always": return true;
+    case "if_ehp50": return eFrac <= 0.5;
+    case "if_ehp20": return eFrac <= 0.2;
+    case "if_execute": return eFrac <= executeThreshold(char);
+    case "if_selfhp50": return w.hp <= maxHp * 0.5;
+    case "if_selfhp30": return w.hp <= maxHp * 0.3;
+    case "if_selfhp20": return w.hp <= maxHp * 0.2;
+    case "if_debuffed": return (w.playerEffects || []).some(isPlayerDebuff);
+    case "if_champion": return !!(e.isChampion || e.isLord);
+    case "if_boss": return !!e.isBoss;
+    case "if_hard": return w.mode === "hard";
+    case "if_resfull": return resFrac >= 0.999;
+    case "if_res80": return resFrac >= 0.8;
+    case "if_res50": return resFrac < 0.5;
+    case "if_res20": return resFrac < 0.2;
+    case "if_no_might": return !buffs.dmgpct;
+    case "if_no_ward": return !buffs.reducepct;
+    case "if_no_str": return !buffs.str;
+    case "if_no_agi": return !buffs.agi;
+    case "if_no_int": return !buffs.int;
+    case "if_no_sta": return !buffs.sta;
+    default: {
+      const m = /^if_sk([1-5])_(cd|rdy)$/.exec(ifId || "");
+      if (m) { const on = slotCd(Number(m[1])); return on === null ? false : (m[2] === "cd" ? on : !on); }
+      return false;
+    }
+  }
+};
+
 // ---------- SIGNATURE (spec) SKILLS ----------
 // These used to live in App.jsx, which merged them into SKILLS and PHYSICAL_SKILLS at module
 // load. The server never runs App.jsx, so its SKILLS table had no signature skills at all:
@@ -1007,16 +1080,21 @@ const allyById = (st, id) => st.allies.find((a) => a.id === id && !a.down);
 const grpAdds = (st) => st.enemies.filter((e) => e.hp > 0 && e.isAdd);
 const grpIncoming = (st, now) => { let raidSoon = false, busterSoon = false; for (const en of st.enemies) { if (en.hp <= 0) continue; if (en.castBar && en.castBar.interruptible && en.castBar.endsAt - now < 1600) raidSoon = true; for (const ab of en.abilities || []) { if (ab.kind === "raidtick" && ab.nextAt - now < 1200) raidSoon = true; if (ab.kind === "tankbuster" && ab.nextAt - now < 2200) busterSoon = true; } } return { raidSoon, busterSoon }; };
 // ---------- character + loot construction (Stage 5 extraction) ----------
+const HUNTER_WEAPONS = ["Longbow", "Recurve Bow", "Hunting Bow", "Heavy Crossbow"];
 const specSkillNames = (id) => SPEC_SKILLS[id] || [];
 const specClassOf = (id) => { for (const cid in TALENT_L60) if ((TALENT_L60[cid] || []).some((x) => x.id === id)) return cid; return null; };
 const SPEC_MIGRATIONS = { p_king: "p_prot" };
 const TRINITY_FILL = { tank: ["warrior", "w_prot"], healer: ["paladin", "p_holy"], support: ["mage", "m_support"], dps: ["rogue", "r_ambush"] };
+// Generation (bot tiers, item stats, affixes) now draws from the seeded rng() rather than
+// Math.random. rng() falls back to Math.random outside withRng, so ordinary play is unchanged
+// byte for byte; inside a seeded scope it makes bot and loot construction reproducible, which
+// is what lets the determinism harness build the same party every run.
 const botTier = (rating) => {
   const r = rating || 1500;
   const weights = r < 1400 ? [["new", 0.45], ["experienced", 0.45], ["expert", 0.10]]
     : r < 1900 ? [["new", 0.15], ["experienced", 0.60], ["expert", 0.25]]
     : [["new", 0.05], ["experienced", 0.35], ["expert", 0.60]];
-  let x = Math.random(), acc = 0;
+  let x = rng(), acc = 0;
   for (const [k, w] of weights) { acc += w; if (x <= acc) return BOT_TIERS[k]; }
   return BOT_TIERS.experienced;
 };
@@ -1235,7 +1313,7 @@ function generateItem(ilvl, rarity, slotId, clsId) {
   let secondaryCount = [0, 1, 2, 3, 3, 4, 4][rarityIdx] ?? 1; // artifact matches legendary
 
   // Purple & Gold: 50% chance for a 2nd random main stat, replacing one secondary slot
-  if (rarityIdx >= 4 && Math.random() < 0.5) {
+  if (rarityIdx >= 4 && rng() < 0.5) {
     mainStats.push(pick(BASE_STATS.filter((k) => k !== firstMain)));
     secondaryCount = Math.max(0, secondaryCount - 1);
   }
@@ -1245,13 +1323,13 @@ function generateItem(ilvl, rarity, slotId, clsId) {
   const chosen = [];
   if (secondaryCount === 1) {
     // gear with a single secondary: ~50% Stamina
-    chosen.push(Math.random() < 0.5 ? "sta" : pick(pool.filter((k) => k !== "sta")));
+    chosen.push(rng() < 0.5 ? "sta" : pick(pool.filter((k) => k !== "sta")));
   } else {
     const avail = [...pool];
     for (let i = 0; i < secondaryCount && avail.length; i++) {
       const weights = avail.map((k) => (k === "sta" ? 3 : 1)); // stamina favored
       const total = weights.reduce((a, b) => a + b, 0);
-      let r = Math.random() * total, idx = 0;
+      let r = rng() * total, idx = 0;
       while (r >= weights[idx]) { r -= weights[idx]; idx++; }
       chosen.push(avail[idx]); avail.splice(idx, 1);
     }
@@ -1273,9 +1351,9 @@ function generateItem(ilvl, rarity, slotId, clsId) {
   }
 
   // ----- name states the main stats outright (see MAIN_SUFFIXES); the prefix flags the Power type -----
-  const prefix = powerKind ? (powerKind === "ap" ? "Brutal" : "Arcane") : PREFIXES[clamp(rarityIdx * 2 + Math.floor(Math.random() * 2), 0, PREFIXES.length - 1)];
+  const prefix = powerKind ? (powerKind === "ap" ? "Brutal" : "Arcane") : PREFIXES[clamp(rarityIdx * 2 + Math.floor(rng() * 2), 0, PREFIXES.length - 1)];
   const name = nameWithSuffix(`${prefix} ${base}`, mains);
-  const value = Math.max(1, Math.round(ilvl * rarity.valueMult * (0.8 + Math.random() * 0.4)));
+  const value = Math.max(1, Math.round(ilvl * rarity.valueMult * (0.8 + rng() * 0.4)));
 
   return { id: uid(), name, slotId, icon: slot.icon, rarity: rarity.id, ilvl, stats, value, enchant: null, wdmg, mains, sockets: emptySockets(socketCountFor(rarity.id, slotId)) };
 }
@@ -1340,6 +1418,21 @@ const createCharacter = (name, cls, race) => {
   c.hp = maxHpFor(c);
   return c;
 };
+// Gambit rules and slot purchases used to be keyed by SKILL NAME. They are now keyed by BAR
+// SLOT ("1".."5") so a rule survives swapping which ability sits in that slot, and so slot
+// order can drive priority. Existing saves are remapped on load: a skill-name key becomes the
+// position that skill currently occupies, and anything no longer on the bar is dropped —
+// exactly what the old loadout filter did with unslotted skills.
+const migrateGambitKeys = (map, selectedSkills) => {
+  const out = {};
+  for (const k in (map || {})) {
+    if (/^[1-9]$/.test(k)) { out[k] = map[k]; continue; }          // already a slot key
+    const idx = (selectedSkills || []).indexOf(k);
+    if (idx >= 0) out[String(idx + 1)] = map[k];                   // name -> slot position
+  }
+  return out;
+};
+
 const normalizeChar = (c) => ({
   ...c,
   gold: c.gold || 0, kills: c.kills || 0, bossKills: c.bossKills || 0, dungeonClears: c.dungeonClears || 0,
@@ -1368,7 +1461,7 @@ const normalizeChar = (c) => ({
   inventory: (c.inventory || []).map((it) => (it && !Array.isArray(it.sockets) ? { ...it, sockets: emptySockets(socketCountFor(it.rarity, it.slotId)) } : it)),
   gems: (c.gems && typeof c.gems === "object") ? c.gems : {},
   tomes: undefined, learnedSkills: undefined, // retired: every skill now unlocks by level
-  gambits: (c.gambits && typeof c.gambits === "object") ? { owned: c.gambits.owned || {}, shards: c.gambits.shards || {}, rules: c.gambits.rules || {}, slots: c.gambits.slots || {}, general: Array.isArray(c.gambits.general) ? c.gambits.general : [], generalSlots: c.gambits.generalSlots || 2 } : { owned: {}, shards: {}, rules: {}, slots: {}, general: [], generalSlots: 2 },
+  gambits: (c.gambits && typeof c.gambits === "object") ? { owned: c.gambits.owned || {}, shards: c.gambits.shards || {}, rules: migrateGambitKeys(c.gambits.rules, c.selectedSkills), slots: migrateGambitKeys(c.gambits.slots, c.selectedSkills), general: Array.isArray(c.gambits.general) ? c.gambits.general : [], generalSlots: c.gambits.generalSlots || 2 } : { owned: {}, shards: {}, rules: {}, slots: {}, general: [], generalSlots: 2 },
   hardKills: (c.hardKills && typeof c.hardKills === "object") ? c.hardKills : {},
   hardBossKills: (c.hardBossKills && typeof c.hardBossKills === "object") ? c.hardBossKills : {},
   hardZoneDone: (c.hardZoneDone && typeof c.hardZoneDone === "object") ? c.hardZoneDone : {},
@@ -1640,6 +1733,11 @@ const stepEncounter = (state, dt, inputs) => withRng(makeRng((state.seed ^ (stat
 });
 
 export {
+  migrateGambitKeys,
+  HUNTER_WEAPONS,
+  executeThreshold,
+  gambitCondMet,
+  EXECUTE_DEFAULT,
   SPEC_SKILL_DEFS,
   weaponRangeFor,
   POWER_PER_STAT,

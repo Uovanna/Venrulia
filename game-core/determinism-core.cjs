@@ -27,22 +27,31 @@ js += `
   const createEncounter = __core.createEncounter, stepEncounter = __core.stepEncounter;
   // buildBotChar / botTier moved into the core too (Stage 5), so they are no longer App.jsx locals.
   const buildBotChar = __core.buildBotChar, botTier = __core.botTier;
-  const party=[
+  const __rng = require(${JSON.stringify(path.join(__dirname, 'rng.mjs').replace(/\\/g, '/'))});   // withRng/makeRng live in rng.mjs
+  // Build the party under a FIXED seed. buildBotChar rolls gear through the ambient rng, which
+  // defaults to Math.random, so an unseeded party differed every run and the step count drifted
+  // (364 / 436 / 406 …) even when nothing had changed. Each run was still internally
+  // deterministic, but the number was useless as a regression signal. Seeding it makes the step
+  // count meaningful again: if it moves, combat actually changed.
+  const party=__rng.withRng(__rng.makeRng(7), () => [
     {char:buildBotChar("warrior","",60,60), role:"tank",   tier:botTier(1800)},
     {char:buildBotChar("paladin","",60,60), role:"healer", tier:botTier(1800)},
     {char:buildBotChar("mage","",60,60),    role:"dps",    tier:botTier(1800)},
     {char:buildBotChar("rogue","",60,60),   role:"dps",    tier:botTier(1800)},
-  ];
+  ]);
   const sum=(s)=>JSON.stringify({tick:s.tick,elapsed:s.elapsed,cleared:s.cleared,wiped:s.wiped,
     allies:s.allies.map(a=>[a.id,a.hp|0,a.down?1:0]),enemies:s.enemies.map(e=>[e.id,e.hp|0]),logLen:s.log.length});
   const play=(s0)=>{let s=s0,n=0;while(!s.cleared&&!s.wiped&&n<6000){s=stepEncounter(s,120);n++;}return{steps:n,sum:sum(s)};};
   const st0=createEncounter({party,boss:"ashen",seed:777});
   const r1=play(st0), r2=play(st0);
   const det=r1.sum===r2.sum&&r1.steps===r2.steps;
-  const A=play(createEncounter({party,boss:"ashen",seed:111})).sum;
-  const B=play(createEncounter({party,boss:"ashen",seed:222})).sum;
-  console.log("steps:",r1.steps,"| DETERMINISTIC:",det,"| SEED MATTERS:",A!==B);
-  process.exit(det && A!==B ? 0 : 1);
+  // Compare several seeds rather than a single pair. Whether a given seed changes the outcome
+  // is party-dependent — some parties resolve identically under different seeds — so one
+  // unlucky pair used to be able to fail this even though seeding works fine.
+  const sums=[111,222,333,444].map((sd)=>play(createEncounter({party,boss:"ashen",seed:sd})).sum);
+  const seedMatters=new Set(sums).size>1;
+  console.log("steps:",r1.steps,"| DETERMINISTIC:",det,"| SEED MATTERS:",seedMatters);
+  process.exit(det && seedMatters ? 0 : 1);
 })();`;
 const run = path.join(dir, 'harness.cjs'); fs.writeFileSync(run, js);
 require(run);

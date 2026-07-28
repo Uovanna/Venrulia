@@ -10,8 +10,18 @@
 //     could never fire online: App.jsx merged SPEC_SKILL_DEFS into SKILLS at module load, and
 //     the server's SKILLS simply did not contain them.
 //
+//  3. server/ drifting from game-core/. The server deploys standalone with its own copies, and
+//     nothing forced them to stay current — an edit to one side alone means client and
+//     authoritative server disagree about the rules of the fight.
+//
+//  4. App.jsx defining its OWN copy of a symbol the core also exports. A local definition wins
+//     over an import, so the client quietly runs different code from the server and nothing
+//     complains. This is how normalizeChar lost the gambit slot migration: the core copy was
+//     updated, App.jsx's was not, and every existing player's gambits would have gone silent.
+//
 // Run: node game-core/audit-core-usage.mjs
 import { readFileSync } from "fs";
+import { drifted, SYNCED } from "./sync-core.mjs";
 
 const app = readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
 const core = await import("./combat.mjs");
@@ -49,6 +59,29 @@ for (const name of imported) {
 }
 if (writes.length) { failures++; console.log("✗ App.jsx writes to imported core state (the server will not see it):"); writes.forEach((w) => console.log("   " + w)); }
 else console.log("✓ App.jsx never writes to an imported core table");
+
+// --- 4) App.jsx re-defines something the core exports ---------------------------------------
+// Allowed only when the name is genuinely a different thing; add such cases here with a reason.
+const ALLOWED_SHADOW = new Set();
+const shadowed = Object.keys(core).filter((n) => localDef.has(n) && !ALLOWED_SHADOW.has(n));
+if (shadowed.length) {
+  failures++;
+  console.log("✗ App.jsx defines its own copy of a core export (the local one wins, silently):");
+  for (const n of shadowed) {
+    const line = app.slice(0, new RegExp(`^(?:const|let|var|function|class)\\s+${n}\\b`, "m").exec(app).index).split("\n").length;
+    console.log(`   App.jsx:${line}  ${n}`);
+  }
+  console.log("   fix: delete the local definition and add the name to the core import block.");
+} else console.log("✓ App.jsx defines no local copy of a core export");
+
+// --- 3) server/ copies drifted from the canonical core -------------------------------------
+const stale = drifted();
+if (stale.length) {
+  failures++;
+  console.log(`✗ server/ has drifted from game-core/: ${stale.join(", ")}`);
+  console.log("   the client and the authoritative server would resolve fights differently.");
+  console.log("   fix: npm run sync-core   (edit game-core/ — it is the canonical side)");
+} else console.log(`✓ server/ copies match the core (${SYNCED.join(", ")})`);
 
 console.log(failures ? "\n❌ client/core boundary audit FAILED" : "\n✅ client/core boundary is clean");
 process.exit(failures ? 1 : 0);

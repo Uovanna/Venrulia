@@ -15,6 +15,9 @@ import colyseus from "colyseus";
 import { Schema, defineTypes } from "@colyseus/schema";
 import { createRun, stepRun, fullSnapshot } from "../sim.mjs";
 import { buildPartyFromSeats, contentById } from "../party.mjs";
+import { queueIntent, INTENT_QUEUE_MAX } from "../intents.mjs";
+import { auctionForClear, placeBid, passLot, tick, lotView } from "../loot.mjs";
+import { logLoadout } from "../loadout-check.mjs";
 
 const { Room } = colyseus;
 const seatName = (client, options) => `${(options?.name || "Adventurer")}#${client.sessionId.slice(0, 4)}`;
@@ -31,13 +34,20 @@ defineTypes(EncounterState, {
   seed: "uint32",
 });
 
-const INTENT_QUEUE_MAX = 3;    // how many taps a player may line up ahead of the sim
 const TICK_MS = 120;           // authoritative sim rate (matches client)
+
 // How long the lobby stays open for other players before empty seats are bot-filled. Eight
 // seconds meant two friends had to press Queue within eight seconds of each other or they were
 // silently placed in separate rooms — the room locks on start. A minute is long enough to
 // coordinate across timezones; a full party still starts instantly.
-const FILL_TIMEOUT_MS = 60000;
+// Overridable so the e2e test can start a room without waiting a real minute. Production never
+// sets it; a single client waiting the full window is the point of the default.
+const FILL_TIMEOUT_MS = Number(process.env.ROE_FILL_MS) || 60000;
+
+// How long a dropped player's seat is held for them mid-fight. Long enough to cover a phone
+// moving between networks, short enough that a genuinely gone player is not carried by an idle
+// combatant — their ally is handed to the AI for the gap either way, so nothing stalls.
+const RECONNECT_WINDOW_S = 45;
 
 export class EncounterRoom extends Room {
   onCreate(options) {
@@ -66,17 +76,22 @@ export class EncounterRoom extends Room {
     this.onMessage("intent", (client, intent) => {
       const seat = this.seats.find((s) => s.sessionId === client.sessionId);
       if (!seat || !this.started || seat.bot || !seat.allyId) return;   // no seat, not started, or handed to AI
-      if (!intent || typeof intent.skillName !== "string") return;
-      const target = intent.target && (intent.target.type === "enemy" || intent.target.type === "ally") && typeof intent.target.id === "string"
-        ? { type: intent.target.type, id: intent.target.id }
-        : null;
-      // Queue rather than overwrite. This used to be last-wins, so tapping two skills inside
-      // one 120ms tick silently threw the first away — which reads exactly like "that button
-      // doesn't work". The cap keeps it from becoming a macro: you can line up the next couple
-      // of casts, not bank a rotation.
-      seat.intents = (seat.intents || []).filter((q) => q.skillName !== intent.skillName);
-      seat.intents.push({ skillName: intent.skillName, target });
-      if (seat.intents.length > INTENT_QUEUE_MAX) seat.intents.shift();
+      seat.intents = queueIntent(seat.intents, intent);
+    });
+
+    // GDKP bids. The room owns the auction, so a bid is a request: it is checked against the
+    // bidder's real purse (published on join) and the current high before it counts.
+    this.onMessage("bid", (client, msg) => {
+      const seat = this.seats.find((s) => s.sessionId === client.sessionId);
+      if (!seat || !this.auction || !seat.allyId) return;
+      const rej = placeBid(this.auction, seat.allyId, Number(msg && msg.amount) || 0);
+      if (rej) { client.send("notice", { code: rej.code, text: rej.text }); return; }
+      this.broadcast("loot", { phase: "bidding", lot: lotView(this.auction) });
+    });
+    this.onMessage("pass", (client) => {
+      const seat = this.seats.find((s) => s.sessionId === client.sessionId);
+      if (!seat || !this.auction || !seat.allyId) return;
+      passLot(this.auction, seat.allyId);
     });
   }
 
@@ -92,8 +107,14 @@ export class EncounterRoom extends Room {
       name: (options?.name || "Adventurer").slice(0, 24),
       loadout: options?.loadout || null,   // { cls, spec, level, power, ... } from pvp_snapshot / client
       role: options?.role || "dps",
+      // The purse a bid is checked against. Kept server-side so an inflated bid is refused here
+      // rather than trusted from the wire at settle time.
+      gold: Math.max(0, Math.floor(Number(options?.gold) || 0)),
       bot: false,
     });
+    // The published character is still trusted — this only records what looks out of range, so a
+    // testing phase produces the distribution a real validator would need. It rejects nothing.
+    logLoadout(options.loadout.char, this.content, seatName(client, options));
     console.log(`[room ${this.roomId}] join ${seatName(client, options)} → ${this.seats.length}/${this.content.partySize} (${this.content.id}${this.code ? ", code " + this.code : ""})`);
     // Start when full, or after the fill window (bot-filled) once at least one human is in.
     if (this.seats.length >= this.content.partySize) this.start();
@@ -131,7 +152,7 @@ export class EncounterRoom extends Room {
     // so a party that won't build closes this room only.
     let party;
     try {
-      party = buildPartyFromSeats(this.seats, this.content);
+      party = buildPartyFromSeats(this.seats, this.content, this.seed);
     } catch (e) {
       console.warn("encounter start failed:", e.message);
       this.broadcast("error", { message: "could not start encounter: " + e.message });
@@ -165,6 +186,13 @@ export class EncounterRoom extends Room {
         this.timeline.push({ tick: this.enc.tick, allyId: seat.allyId, ...next });
       }
       this.enc = stepRun(this.enc, TICK_MS, inputs);
+      // Why a tap did nothing goes ONLY to the player it concerns — "not enough Rage" is not
+      // party business, and broadcasting it would spam three other people per mistap.
+      for (const n of this.enc.notices || []) {
+        const seat = this.seats.find((s) => s.allyId === n.allyId && !s.bot);
+        const client = seat && this.clients.find((c) => c.sessionId === seat.sessionId);
+        if (client) client.send("notice", { code: n.code, text: n.text, skillName: n.skillName || null });
+      }
       this.broadcast("state", fullSnapshot(this.enc));
       if (this.enc.cleared || this.enc.wiped) this.finish();
     }, TICK_MS);
@@ -176,31 +204,82 @@ export class EncounterRoom extends Room {
     const outcome = this.enc.cleared ? "cleared" : "wiped";
     this.state.phase = "done";
     this.broadcast("result", { outcome, tick: this.enc.tick, elapsed: this.enc.elapsed });
-    if (outcome === "cleared") {
-      try {
-        const { grantRewards } = await import("../rewards.mjs");
-        await grantRewards(this.content, this.seats.filter((s) => !s.bot), this.enc);
-      } catch (e) { console.warn("reward grant failed:", e.message); }
-    }
+    // A wipe drops nothing, so there is no auction to run.
+    if (outcome !== "cleared") { this.clock.setTimeout(() => this.disconnect(), 4000); return; }
+    this.runAuction();
+  }
+
+  // GDKP, run by the room. The lots are rolled once from the encounter seed and the bidding is
+  // resolved here, so the whole party sees one drop and one auction instead of each client
+  // inventing its own.
+  runAuction() {
+    const { auction, items } = auctionForClear({ content: this.content, enc: this.enc, seats: this.seats, seed: this.seed });
+    this.auction = auction;
+    this.lootResults = [];
+    console.log(`[room ${this.roomId}] LOOT ${items.length} lot(s) → auction open`);
+    this.broadcast("loot", { phase: "open", lot: lotView(this.auction) });
+
+    // Drive the auction on the room's SIMULATION interval, not this.clock. finish() clears the
+    // simulation interval, and that loop is what ticks the clock — so clock.setInterval callbacks
+    // registered afterwards never fire at all. The auction opened and bids registered (both are
+    // message-driven) but no lot ever hammered, which looked like the auction hanging.
+    this.setSimulationInterval(() => {
+      const ev = tick(this.auction);
+      if (!ev) return;
+      if (ev.kind === "bid") { this.broadcast("loot", { phase: "bidding", lot: ev.lot }); return; }
+      // hammered
+      this.lootResults.push(ev);
+      this.broadcast("loot", {
+        phase: "sold", item: ev.item, price: ev.price, winnerId: ev.winnerId,
+        winnerName: ev.winnerName, share: ev.share, payouts: ev.payouts,
+      });
+      if (this.auction.done) { this.setSimulationInterval(undefined); this.settle(); }
+      else this.broadcast("loot", { phase: "open", lot: lotView(this.auction) });
+    }, 1000);
+  }
+
+  async settle() {
+    try {
+      const { grantRewards } = await import("../rewards.mjs");
+      await grantRewards(this.content, this.seats.filter((s) => !s.bot), this.enc, this.lootResults);
+    } catch (e) { console.warn("reward grant failed:", e.message); }
+    this.broadcast("loot", { phase: "done" });
     this.clock.setTimeout(() => this.disconnect(), 4000); // let clients read the result, then dispose
   }
 
-  onLeave(client) {
+  async onLeave(client, consented) {
     const seat = this.seats.find((s) => s.sessionId === client.sessionId);
-    if (seat && !this.started) {
+    if (!seat) return;
+    if (!this.started) {
       // Left while still forming — free the seat and tell the others.
       this.seats = this.seats.filter((s) => s !== seat);
       this.sendLobby();
       return;
     }
-    if (seat && this.started && !this.enc?.cleared && !this.enc?.wiped) {
-      seat.bot = true;
-      seat.intents = [];
-      // Hand the combatant itself back to the AI. Clearing isHuman is the part that matters:
-      // the core lets a human's turn stay open until they tap, so a dropped player's ally
-      // would otherwise stand still for the rest of the fight and stall the party.
-      const ally = this.enc?.allies.find((a) => a.id === seat.allyId);
-      if (ally) ally.isHuman = false;
+    if (this.enc?.cleared || this.enc?.wiped) return;         // fight already over, nothing to hand over
+
+    // Hand the combatant to the AI immediately so the party is not stalled waiting on someone
+    // who may be gone: the core lets a human's turn stay open until they tap, so a dropped
+    // player's ally would otherwise stand still for the rest of the fight.
+    seat.bot = true;
+    seat.intents = [];
+    const ally = this.enc?.allies.find((a) => a.id === seat.allyId);
+    if (ally) ally.isHuman = false;
+
+    // A phone changing network drops the socket without the player choosing to leave. Handing
+    // the seat to a bot permanently meant a two-second blip cost you the rest of the run with no
+    // way back, so hold the seat open and take it back if they return.
+    if (consented) return;                                    // they pressed Leave; do not hold a seat
+    try {
+      await this.allowReconnection(client, RECONNECT_WINDOW_S);
+      seat.sessionId = client.sessionId;                      // may be re-issued on reconnect
+      seat.bot = false;
+      const back = this.enc?.allies.find((a) => a.id === seat.allyId);
+      if (back && !back.down) back.isHuman = true;             // a downed ally stays AI until resurrected
+      console.log(`[room ${this.roomId}] ${seat.name} reconnected → ally ${seat.allyId}`);
+      client.send("assigned", { allyId: seat.allyId, skills: (seat.loadout?.char?.selectedSkills || []).slice(0, 6) });
+    } catch {
+      console.log(`[room ${this.roomId}] ${seat.name} did not return within ${RECONNECT_WINDOW_S}s — ally stays with the AI`);
     }
   }
   onDispose() { this.setSimulationInterval(undefined); if (this._lobbyTimer) this._lobbyTimer.clear(); }
@@ -220,8 +299,18 @@ CLIENT PROTOCOL
 
   → intent    { skillName, target?: { type: "enemy"|"ally", id } }
               Names one of your own skills. Target is optional; the core picks a sensible
-              one (primary enemy, or the most injured ally for heals). Sending again before
-              the next tick replaces the queued intent rather than banking a second action.
+              one (primary enemy, or the most injured ally for heals). Re-sending the SAME
+              skill moves it to the back of the queue rather than banking a second action;
+              the queue is capped at INTENT_QUEUE_MAX. See ../intents.mjs.
+  → intent    { potion: true }
+              The one intent that names no skill. It spends a charge belonging to the whole
+              encounter, so the core decides whether it is allowed (cap, downed, full HP).
+              Mashing it queues one potion, never a stack.
+  ← notice    { code, text, skillName? }
+              Sent to ONE client: why their last tap did nothing ("Not enough Rage for
+              Devastating Blow (12/30)", "on cooldown", "No potions left this fight"). It is
+              deliberately not broadcast — a mistap is not party business — and it is absent
+              from the state snapshot for the same reason.
 
 The server never trusts a skill object from the wire — resolveIntent looks the name up in the
 character's own loadout and applies the same cooldown and resource rules bots obey. Every

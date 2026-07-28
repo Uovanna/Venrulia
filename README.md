@@ -48,6 +48,7 @@ Push to the default branch and Netlify builds + deploys automatically.
 
 ## Zero-build fallback
 
-`standalone/realms-of-eldoria.html` (if present) is a fully self-contained build
-— no bundler required. Rename it to `index.html` and publish it as a static site
-for an instant deploy.
+There is no longer a prebuilt single-file HTML in the repo. The old
+`standalone/realms-of-eldoria.html` was a snapshot that predated both the
+`game-core/` cutover and multiplayer, and nothing rebuilt it, so it drifted
+silently into a different game. Use `npm run build` (Netlify already does).

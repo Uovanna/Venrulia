@@ -57,7 +57,7 @@ builds combatants from published snapshots the same way.
 1. **`rng.mjs`** — done (extracted + tested).
 2. **`combat.mjs`** — move the 155 symbols in `CLOSURE.md` (source order). Re-export them.
 3. **Cutover** — replace the in-file definitions in `App.jsx` with `import { … } from './game-core/combat.mjs'`. Run `determinism-core.cjs` and a full playtest; the game must behave identically (default `_rng` = `Math.random`, so non-seeded play is byte-for-byte unchanged).
-4. **Build** — Vite handles the ESM import directly. For the standalone single-file HTML, prepend `combat.mjs` + `rng.mjs` (stripped of `import`/`export`) ahead of the app in the splice step, same pattern already used for the app body.
+4. **Build** — Vite handles the ESM import directly, and that is the only build. (The prebuilt single-file HTML this step once described has been deleted; nothing regenerated it, so it drifted to a pre-cutover snapshot.)
 5. **Server harness** — a tiny Node entry that imports `game-core/combat.mjs`, builds combatants from `pvp_snapshot`/party data, and ticks `stepEncounter` — the seed of the Colyseus room loop and the async-PvP replay validator.
 
 ## How this unlocks the roadmap
@@ -76,7 +76,7 @@ builds combatants from published snapshots the same way.
 | Closure identified (155 symbols) | ✅ mapped (`CLOSURE.md`) |
 | `combat.mjs` (lift the 146 closure) | ✅ extracted + proven byte-identical |
 | `App.jsx` cutover | ✅ **adopted** — `src/App.jsx` imports `../game-core/`; Vite build green, booted and played in a real browser |
-| Standalone-build splice update | ▢ next — `standalone/realms-of-eldoria.html` still embeds the pre-cutover inline core |
+| Standalone-build splice update | ✅ dropped — the prebuilt single-file HTML was deleted rather than re-spliced; nothing rebuilt it, so it had drifted to a pre-cutover, pre-multiplayer snapshot. `npm run build` is the only build. |
 | Server core (sim + validator) | ✅ built + tested (`server/sim.mjs`) |
 | Colyseus room + deploy config | ✅ built (`server/`); runs live under real Colyseus (`npm run test:e2e`) |
 | Railway service | ✅ configured (root dir, healthcheck, domain, vars); deploy blocked on authorizing Railway's GitHub App — see `server/README.md` |

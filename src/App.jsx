@@ -161,6 +161,25 @@ import {
   specClassOf,
   specSkillNames,
   guildBossDef,
+  HUNTER_WEAPONS,
+  gambitCondMet,
+  executeThreshold,
+  intentRejection,
+  potionRejection,
+  migrateGambitKeys,
+  gdkpReserve,
+  gdkpBotCeiling,
+  // These used to be defined a SECOND time in App.jsx. Nothing forced the two copies to agree,
+  // so the client and the authoritative server could silently run different rules — which is
+  // exactly how normalizeChar lost the gambit slot migration. One definition now, imported.
+  RARITIES,
+  rarityById,
+  GEAR_SLOTS,
+  LOOT_SLOTS,
+  generateItem,
+  emptyEquipment,
+  createCharacter,
+  normalizeChar,
   mainStatsOf,
   migrateItem,
   migrateSpec,
@@ -220,16 +239,6 @@ const statWeight = (clsId, stat) => {
 
 
 // ---------- RARITIES ----------
-const RARITIES = [
-  { id: "poor", name: "Poor", color: "#9d9d9d", power: 1, valueMult: 0.4, weight: 26 },
-  { id: "common", name: "Common", color: "#ffffff", power: 2, valueMult: 1.0, weight: 40 },
-  { id: "uncommon", name: "Uncommon", color: "#1eff00", power: 4, valueMult: 3.0, weight: 22 },
-  { id: "rare", name: "Rare", color: "#0070dd", power: 7, valueMult: 8.0, weight: 9 },
-  { id: "epic", name: "Epic", color: "#a335ee", power: 15, valueMult: 22.0, weight: 2.5 },
-  { id: "legendary", name: "Legendary", color: "#ff8000", power: 24, valueMult: 60.0, weight: 0.5 },
-  { id: "artifact", name: "Artifact", color: "#c8102e", power: 24, valueMult: 60.0, weight: 0 }, // deep red; never drops — purchased with Ven
-];
-const rarityById = (id) => RARITIES.find((r) => r.id === id) || RARITIES[1];
 
 // ---------- ARTIFACT GEAR (Ven "top-up" reward — weapon & off-hand only) ----------
 // Artifacts re-forge as you level rather than being replaced: ilvl = max(40, level + 5). That gives
@@ -241,7 +250,6 @@ const rarityById = (id) => RARITIES.find((r) => r.id === id) || RARITIES[1];
 // normal mode's ilvl-63 ceiling and clearly outclassed by Hard Mode's ilvl 65+. Rolls at legendary magnitude.
 const ARTIFACT_BASE_ILVL = 40;
 const ARTIFACT_TAPER_LEVEL = 50; // growth halves past this level
-const ARTIFACT_SLOTS = ["weapon", "offhand"];
 const artifactIlvl = (level) => {
   const l = level || 1;
   return l <= ARTIFACT_TAPER_LEVEL
@@ -297,28 +305,13 @@ function GameIcon({ icon, imgKey, size = 28, rounded = true, style }) {
 }
 
 // ---------- GEAR SLOTS ----------
-const GEAR_SLOTS = [
-  { id: "head", name: "Head", icon: "🪖" },
-  { id: "shoulder", name: "Shoulder", icon: "🧣" },
-  { id: "chest", name: "Chest", icon: "👕" },
-  { id: "hands", name: "Hands", icon: "🧤" },
-  { id: "legs", name: "Legs", icon: "👖" },
-  { id: "feet", name: "Feet", icon: "🥾" },
-  { id: "weapon", name: "Weapon", icon: "⚔️" },
-  { id: "offhand", name: "Off-hand", icon: "🛡️" },
-  { id: "ring", name: "Ring", icon: "💍" },
-  { id: "trinket", name: "Trinket", icon: "🔮" },
-  { id: "relic", name: "Relic", icon: "🔱" },
-];
 
 // Relics are rare, gameplay-altering items (one per applicable dungeon). Not enchantable, no random stats.
 const RELICS = [
   { id: "miners_charm", name: "Miner's Charm", icon: "⛏️", dungeonId: "deadmines", color: "#e0a955", desc: "Mining “Smash” cooldown −1s · 50% chance for double ore when manually mining." },
   { id: "verdant_idol", name: "Verdant Idol", icon: "🌿", dungeonId: "scarlet", color: "#5fd35f", desc: "Herbalism “Harvest” cooldown −1s · 50% chance for double herbs when manually harvesting." },
 ];
-const relicById = (id) => RELICS.find((r) => r.id === id);
 const relicForDungeon = (dungeonId) => RELICS.find((r) => r.dungeonId === dungeonId);
-const LOOT_SLOTS = GEAR_SLOTS.filter((s) => s.id !== "relic"); // relics never drop as random loot
 const makeRelic = (def, ilvl) => ({ id: uid(), name: def.name, slotId: "relic", icon: def.icon, rarity: "legendary", ilvl: null, relicId: def.id, relicDesc: def.desc, relicColor: def.color, stats: {}, enchant: null });
 
 
@@ -607,19 +600,6 @@ const MATERIALS = {
   ...ENCHANT_STATS.reduce((m, s) => { m[statDustId(s)] = { name: STAT_DUST_META[s].name, icon: STAT_DUST_META[s].icon, color: STAT_DUST_META[s].color }; return m; }, {}),
 };
 const ARMOR_CRAFT_SLOTS = ["weapon", "head", "shoulder", "chest", "hands", "legs", "feet", "offhand", "trinket"];
-// crafted rarity by skill rank; Rich Ore bumps +1 tier
-const craftRarityIdx = (skill) => (skill < 60 ? 1 : skill < 130 ? 2 : skill < 210 ? 3 : skill < 290 ? 4 : 5);
-// average rarity index of currently equipped gear (rounded)
-const equippedRarityIdxAvg = (c) => {
-  const items = Object.values(c.equipment || {}).filter(Boolean);
-  if (!items.length) return 1;
-  const sum = items.reduce((s, it) => s + Math.max(0, RARITIES.findIndex((r) => r.id === it.rarity)), 0);
-  return Math.round(sum / items.length);
-};
-// armorsmith craft rarity: average equipped rarity, or one step higher when using Rich Ore.
-// Never produces legendary (gold) and never below common.
-const armorCraftIdx = (c, useRich) => clamp(equippedRarityIdxAvg(c) + (useRich ? 1 : 0), 1, 4);
-const enchantStatValue = (ilvl, rarityIdx) => Math.max(1, Math.round((1 + ilvl * 0.2) * (1 + rarityIdx * 0.4)));
 
 // ---------- SKILLS (active abilities) ----------
 // Skill effect model. A skill may carry any combination of:
@@ -671,8 +651,6 @@ const MAX_SKILL_SLOTS = SKILL_SLOT_LEVELS.length;
 
 // every class skill unlocks purely by reaching its level — the choice is which ones you slot
 
-// every skill of the character's class, learned or not (for the training UI)
-const fullSkillPool = (char) => classSkills(char.cls).filter((s) => specVisible(char, s));
 
 // Only skills actually slotted on your bar can be cast — Gambits must never fire an unequipped ability.
 const equippedSkills = (char) => (char.selectedSkills || []).map((n) => skillByName(char, n)).filter(Boolean);
@@ -782,7 +760,7 @@ const DUNGEON_RARITY = {
 const rollRarityForZone = (level) => rollWeighted((ZONE_RARITY_BANDS.find((b) => level <= b.max) || ZONE_RARITY_BANDS[ZONE_RARITY_BANDS.length - 1]).w);
 const rollRarityForDungeon = (dungeonId) => rollWeighted(DUNGEON_RARITY[dungeonId] || { uncommon: 100 });
 
-const HUNTER_WEAPONS = ["Longbow", "Recurve Bow", "Hunting Bow", "Heavy Crossbow"];
+
 const DROP_RATE_MULT = 0.4; // gear drop rate greatly reduced
 
 // ---- inherent Armor (all non-weapon gear) & weapon damage range (WoW-style) ----
@@ -799,81 +777,6 @@ const enchantAmount = (stat, enchLevel) => { const cap = enchantCap(stat); const
 // back-fill inherent armor / weapon range onto items from older saves
 
 
-function generateItem(ilvl, rarity, slotId, clsId) {
-  ilvl = Math.max(1, Math.floor(ilvl));
-  // Rarity floors: Epic requires ilvl 60+, Legendary requires ilvl 64+ (applies to drops, crafting, and the Auction House)
-  if (rarity.id === "legendary" && ilvl < 64) rarity = rarityById(ilvl >= 60 ? "epic" : "rare");
-  if (rarity.id === "epic" && ilvl < 60) rarity = rarityById("rare");
-  const slot = slotById(slotId);
-  let base = pick(ITEM_BASES[slotId] || ["Trinket"]);
-  if (slotId === "weapon" && clsId === "hunter") base = pick(HUNTER_WEAPONS);
-  const isWeapon = slotId === "weapon";
-
-  const rarityIdx = RARITIES.findIndex((r) => r.id === rarity.id);
-  // Dramatically squished values: small numbers, gentle rarity curve. World-zone gear gives
-  // modest boosts; notable upgrades come from the higher rarities dropped by dungeons & raids.
-  const perStat = Math.max(1, Math.round((1 + ilvl * 0.05) * (RARITY_STAT_MULT[rarityIdx] || 1)));
-  const secBase = Math.max(1, Math.round(perStat * 0.7));
-  const stats = { str: 0, agi: 0, int: 0, sta: 0, armor: 0, dmg: 0, leech: 0, resil: 0, vers: 0, cdr: 0, csd: 0, ap: 0, sp: 0 };
-
-  // ----- MAIN stats (str/agi/int) -----
-  // Always 1 main stat. Purple & Gold have a 50% chance to roll a SECOND main stat, which
-  // replaces one secondary slot (rather than being guaranteed). The class scaling is unchanged.
-  const BASE_STATS = ["str", "agi", "int"];
-  // Any primary stat can drop on any gear — classes no longer gate the main stat.
-  const firstMain = pick(BASE_STATS);
-  const mainStats = [firstMain];
-
-  // ----- SECONDARY stats (armor is now inherent base Armor; weapon damage is a range) -----
-  const SIZE = { sta: 1.0, leech: 0.5, vers: 0.5, resil: 0.5, cdr: 0.5, csd: 0.5 }; // non-stamina weights reset & unified
-  // White 1, Green 2, Blue 3, Purple 3, Gold 4 (Poor 0) — Purple & Gold each dropped one line.
-  let secondaryCount = [0, 1, 2, 3, 3, 4, 4][rarityIdx] ?? 1; // artifact matches legendary
-
-  // Purple & Gold: 50% chance for a 2nd random main stat, replacing one secondary slot
-  if (rarityIdx >= 4 && Math.random() < 0.5) {
-    mainStats.push(pick(BASE_STATS.filter((k) => k !== firstMain)));
-    secondaryCount = Math.max(0, secondaryCount - 1);
-  }
-  mainStats.forEach((k) => { stats[k] += perStat; });
-
-  const pool = ["sta", "leech", "vers", "resil", "cdr", "csd"];
-  const chosen = [];
-  if (secondaryCount === 1) {
-    // gear with a single secondary: ~50% Stamina
-    chosen.push(Math.random() < 0.5 ? "sta" : pick(pool.filter((k) => k !== "sta")));
-  } else {
-    const avail = [...pool];
-    for (let i = 0; i < secondaryCount && avail.length; i++) {
-      const weights = avail.map((k) => (k === "sta" ? 3 : 1)); // stamina favored
-      const total = weights.reduce((a, b) => a + b, 0);
-      let r = Math.random() * total, idx = 0;
-      while (r >= weights[idx]) { r -= weights[idx]; idx++; }
-      chosen.push(avail[idx]); avail.splice(idx, 1);
-    }
-  }
-  chosen.forEach((k) => { stats[k] += Math.max(1, Math.round(secBase * (SIZE[k] || 0.5))); });
-
-  // inherent Armor on all non-weapon gear; weapons instead carry a damage range
-  if (!isWeapon) stats.armor += baseArmorFor(ilvl, rarityIdx, slotId);
-  const wdmg = isWeapon ? weaponRangeFor(ilvl, rarityIdx) : null;
-
-  // ----- POWER AFFIX: focused (single main stat) endgame gear carries flat damage -----
-  // Worth exactly one extra main stat (damage converts at statVal * 1.4), so a focused piece is
-  // the equal of a dual-stat piece for a build that only uses one stat.
-  const mains = MAIN_KEYS.filter((k) => stats[k] > 0);
-  let powerKind = null;
-  if (mains.length === 1 && ilvl >= POWER_AFFIX_MIN_ILVL) {
-    powerKind = mains[0] === "int" ? "sp" : "ap"; // Str/Agi → Attack Power, Int → Spell Power
-    stats[powerKind] += Math.max(1, Math.round(perStat * POWER_PER_STAT));
-  }
-
-  // ----- name states the main stats outright (see MAIN_SUFFIXES); the prefix flags the Power type -----
-  const prefix = powerKind ? (powerKind === "ap" ? "Brutal" : "Arcane") : PREFIXES[clamp(rarityIdx * 2 + Math.floor(Math.random() * 2), 0, PREFIXES.length - 1)];
-  const name = nameWithSuffix(`${prefix} ${base}`, mains);
-  const value = Math.max(1, Math.round(ilvl * rarity.valueMult * (0.8 + Math.random() * 0.4)));
-
-  return { id: uid(), name, slotId, icon: slot.icon, rarity: rarity.id, ilvl, stats, value, enchant: null, wdmg, mains, sockets: emptySockets(socketCountFor(rarity.id, slotId)) };
-}
 
 // Forge an artifact. `existing` re-forges in place on level-up, preserving the item's identity
 // (name + which secondaries it rolled) while its magnitudes scale with the new ilvl.
@@ -949,7 +852,6 @@ const rerollRange = (ilvl, rarityId, stat) => { const n = secNominal(ilvl, rarit
 const rollRerollValue = (ilvl, rarityId, stat) => { const [lo, hi] = rerollRange(ilvl, rarityId, stat); return lo + Math.floor(Math.random() * (hi - lo + 1)); };
 const temperCost = (targetRank) => TEMPER_CFG.cost[targetRank] || 0;
 const rerollCost = (rerollsDone) => { const { start, max, rampRolls } = TEMPER_CFG.reroll; const n = Math.min(rerollsDone, rampRolls - 1); return Math.round(start + (max - start) * (n / (rampRolls - 1))); };
-const temperBonusAt = (rank) => (rank >= 10 ? 15 : Math.max(0, rank)); // clean-run cumulative per line (no fail-stack doubling)
 const doubleChanceFor = (stacks) => Math.min(1, (stacks || 0) * TEMPER_CFG.failStackPct);
 // lazily capture an item's secondary lines + temper fields (base stats → discrete lines) on first shop use
 function ensureTemperData(it) {
@@ -1054,12 +956,28 @@ const GAMBIT_IFS = [
   { id: "if_no_agi",   label: "Agility scroll inactive",   icon: "📜", rarity: "uncommon" },
   { id: "if_no_int",   label: "Intellect scroll inactive", icon: "📜", rarity: "uncommon" },
   { id: "if_no_sta",   label: "Health scroll inactive",    icon: "📜", rarity: "uncommon" },
+  // Execute range is per-spec, read from that spec's own talents (Assassin 20%, Exile 30%,
+  // Berserker 35%, Wild 40%…) rather than a flat number — see executeThreshold in the core.
+  { id: "if_execute",  label: "Target in execute range",   icon: "🗡️", rarity: "legendary" },
+  { id: "if_resfull",  label: "Class resource full",       icon: "⚡", rarity: "rare" },
+  { id: "if_res80",    label: "Class resource ≥ 80%",      icon: "🔋", rarity: "uncommon" },
+  { id: "if_res50",    label: "Class resource < 50%",      icon: "🔌", rarity: "uncommon" },
+  { id: "if_res20",    label: "Class resource < 20%",      icon: "🪫", rarity: "rare" },
+  // Slot-based cooldown checks. These reference the BAR POSITION, so a rule keeps working when
+  // you swap which ability sits in that slot.
+  ...Array.from({ length: MAX_SKILL_SLOTS }, (_, i) => i + 1).flatMap((n) => [
+    { id: `if_sk${n}_cd`,  label: `Skill ${n} on cooldown`,  icon: "⏳", rarity: "uncommon" },
+    { id: `if_sk${n}_rdy`, label: `Skill ${n} off cooldown`, icon: "✅", rarity: "uncommon" },
+  ]),
 ];
 const _gslug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, "");
 const GAMBIT_THENS = (() => {
   const out = [], seen = new Set();
   for (const cid in SKILLS) for (const s of SKILLS[cid]) if (!seen.has(s.name)) { seen.add(s.name); out.push({ id: "then_sk_" + _gslug(s.name), label: "Use " + s.name, icon: s.icon || "✨", rarity: s.unlockLevel >= 40 ? "rare" : s.unlockLevel >= 20 ? "uncommon" : "common", kind: "skill", skill: s.name }); }
   for (const d of CONSUMABLE_DEFS) out.push({ id: "then_con_" + d.id, label: "Use " + d.name, icon: d.icon, rarity: "common", kind: "consumable", consumable: d.id });
+  // A veto rather than an action: while its condition holds, the skill this rule is equipped to
+  // is held back, letting a higher-priority slot take the cast instead.
+  out.push({ id: "then_skip", label: "Do NOT use this skill", icon: "⛔", rarity: "rare", kind: "veto" });
   return out;
 })();
 const ALL_GAMBITS = [...GAMBIT_IFS.map((g) => ({ ...g, type: "if" })), ...GAMBIT_THENS.map((g) => ({ ...g, type: "then" }))];
@@ -1132,7 +1050,6 @@ const BUFF_META = {
 };
 
 // ---------- TALENT TREES (WoW: WoD-style — one row per tier, pick 1 of 3) ----------
-const TALENT_LEVELS = [10, 20, 30, 40, 50, 60];
 const TALENT_RESPEC_COST = 150; // gold per row change
 // Shared talent rows 10-50 (the old level-60 Signature row is now the Specialization system)
 
@@ -1216,9 +1133,12 @@ const applyLoadout = (c, L, sigNames) => {
   nc.selectedSkills = padSelectedSkills(nc, [...(L.selectedSkills || []).filter(okSkill), ...sigNames]);
   nc.autoSkills = Object.fromEntries(Object.entries(L.autoSkills || {}).filter(([k]) => okSkill(k)));
   nc.skillMods = Object.fromEntries(Object.entries(L.skillMods || {}).filter(([k]) => okSkill(k)));
+  // Gambit maps are keyed by BAR SLOT now, so they travel with the loadout as-is — the old
+  // okSkill() filter was for skill-name keys and would have discarded every rule.
+  const okSlot = (k) => /^[1-9]$/.test(k) && Number(k) <= unlockedSlotCount(nc.level);
   const rules = {}, slots = {};
-  for (const k in ((L.gambits && L.gambits.rules) || {})) if (okSkill(k)) rules[k] = L.gambits.rules[k];
-  for (const k in ((L.gambits && L.gambits.slots) || {})) if (okSkill(k)) slots[k] = L.gambits.slots[k];
+  for (const k in ((L.gambits && L.gambits.rules) || {})) if (okSlot(k)) rules[k] = L.gambits.rules[k];
+  for (const k in ((L.gambits && L.gambits.slots) || {})) if (okSlot(k)) slots[k] = L.gambits.slots[k];
   nc.gambits = { ...(c.gambits || {}), rules, slots, general: [...((L.gambits && L.gambits.general) || [])] };
   return nc;
 };
@@ -1235,9 +1155,11 @@ const switchSpecCore = (c, specId) => {
   const kept = (c.selectedSkills || []).filter((n) => !ALL_SPEC_SKILL_NAMES.has(n));
   nc.selectedSkills = padSelectedSkills(nc, [...newSig, ...kept]);
   if (nc.gambits) {
-    const okSkill = (n) => !ALL_SPEC_SKILL_NAMES.has(n) || newSig.includes(n);
-    const rules = {}; for (const k in (nc.gambits.rules || {})) if (okSkill(k)) rules[k] = nc.gambits.rules[k];
-    const slots = {}; for (const k in (nc.gambits.slots || {})) if (okSkill(k)) slots[k] = nc.gambits.slots[k];
+    // Slot-keyed rules survive a spec change — the bar position is still yours even though the
+    // signature skill sitting in it just swapped.
+    const okSlot = (k) => /^[1-9]$/.test(k) && Number(k) <= unlockedSlotCount(nc.level);
+    const rules = {}; for (const k in (nc.gambits.rules || {})) if (okSlot(k)) rules[k] = nc.gambits.rules[k];
+    const slots = {}; for (const k in (nc.gambits.slots || {})) if (okSlot(k)) slots[k] = nc.gambits.slots[k];
     nc.gambits = { ...nc.gambits, rules, slots };
   }
   return { char: nc, restored: false };
@@ -1254,17 +1176,6 @@ const ROLES = {
 };
 
 
-// New skill effect fields the GROUP engine (Phase 3) reads — inert in solo except their `mult` damage:
-//   heal: <frac>        single-target ally heal, fraction of the caster's healing power
-//   healAoe: <frac>     heals the whole party
-//   hot / hotDur        heal-over-time
-//   offheal: <frac>     minor party heal (support)
-//   threatMult: <x>     multiplies threat generated by this cast (tank threat)
-//   taunt: true         forces enemies to target the caster
-//   interrupt: true     cancels an enemy's active cast
-//   partyHastePct/Dur, partyWardPct/Dur, partyEmpowerPct/Dur   raid-wide buffs
-const GROUP_SKILL_FIELDS = ["heal", "healAoe", "hot", "offheal", "threatMult", "taunt", "interrupt", "partyHastePct", "partyWardPct", "partyEmpowerPct"];
-const isGroupSkill = (sk) => !!sk && GROUP_SKILL_FIELDS.some((f) => sk[f] != null);
 
 // ---------- LEGENDARY POWER GEMS ----------
 // The old class-signature "Soul" gems are retired. Legendary gems now grant powerful, STACKING
@@ -1480,152 +1391,13 @@ const savesSummary = (arr) => {
   return `${list.length} character${list.length === 1 ? "" : "s"} · top: ${top.name || "?"} Lv${top.level || 1}`;
 };
 
-const emptyEquipment = () => GEAR_SLOTS.reduce((acc, s) => { acc[s.id] = null; return acc; }, {});
 
 // ---------- starting gear (gray/poor tier, class-appropriate) ----------
 
 
 
 
-const createCharacter = (name, cls, race) => {
-  const c = {
-    id: uid(),
-    name, cls, race,
-    level: 1, xp: 0, gold: 150, kills: 0, bossKills: 0, dungeonClears: 0,
-    honor: 0, honorXp: 0, attrPoints: 0, allocated: { str: 0, agi: 0, int: 0, sta: 0 },
-    currentZoneId: "elwynn",
-    offlineZoneId: null,
-    lastActive: Date.now(),
-    professions: emptyProfessions(),
-    gatherTier: {},
-    unlockedSkills: [SKILLS[cls][0].name],
-    spec: null,
-    talents: {},
-    talentChanges: 0,
-    skillMods: {},
-    specLoadouts: {},
-    skillModRefunds: 0,
-    hardKills: {}, hardBossKills: {}, hardZoneDone: {}, hardDungeonDone: {},
-    gambits: { owned: {}, shards: {}, rules: {}, slots: {}, general: [], generalSlots: 2 },
-    gems: {},
-    talentTutorialDone: false,
-    selectedSkills: [SKILLS[cls][0].name],
-    stats: { ...CLASSES.find((c) => c.id === cls).stats },
-    equipment: { ...emptyEquipment(), ...starterGear(cls) },
-    inventory: [generateItem(3, RARITIES.find((r) => r.id === "common"), "head", cls)], // a white upgrade for the tutorial
-    materials: {},
-    autoEquip: true,
-    autoSellDowngrades: false,
-    upgrades: { autoPotion: false },
-    autoSkills: {},
-    autoSkillsOwned: {},
-    redeemed: {},
-    dungeonRuns: {},
-    raidCooldowns: {},
-    guildDungeonRuns: {}, guildRaidCooldowns: {}, trialCooldowns: {}, // Guild lockouts, independent of solo
-    ahRefreshes: [],
-    ahListings: [],
-    ahMeta: { lastSweep: 0 },
-    mail: [],
-    failStacks: 0,
-    consumables: {},
-    supplies: {},
-    drops: {},
-    killsByType: {},
-    town: { buildings: {}, build: null },
-    ven: 0,
-    mp: { ladderBest: null, rated: { wins: 0, losses: 0, start: Date.now() }, lifetime: { wins: 0, losses: 0 } },
-    arenaTokens: 0,
-    tickets: { dungeonReset: 0, arenaChallenge: 0 },
-    auras: { xp: 0, gold: 0 },
-    quests: { board: [] },
-    tutorial: { step: 0, done: false },
-    buffs: {},
-    hp: 0,
-    createdAt: Date.now(),
-    lastSaved: Date.now(),
-  };
-  c.hp = maxHpFor(c);
-  return c;
-};
 
-// migrate / fill defaults so old saves never crash
-const normalizeChar = (c) => ({
-  ...c,
-  gold: c.gold || 0, kills: c.kills || 0, bossKills: c.bossKills || 0, dungeonClears: c.dungeonClears || 0,
-  honor: c.honor || 0, honorXp: c.honorXp || 0, attrPoints: c.attrPoints || 0, allocated: { str: 0, agi: 0, int: 0, sta: 0, ...(c.allocated || {}) },
-  professions: { ...emptyProfessions(), ...(c.professions || {}) },
-  gatherTier: c.gatherTier || {},
-  offlineZoneId: c.offlineZoneId ?? null,
-  lastActive: c.lastActive || Date.now(),
-  // Skills are purely level-gated, so derive the known list from level. This also
-  // migrates saves made before skills were renamed (old names no longer match).
-  unlockedSkills: (SKILLS[c.cls] || []).filter((s) => s.unlockLevel <= (c.level || 1)).map((s) => s.name),
-  secondaryClass: undefined, // dual-classing retired → drop the stale field on next save
-  spec: (() => {
-    const cs = migrateSpec(c.spec);
-    if (cs && specById(cs) && specClassOf(cs) === c.cls) return cs;
-    const old60 = c.talents && c.talents[60]; // migrate a pre-existing level-60 talent pick into the Specialization
-    if (old60 && specById(migrateSpec(old60)) && specClassOf(migrateSpec(old60)) === c.cls) return migrateSpec(old60);
-    return null;
-  })(),
-  talents: (c.talents && typeof c.talents === "object") ? c.talents : {},
-  talentChanges: c.talentChanges || 0,
-  skillMods: (c.skillMods && typeof c.skillMods === "object") ? c.skillMods : {},
-  specLoadouts: (c.specLoadouts && typeof c.specLoadouts === "object") ? c.specLoadouts : {}, // per-Specialization saved templates
-  skillModRefunds: c.skillModRefunds || 0,
-  equipment: Object.fromEntries(Object.entries(c.equipment || {}).map(([k, it]) => [k, it && !Array.isArray(it.sockets) ? { ...it, sockets: emptySockets(socketCountFor(it.rarity, it.slotId)) } : it])),
-  inventory: (c.inventory || []).map((it) => (it && !Array.isArray(it.sockets) ? { ...it, sockets: emptySockets(socketCountFor(it.rarity, it.slotId)) } : it)),
-  gems: (c.gems && typeof c.gems === "object") ? c.gems : {},
-  tomes: undefined, learnedSkills: undefined, // retired: every skill now unlocks by level
-  gambits: (c.gambits && typeof c.gambits === "object") ? { owned: c.gambits.owned || {}, shards: c.gambits.shards || {}, rules: c.gambits.rules || {}, slots: c.gambits.slots || {}, general: Array.isArray(c.gambits.general) ? c.gambits.general : [], generalSlots: c.gambits.generalSlots || 2 } : { owned: {}, shards: {}, rules: {}, slots: {}, general: [], generalSlots: 2 },
-  hardKills: (c.hardKills && typeof c.hardKills === "object") ? c.hardKills : {},
-  hardBossKills: (c.hardBossKills && typeof c.hardBossKills === "object") ? c.hardBossKills : {},
-  hardZoneDone: (c.hardZoneDone && typeof c.hardZoneDone === "object") ? c.hardZoneDone : {},
-  hardDungeonDone: (c.hardDungeonDone && typeof c.hardDungeonDone === "object") ? c.hardDungeonDone : {},
-  talentTutorialDone: !!c.talentTutorialDone,
-  selectedSkills: (() => {
-    let spec = (migrateSpec(c.spec) && specById(migrateSpec(c.spec)) && specClassOf(migrateSpec(c.spec)) === c.cls) ? migrateSpec(c.spec) : null;
-    if (!spec) { const old60 = c.talents && c.talents[60]; if (old60 && specById(migrateSpec(old60)) && specClassOf(migrateSpec(old60)) === c.cls) spec = migrateSpec(old60); }
-    const sig = spec ? specSkillNames(spec) : [];
-    const base = (c.selectedSkills || c.unlockedSkills || []).filter((n) => !ALL_SPEC_SKILL_NAMES.has(n) || sig.includes(n)); // drop signature skills from other specs
-    return padSelectedSkills({ cls: c.cls, level: c.level || 1, spec }, [...sig, ...base]);
-  })(),
-  equipment: (() => { const eq = { ...emptyEquipment(), ...(c.equipment || {}) }; for (const k in eq) eq[k] = migrateItem(eq[k]); return eq; })(),
-  inventory: (c.inventory || []).map(migrateItem),
-  materials: (() => { const m = { ...(c.materials || {}) }; delete m.poisonHerb; if (m.ore) { m.copper = (m.copper || 0) + m.ore; delete m.ore; } if (m.richOre) { m.iron = (m.iron || 0) + m.richOre; delete m.richOre; } if (m.herb) { m.bluepetal = (m.bluepetal || 0) + m.herb; delete m.herb; } if (m.healingHerb) { m.sunblossom = (m.sunblossom || 0) + m.healingHerb; delete m.healingHerb; } return m; })(),
-  autoEquip: c.autoEquip !== undefined ? c.autoEquip : true,
-  autoSellDowngrades: c.autoSellDowngrades || false,
-  upgrades: { autoPotion: false, ...(c.upgrades || {}) },
-  autoSkills: Object.fromEntries(Object.entries(c.autoSkills || {}).filter(([k]) => (SKILLS[c.cls] || []).some((s) => s.name === k))),
-  autoSkillsOwned: Object.fromEntries(Object.entries(c.autoSkillsOwned || {}).filter(([k]) => (SKILLS[c.cls] || []).some((s) => s.name === k))),
-  redeemed: c.redeemed || {},
-  dungeonRuns: c.dungeonRuns || {},
-  raidCooldowns: c.raidCooldowns || {},
-  guildDungeonRuns: c.guildDungeonRuns || {},
-  guildRaidCooldowns: c.guildRaidCooldowns || {},
-  trialCooldowns: c.trialCooldowns || {},
-  ahRefreshes: c.ahRefreshes || [],
-  ahListings: Array.isArray(c.ahListings) ? c.ahListings : [],
-  ahMeta: (c.ahMeta && typeof c.ahMeta === "object") ? { lastSweep: c.ahMeta.lastSweep || 0 } : { lastSweep: 0 },
-  mail: Array.isArray(c.mail) ? c.mail : [],
-  failStacks: typeof c.failStacks === "number" ? c.failStacks : 0,
-  supplies: c.supplies || {},
-  drops: c.drops || {},
-  kills: typeof c.kills === "number" ? c.kills : 0,
-  killsByType: c.killsByType || (c.kills && typeof c.kills === "object" ? c.kills : {}),
-  town: (c.town && typeof c.town === "object") ? { buildings: c.town.buildings || {}, build: c.town.build || null } : { buildings: {}, build: null },
-  ven: c.ven || 0,
-  mp: { ladderBest: (c.mp && c.mp.ladderBest) || null, rated: { wins: (c.mp && c.mp.rated && c.mp.rated.wins) || 0, losses: (c.mp && c.mp.rated && c.mp.rated.losses) || 0, start: (c.mp && c.mp.rated && c.mp.rated.start) || Date.now() }, lifetime: { wins: (c.mp && c.mp.lifetime && c.mp.lifetime.wins) || 0, losses: (c.mp && c.mp.lifetime && c.mp.lifetime.losses) || 0 } },
-  arenaTokens: c.arenaTokens || 0,
-  tickets: { dungeonReset: (c.tickets && c.tickets.dungeonReset) || 0, arenaChallenge: (c.tickets && c.tickets.arenaChallenge) || 0 },
-  auras: { xp: (c.auras && c.auras.xp) || 0, gold: (c.auras && c.auras.gold) || 0 },
-  quests: { board: (c.quests && c.quests.board) || [] },
-  tutorial: c.tutorial || { step: 0, done: (c.level || 1) > 1 || (c.kills || 0) > 0 },
-  consumables: (() => { const src = c.consumables || {}; const out = {}; const t = Math.min(6, Math.max(0, Math.floor((c.level || 1) / 10))); for (const k in src) { const v = src[k]; if (!v) continue; if (k.includes("@")) out[k] = (out[k] || 0) + v; else out[k + "@" + t] = (out[k + "@" + t] || 0) + v; } return out; })(),
-  buffs: c.buffs || {},
-  hp: typeof c.hp === "number" ? c.hp : maxHpFor(c),
-});
 
 // ============================================================
 // SHARED UI COMPONENTS
@@ -1693,7 +1465,6 @@ function ahBaseValue(item) {
 const ahBand = (base) => [Math.max(1, Math.ceil(base * (1 - AH_ECON.bandPct))), Math.floor(base * (1 + AH_ECON.bandPct))];
 const ahPostFee = (base) => Math.max(1, Math.floor(base * AH_ECON.postFeePct));
 const ahNetAfterTax = (price) => Math.max(1, Math.floor(price * (1 - AH_ECON.saleTaxPct)));
-const ahTaxOf = (price) => price - ahNetAfterTax(price);
 
 // ---- material / drop unit values (mats had no gold value before; derive one) ----
 // Base unit values ×3 (crafting/gathering materials); mob drops unchanged.
@@ -1717,35 +1488,10 @@ function stackMeta(kind, id) {
   if (kind === "drop") return DROP_BY_ID[id] || { name: id, icon: "🎒", color: "#d0a0c0" };
   return MATERIALS[id] || { name: id, icon: "⛏️", color: "#9ad0e0" };
 }
-// every id the player could ever post (used to seed phantom stacks across all tiers)
-const ALL_MAT_IDS = [...ORE_TIERS.map((o) => o.id), ...HERB_TIERS.map((h) => h.id), "dust", ...Object.keys(STAT_DUST_META).map((s) => `dust_${s}`)];
-const ALL_DROP_IDS = Object.values(ENEMY_DROPS).map((d) => d.id);
 
 // phantom demand: chance-per-hour a player's listing sells, by price/base ratio
 const sellChancePerHour = (ratio) => clamp(0.95 * Math.exp(-1.9 * (clamp(ratio, 0.25, 1.75) - 0.4)), 0.02, 0.95);
 const AH_SELLERS = ["Aldric", "Brenna", "Corvus", "Dahlia", "Eamon", "Fenwick", "Greta", "Hollis", "Isolde", "Jarl", "Kestrel", "Lira", "Mordecai", "Nadia", "Osric", "Perrin", "Quill", "Rhoswen", "Soren", "Tamsin", "Ulric", "Vesper", "Wynn", "Yorick", "Zephyra", "Bram", "Cael", "Delyth", "Elowen", "Faelan"];
-const ahSeller = () => pick(AH_SELLERS);
-// build ONE phantom gear listing spread across ilvl bands & classes (never legendary/artifact)
-function makePhantomGear(now) {
-  const band = pick(AH_ECON.ilvlBands);
-  const ilvl = band[0] + Math.floor(Math.random() * (band[1] - band[0] + 1));
-  const rarity = rollWeighted(AH_ECON.marketRarityW); // rollWeighted returns the rarity object
-  const item = generateItem(ilvl, rarity, pick(LOOT_SLOTS).id, pick(CLASSES).id);
-  const base = ahBaseValue(item);
-  const [lo, hi] = ahBand(base);
-  const price = clamp(Math.round(base * (0.7 + Math.random() * 0.7)), lo, hi); // cluster near/below base
-  return { id: uid(), kind: "gear", item, price, base, seller: ahSeller(), phantom: true, postedAt: now, expiresAt: now + AH_ECON.phantomLifeMinMs + Math.random() * (AH_ECON.phantomLifeMaxMs - AH_ECON.phantomLifeMinMs) };
-}
-function makePhantomStack(now) {
-  const isDrop = Math.random() < 0.4;
-  const kind = isDrop ? "drop" : "mat";
-  const id = isDrop ? pick(ALL_DROP_IDS) : pick(ALL_MAT_IDS);
-  const base = stackBaseValue(kind, id);
-  const [lo, hi] = ahBand(base);
-  const price = clamp(Math.round(base * (0.75 + Math.random() * 0.6)), lo, hi);
-  return { id: uid(), kind, matId: id, qty: AH_ECON.stackSize, price, base, seller: ahSeller(), phantom: true, postedAt: now, expiresAt: now + AH_ECON.phantomLifeMinMs + Math.random() * (AH_ECON.phantomLifeMaxMs - AH_ECON.phantomLifeMinMs) };
-}
-const SECONDARY_STATS = ["leech", "resil", "vers", "cdr", "csd"];
 // convert rolled secondary-stat rating totals into capped percentages
  // leech effectiveness (set to 1 to revert the ~33% nerf)
 
@@ -2389,21 +2135,21 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     commitChar({ ...c, gambits: { ...c.gambits, shards, owned: { ...(c.gambits.owned || {}), [targetId]: true } } });
     showNotif(`✨ Unlocked ${gambitById(targetId)?.label}!`);
   };
-  const gambitSlotsFor = (c, skillName) => (c.gambits?.slots?.[skillName]) || 1;
-  const buyGambitSlot = (skillName) => {
+  const gambitSlotsFor = (c, slotNo) => (c.gambits?.slots?.[slotNo]) || 1;
+  const buyGambitSlot = (slotNo) => {
     const c = charRef.current;
-    if (gambitSlotsFor(c, skillName) >= 2) { showNotif("Already at 2 gambits"); return; }
+    if (gambitSlotsFor(c, slotNo) >= 2) { showNotif("Already at 2 gambits"); return; }
     if ((c.ven || 0) < GAMBIT_SLOT_VEN) { showNotif(`Costs ${GAMBIT_SLOT_VEN} 💎 Ven`); return; }
-    commitChar({ ...c, ven: c.ven - GAMBIT_SLOT_VEN, gambits: { ...c.gambits, slots: { ...(c.gambits.slots || {}), [skillName]: 2 } } });
+    commitChar({ ...c, ven: c.ven - GAMBIT_SLOT_VEN, gambits: { ...c.gambits, slots: { ...(c.gambits.slots || {}), [slotNo]: 2 } } });
     showNotif("🎯 Second gambit unlocked for this skill");
   };
-  const setGambitPart = (skillName, slotIdx, part, gambitId) => {
+  const setGambitPart = (slotNo, slotIdx, part, gambitId) => {
     const c = charRef.current;
     const rules = { ...(c.gambits.rules || {}) };
-    const arr = [...(rules[skillName] || [])];
+    const arr = [...(rules[slotNo] || [])];
     while (arr.length <= slotIdx) arr.push({ if: null, then: null });
     arr[slotIdx] = { ...arr[slotIdx], [part]: (arr[slotIdx]?.[part] === gambitId ? null : gambitId) };
-    rules[skillName] = arr;
+    rules[slotNo] = arr;
     commitChar({ ...c, gambits: { ...c.gambits, rules } });
   };
   const generalSlotsFor = (c) => c.gambits?.generalSlots || 2;
@@ -2423,13 +2169,13 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     arr[slotIdx] = { ...arr[slotIdx], [part]: (arr[slotIdx]?.[part] === gambitId ? null : gambitId) };
     commitChar({ ...c, gambits: { ...c.gambits, general: arr } });
   };
-  const moveGambitRule = (skillName, idx, dir) => {
-    const c = charRef.current; const cnt = gambitSlotsFor(c, skillName);
-    const arr = [...((c.gambits.rules || {})[skillName] || [])];
+  const moveGambitRule = (slotNo, idx, dir) => {
+    const c = charRef.current; const cnt = gambitSlotsFor(c, slotNo);
+    const arr = [...((c.gambits.rules || {})[slotNo] || [])];
     while (arr.length < cnt) arr.push({ if: null, then: null });
     const j = idx + dir; if (j < 0 || j >= cnt) return;
     [arr[idx], arr[j]] = [arr[j], arr[idx]];
-    commitChar({ ...c, gambits: { ...c.gambits, rules: { ...(c.gambits.rules || {}), [skillName]: arr } } });
+    commitChar({ ...c, gambits: { ...c.gambits, rules: { ...(c.gambits.rules || {}), [slotNo]: arr } } });
   };
   const moveGeneralRule = (idx, dir) => {
     const c = charRef.current; const cnt = generalSlotsFor(c);
@@ -3289,28 +3035,11 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       if (!stunned && (c.level || 1) >= GAMBIT_UNLOCK_LEVEL) {
         const rules = c.gambits?.rules || {};
         const gMaxHp = maxHpFor(c);
-        const condMet = (ifId) => {
-          const e = w.enemy; const ab = activeBuffs(charRef.current);
-          switch (ifId) {
-            case "if_always": return true;
-            case "if_ehp50": return e.hp <= e.maxHp * 0.5;
-            case "if_ehp20": return e.hp <= e.maxHp * 0.2;
-            case "if_selfhp50": return w.hp <= gMaxHp * 0.5;
-            case "if_selfhp30": return w.hp <= gMaxHp * 0.3;
-            case "if_selfhp20": return w.hp <= gMaxHp * 0.2;
-            case "if_debuffed": return (w.playerEffects || []).some(isPlayerDebuff);
-            case "if_champion": return !!(e.isChampion || e.isLord);
-            case "if_boss": return !!e.isBoss;
-            case "if_hard": return w.mode === "hard";
-            case "if_no_might": return !ab.dmgpct;
-            case "if_no_ward": return !ab.reducepct;
-            case "if_no_str": return !ab.str;
-            case "if_no_agi": return !ab.agi;
-            case "if_no_int": return !ab.int;
-            case "if_no_sta": return !ab.sta;
-            default: return false;
-          }
-        };
+        // Conditions are evaluated by the shared core so they can be unit-tested headlessly.
+        const slotSkills = c.selectedSkills || [];
+        const condMet = (ifId) => gambitCondMet(ifId, {
+          char: c, w, now, maxHp: gMaxHp, buffs: activeBuffs(charRef.current), slotSkills,
+        });
         const fireConsumable = (tg) => {
           const cc = charRef.current; const def = consumableById(tg.consumable); if (!def) return;
           const t = bestTier(cc, def.id); if (t < 0 || conCount(cc, def.id, t) <= 0) return;
@@ -3333,6 +3062,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           }
         };
         const runRule = (rule) => {
+          if (gambitById(rule?.then)?.kind === "veto") return false;   // handled by the veto pass
           if (w.pvp) return false; // gambits are disabled in Rated PvP — play it by hand
           if (!rule || !rule.if || !rule.then || !condMet(rule.if)) return false;
           const tg = gambitById(rule.then); if (!tg) return false;
@@ -3345,9 +3075,22 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           } else if (tg.kind === "consumable") { fireConsumable(tg); }
           return false;
         };
-        // General gambits (consumable-focused) then per-skill gambits
+        // General gambits (consumable-focused) first, then the bar in SLOT ORDER — slot 1 is
+        // highest priority, so you shape your rotation by arranging the bar. Evaluation used to
+        // walk `rules` in object key order, which made "which rule wins" effectively arbitrary.
         for (const rule of (c.gambits?.general || [])) { if (runRule(rule)) return; }
-        for (const skName in rules) { for (const rule of (rules[skName] || [])) { if (runRule(rule)) return; } }
+        // Veto pass: a "do NOT use" rule holds its own slot back for this tick, so a lower slot
+        // can take the cast instead. Resolved up front so priority order stays predictable.
+        const vetoed = new Set();
+        for (let n = 1; n <= MAX_SKILL_SLOTS; n++) {
+          for (const rule of (rules[n] || [])) {
+            if (gambitById(rule.then)?.kind === "veto" && rule.if && condMet(rule.if)) { vetoed.add(n); break; }
+          }
+        }
+        for (let n = 1; n <= MAX_SKILL_SLOTS; n++) {
+          if (vetoed.has(n)) continue;
+          for (const rule of (rules[n] || [])) { if (runRule(rule)) return; }
+        }
       }
 
       // class resource is volatile — unspent power decays away
@@ -3732,6 +3475,11 @@ function GameScreen({ character: initChar, onSave, onBack }) {
         commitChar(c);
       }
     }
+    // Online, the ROOM rolls the loot and runs the auction — every player must see one drop and
+    // bid in one sale. Rolling here as well is what produced four different "drops" per run, each
+    // player bidding against simulated rivals in a private auction. The server's `loot` messages
+    // drive the modal instead (see the groupRun.room handler below).
+    if (run.online && run.room) return;
     const n = run.raid ? 2 : 1;
     const items = [];
     for (let i = 0; i < n; i++) {
@@ -3740,6 +3488,28 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     }
     setGuildBid({ items, party: run.bidParty });
   };
+
+  // Online GDKP: the room broadcasts the lot, the running high, and the hammer. This holds the
+  // latest server view so LootBidModal can render it instead of simulating its own auction.
+  const [netBid, setNetBid] = useState(null);   // { lot, sold, done, myAllyId }
+  useEffect(() => {
+    const run = groupRun;
+    if (!run?.online || !run.room) { setNetBid(null); return; }
+    const room = run.room;
+    room.onMessage("loot", (m) => {
+      if (m.phase === "done") { setNetBid((p) => p && { ...p, done: true }); return; }
+      if (m.phase === "sold") {
+        setNetBid((p) => ({ ...(p || {}), sold: m, lot: null, myAllyId: run.myAllyId }));
+        // The winner's item and everyone's share are settled by the server into mail; this is
+        // just the announcement, so nothing is granted locally.
+        addLog(m.winnerName
+          ? `🔨 ${m.item?.name || "Lot"} sold to ${m.winnerName} for ${m.price}g — your share is in the mail`
+          : `🔨 ${m.item?.name || "Lot"} went unsold (reserve not met)`, "#f0b429");
+        return;
+      }
+      setNetBid({ lot: m.lot, sold: null, done: false, myAllyId: run.myAllyId });
+    });
+  }, [groupRun?.room]);
   // Can this Guild content be entered right now? (Guild lockouts are separate from solo.)
   const guildGate = (content, kind) => {
     const c = charRef.current;
@@ -4086,8 +3856,13 @@ function GameScreen({ character: initChar, onSave, onBack }) {
   };
   // apply a claimed/returned goods payload to the trusted blob
   const applyGoods = (c, p) => {
-    let inv = c.inventory, mats = { ...c.materials }, drops = { ...c.drops }, gold = c.gold + (p.gold || 0);
+    // GDKP settlements can carry a NEGATIVE gold delta — the winner bought the lot. The room
+    // refused any bid beyond the purse when it was placed, but gold can be spent elsewhere in
+    // between, so the floor keeps a claim from ever pushing a character below zero.
+    let inv = c.inventory, mats = { ...c.materials }, drops = { ...c.drops };
+    let gold = Math.max(0, c.gold + (p.gold || 0));
     if (p.item) inv = [...inv, p.item].slice(-120);
+    if (Array.isArray(p.items)) inv = [...inv, ...p.items].slice(-120);   // a run can win several lots
     if (p.mat_id) { if (p.mat_kind === "drop") drops[p.mat_id] = (drops[p.mat_id] || 0) + p.qty; else mats[p.mat_id] = (mats[p.mat_id] || 0) + p.qty; }
     return { ...c, gold, inventory: inv, materials: mats, drops };
   };
@@ -4537,6 +4312,11 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       )}
       {guildBid && (
         <LootBidModal items={guildBid.items} party={guildBid.party} char={char} commitChar={commitChar} showNotif={showNotif} onClose={() => { setGuildBid(null); setTab("guild"); }} />
+      )}
+      {/* Online GDKP is the same modal reading the room's auction instead of simulating one. */}
+      {!guildBid && netBid && (netBid.lot || netBid.sold || netBid.done) && (
+        <LootBidModal net={netBid} room={groupRun?.room} char={char} commitChar={commitChar} showNotif={showNotif}
+                      onClose={() => { setNetBid(null); setTab("guild"); }} />
       )}
       {offlineReport && (
         <div onClick={() => setOfflineReport(null)} style={{ position: "fixed", inset: 0, background: "#000a", zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
@@ -6066,10 +5846,13 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           const ownedIfs = GAMBIT_IFS.filter((x) => g.owned?.[x.id]);
           const skillIfs = ownedIfs.filter((x) => !x.id.startsWith("if_no_")); // buff-check IFs are General-only
           // Skill mode THEN: only this skill's own "use" gambit (potions/scrolls live in the General tab)
-          const ownedThens = GAMBIT_THENS.filter((x) => g.owned?.[x.id] && x.skill === skName);
+          // The veto is offered alongside this skill's own "use" gambit; consumables stay General.
+          const ownedThens = GAMBIT_THENS.filter((x) => g.owned?.[x.id] && (x.skill === skName || x.kind === "veto"));
           const sk = pool.find((s) => s.name === skName);
-          const rules = g.rules?.[skName] || [];
-          const slots = gambitSlotsFor(char, skName);
+          // Gambits are keyed by BAR SLOT, so a rule stays put when you swap the ability in it.
+          const slotNo = Math.max(1, (char.selectedSkills || []).indexOf(skName) + 1);
+          const rules = g.rules?.[slotNo] || [];
+          const slots = gambitSlotsFor(char, slotNo);
           if ((char.level || 1) < GAMBIT_UNLOCK_LEVEL) return (
             <div>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
@@ -6110,27 +5893,36 @@ function GameScreen({ character: initChar, onSave, onBack }) {
               {gambitMode === "skill" && (<>
                 <div style={{ color: "#9a93b3", fontSize: 11, marginBottom: 8 }}>Pick a skill, then set its <b style={{ color: "#fff" }}>IF</b> condition and <b style={{ color: "#fff" }}>THEN</b> action. It fires automatically in combat.</div>
                 <select value={skName} onChange={(e) => setGambitSkill(e.target.value)} style={{ width: "100%", background: "#0a0a14", border: "1px solid #46407a", borderRadius: 8, color: "#fff", fontSize: 13, padding: "8px 10px", marginBottom: 12, cursor: "pointer" }}>
-                  {pool.map((s) => <option key={s.name} value={s.name}>{s.icon} {s.name}{g.rules?.[s.name]?.some((r) => r?.if && r?.then) ? " ✓" : ""}</option>)}
+                  {pool.map((s) => {
+                    // Slots are addressed by number now — the same numbers the "Skill N on
+                    // cooldown" conditions refer to, and the order gambits are evaluated in.
+                    const n = (char.selectedSkills || []).indexOf(s.name) + 1;
+                    const configured = g.rules?.[n]?.some((r) => r?.if && r?.then);
+                    return <option key={s.name} value={s.name}>{`Skill ${n}`} · {s.icon} {s.name}{configured ? " ✓" : ""}</option>;
+                  })}
                 </select>
+                {sk && <div style={{ color: "#8a83b8", fontSize: 10.5, marginBottom: 8 }}>
+                  ⚙️ <b style={{ color: "#c8a0ff" }}>Skill {slotNo}</b> — gambits fire in slot order, so Skill 1 has the highest priority.
+                </div>}
                 {sk && Array.from({ length: slots }).map((_, i) => (
                   <div key={i} style={{ background: "#0e0c1a", border: "1px solid #2a2740", borderRadius: 10, padding: "10px 12px", marginBottom: 8 }}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
                       <div style={{ color: "#c8a0ff", fontSize: 11, fontWeight: 700 }}>Priority {i + 1}</div>
                       {slots > 1 && (
                         <div style={{ display: "flex", gap: 4 }}>
-                          <button onClick={() => moveGambitRule(skName, i, -1)} disabled={i === 0} style={{ background: "#12102a", border: "1px solid #46407a", borderRadius: 5, color: i === 0 ? "#444" : "#c8a0ff", fontSize: 11, padding: "2px 7px", cursor: i === 0 ? "default" : "pointer" }}>▲</button>
-                          <button onClick={() => moveGambitRule(skName, i, 1)} disabled={i === slots - 1} style={{ background: "#12102a", border: "1px solid #46407a", borderRadius: 5, color: i === slots - 1 ? "#444" : "#c8a0ff", fontSize: 11, padding: "2px 7px", cursor: i === slots - 1 ? "default" : "pointer" }}>▼</button>
+                          <button onClick={() => moveGambitRule(slotNo, i, -1)} disabled={i === 0} style={{ background: "#12102a", border: "1px solid #46407a", borderRadius: 5, color: i === 0 ? "#444" : "#c8a0ff", fontSize: 11, padding: "2px 7px", cursor: i === 0 ? "default" : "pointer" }}>▲</button>
+                          <button onClick={() => moveGambitRule(slotNo, i, 1)} disabled={i === slots - 1} style={{ background: "#12102a", border: "1px solid #46407a", borderRadius: 5, color: i === slots - 1 ? "#444" : "#c8a0ff", fontSize: 11, padding: "2px 7px", cursor: i === slots - 1 ? "default" : "pointer" }}>▼</button>
                         </div>
                       )}
                     </div>
                     <div style={{ color: "#e0556a", fontSize: 10.5, fontWeight: 700 }}>IF</div>
-                    {partBtn("if", i, skillIfs, (id) => setGambitPart(skName, i, "if", id), rules[i]?.if)}
+                    {partBtn("if", i, skillIfs, (id) => setGambitPart(slotNo, i, "if", id), rules[i]?.if)}
                     <div style={{ color: "#8fd0e0", fontSize: 10.5, fontWeight: 700, marginTop: 8 }}>THEN</div>
-                    {partBtn("then", i, ownedThens, (id) => setGambitPart(skName, i, "then", id), rules[i]?.then)}
+                    {partBtn("then", i, ownedThens, (id) => setGambitPart(slotNo, i, "then", id), rules[i]?.then)}
                   </div>
                 ))}
                 {slots < 2 && (
-                  <button onClick={() => buyGambitSlot(skName)} style={{ width: "100%", background: (char.ven || 0) >= GAMBIT_SLOT_VEN ? "linear-gradient(135deg,#1a2a4a,#24406a)" : "#15131f", border: `1.5px solid ${(char.ven || 0) >= GAMBIT_SLOT_VEN ? "#7fd0ff" : "#333"}`, borderRadius: 8, color: (char.ven || 0) >= GAMBIT_SLOT_VEN ? "#9ad0e0" : "#666", fontSize: 12, fontWeight: 700, padding: 10, cursor: "pointer" }}>➕ Second gambit for this skill · 💎 {GAMBIT_SLOT_VEN}</button>
+                  <button onClick={() => buyGambitSlot(slotNo)} style={{ width: "100%", background: (char.ven || 0) >= GAMBIT_SLOT_VEN ? "linear-gradient(135deg,#1a2a4a,#24406a)" : "#15131f", border: `1.5px solid ${(char.ven || 0) >= GAMBIT_SLOT_VEN ? "#7fd0ff" : "#333"}`, borderRadius: 8, color: (char.ven || 0) >= GAMBIT_SLOT_VEN ? "#9ad0e0" : "#666", fontSize: 12, fontWeight: 700, padding: 10, cursor: "pointer" }}>➕ Second gambit for this skill · 💎 {GAMBIT_SLOT_VEN}</button>
                 )}
               </>)}
 
@@ -6662,7 +6454,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
               {!getSbC() && <div style={{ color: "#e0a955", fontSize: 12, textAlign: "center", padding: 20 }}>📡 Connection required — your mail is online.</div>}
               {getSbC() && srvMail.length === 0 && <div style={{ color: "#555", fontSize: 12, textAlign: "center", padding: 24 }}>Your mailbox is empty.</div>}
               {srvMail.map((m) => {
-                const tone = m.kind === "sale" ? { icon: "💰", c: "#FFD700", tag: "Auction sold" } : m.kind === "purchase" ? { icon: "📦", c: "#69CCF0", tag: "Purchase" } : { icon: "↩️", c: "#e0a955", tag: "Expired — returned" };
+                const tone = m.kind === "gdkp" ? { icon: "🔨", c: "#c8a0ff", tag: "Group loot settled" } : m.kind === "sale" ? { icon: "💰", c: "#FFD700", tag: "Auction sold" } : m.kind === "purchase" ? { icon: "📦", c: "#69CCF0", tag: "Purchase" } : { icon: "↩️", c: "#e0a955", tag: "Expired — returned" };
                 return (
                   <div key={m.id} style={{ background: "#100e1c", border: `1px solid ${tone.c}44`, borderLeft: `3px solid ${tone.c}`, borderRadius: 8, padding: "10px 12px" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
@@ -6671,10 +6463,12 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                     </div>
                     <div style={{ color: "#e8dcc0", fontSize: 12, marginBottom: 3 }}>{m.subject}</div>
                     {m.kind === "sale" && <div style={{ color: "#9a93b3", fontSize: 10.5, marginBottom: 6 }}>Sold to {m.from} for {m.gross}g · −{m.tax}g AH cut (15%) · <b style={{ color: "#7CFC9E" }}>Net {m.gold}g</b></div>}
+                    {m.kind === "gdkp" && <div style={{ color: "#9a93b3", fontSize: 10.5, marginBottom: 6 }}>{m.note || "GDKP settlement"} · <b style={{ color: (m.gold || 0) < 0 ? "#ff8a7a" : "#7CFC9E" }}>{(m.gold || 0) < 0 ? `−${mpFmt(Math.abs(m.gold))}g` : `+${mpFmt(m.gold || 0)}g`}</b>{Array.isArray(m.items) && m.items.length ? ` · ${m.items.length} item(s)` : ""}</div>}
                     {m.kind === "purchase" && <div style={{ color: "#9a93b3", fontSize: 10.5, marginBottom: 6 }}>Bought from {m.from} for {m.gross}g — collect your goods below.</div>}
                     {m.kind === "expired" && <div style={{ color: "#9a93b3", fontSize: 10.5, marginBottom: 6 }}>Your listing expired unsold. The deposit was not refunded.</div>}
                     <button onClick={() => collectMail(m)} style={{ width: "100%", background: "linear-gradient(135deg,#122015,#183020)", border: "1.5px solid #7CFC9E", borderRadius: 8, color: "#7CFC9E", fontSize: 12, fontWeight: 700, padding: 8, cursor: "pointer" }}>
-                      {m.kind === "sale" ? `Collect ${m.gold}g` : m.item ? "Collect item" : `Collect ${m.qty}× goods`}
+                      {m.kind === "gdkp" ? (Array.isArray(m.items) && m.items.length ? `Collect ${m.items.length} item(s) & settle ${m.gold >= 0 ? "+" : ""}${m.gold}g` : `Settle ${m.gold >= 0 ? "+" : ""}${m.gold}g`)
+                        : m.kind === "sale" ? `Collect ${m.gold}g` : m.item ? "Collect item" : `Collect ${m.qty}× goods`}
                     </button>
                   </div>
                 );
@@ -7406,18 +7200,9 @@ const mpName = () => {
 };
 const MP_CHAT_LINES = ["LFM raid need 2 dps", "anyone selling an artifact weapon?", "gg last boss", "that bid war was brutal lol", "who's tanking?", "grats on the drop!", "need heals for hard dungeon", "arena is rough today", "just hit a new power score 🔥", "trading ore for gems, pm me", "wipe on enrage again ugh", "stack on the boss", "nice roll", "anyone doing rated arena?", "new patch when", "my rogue is unstoppable rn", "buff paladins pls", "who wants to run Molten Heart", "gl on your bids", "world boss up?", "that copy-for-ven saved me lol", "climbing the ladder, wish me luck", "pull when ready", "anyone got a spare gem?", "that boss hits like a truck", "almost hit 2k rating", "lf guild, dm me", "the guild finder is so fast now", "who's up for a dungeon"];
 const mpChatLine = () => ({ id: "bot_" + Math.random().toString(36).slice(2), name: mpName(), text: pick(MP_CHAT_LINES), t: Date.now() });
-// ---------- GDKP RESERVE PRICING ----------
-// Every lot opens at a reserve scaled to its rarity and item level, so a Legendary never goes for
-// pocket change. Epic: 1,000g at ilvl 64, +500g per ilvl above. Legendary: 10,000g, +5,000g per ilvl.
-const GDKP_RESERVE = { legendary: { base: 10000, step: 5000 }, epic: { base: 1000, step: 500 }, rare: { base: 300, step: 150 }, uncommon: { base: 100, step: 50 }, common: { base: 25, step: 10 } };
-const gdkpReserve = (item) => {
-  const r = (item && item.rarity) || "epic";
-  const cfg = GDKP_RESERVE[r] || GDKP_RESERVE.epic;
-  const over = Math.max(0, ((item && item.ilvl) || 64) - 64); // ilvl 64 is the baseline
-  return cfg.base + over * cfg.step;
-};
-// Rival ceilings scale off the reserve, so high-value lots actually draw competition.
-const gdkpBotCeiling = (reserve, power) => Math.round(reserve * (0.75 + Math.random() * 1.35) * (0.9 + Math.min(0.35, (power || 3000) / 15000)));
+// GDKP reserve pricing and rival ceilings now live in the core — an online clear is auctioned by
+// the server, so both sides must price a lot identically. (gdkpBotCeiling uses rng() there, which
+// is Math.random outside a seeded scope, so the offline auction is unchanged.)
 const mpPowerOf = (char) => { const e = effectiveStats(char); const dps = Math.round(offlinePlayerDps(char)); return Math.max(50, Math.round(dps * 6 + maxHpFor(char) * 0.5 + (e.str + e.agi + e.int + e.sta))); };
 const mpDpsFromPower = (power) => Math.max(1, Math.round(power / 6));
 const mpBot = (targetPower, level) => {
@@ -7464,6 +7249,9 @@ const mpProvider = {
       name: char.name,
       role: role || roleOf(char),
       uid: uid || null,
+      // The purse the room checks GDKP bids against. Sent once on join and held server-side, so a
+      // bid beyond it is refused when it is made rather than discovered at settlement.
+      gold: char.gold || 0,
       // The server builds the combatant from this and never trusts anything else the client says.
       loadout: { char, tier: botTier(mpPowerOf(char)), ilvl },
     });
@@ -7545,18 +7333,39 @@ const PVP_GCD = 1250;                                          // ms between the
 
 
 // ---------- GDKP loot bid modal (Guild boss kills): bid gold vs the party; buy a copy for Ven on a loss ----------
-function LootBidModal({ items, party, char, commitChar, showNotif, onClose }) {
+// `net` switches this from a locally simulated auction to a spectator of the ROOM's auction:
+// the lot, the running high and the hammer all arrive from the server, bids go back over the
+// wire, and nothing is granted here because the server settles into mail. Everything below the
+// data layer — the item card, the bid buttons — is identical either way.
+function LootBidModal({ items, party, char, commitChar, showNotif, onClose, net, room }) {
+  const online = !!net;
   const queue = (items || []).filter(Boolean);
   const [idx, setIdx] = useState(0);
   const [bid, setBid] = useState(null);
-  const [done, setDone] = useState(queue.length === 0);
-  const item = queue[idx];
+  const [done, setDone] = useState(online ? false : queue.length === 0);
+  const item = online ? (net.lot?.item || net.sold?.item || null) : queue[idx];
   useEffect(() => {
-    if (!item || done) return;
+    if (online || !item || done) return;
     const reserve = gdkpReserve(item);
     const bidders = (party || []).filter((m) => !m.me).map((m) => ({ name: m.name, maxBid: gdkpBotCeiling(reserve, m.power) }));
     setBid({ timeLeft: 15, high: 0, highName: null, min: reserve, bidders, resolved: false, iWon: false, payout: 0 });
-  }, [idx, done]);
+  }, [idx, done, online]);
+  // Online, `bid` is a projection of the server's view rather than state this component owns.
+  useEffect(() => {
+    if (!online) return;
+    if (net.done) { setDone(true); return; }
+    if (net.sold) {
+      const iWon = net.sold.winnerId && net.sold.winnerId === net.myAllyId;
+      setBid((B) => ({ ...(B || {}), resolved: true, iWon, high: net.sold.price,
+                       highName: net.sold.winnerName, payout: iWon ? 0 : (net.sold.share || 0) }));
+      return;
+    }
+    if (net.lot) {
+      setBid((B) => ({ ...(B || {}), resolved: false, passed: B?.passed && B?.lotIndex === net.lot.index,
+                       lotIndex: net.lot.index, high: net.lot.high, highName: net.lot.highBidderName,
+                       min: net.lot.reserve, minNext: net.lot.minNext, timeLeft: net.lot.secondsLeft }));
+    }
+  }, [net, online]);
   const resolveBid = () => setBid((B) => {
     if (!B || B.resolved) return B;
     const iWon = !B.passed && B.highName === char.name && B.high > 0;
@@ -7566,6 +7375,7 @@ function LootBidModal({ items, party, char, commitChar, showNotif, onClose }) {
     return { ...B, resolved: true, iWon: false, payout: share };
   });
   useEffect(() => {
+    if (online) return;               // the room owns the clock and the rivals
     if (!bid || bid.resolved || done) return;
     if (bid.timeLeft <= 0) { if (!bid.passed) setBid((B) => (B && !B.resolved) ? { ...B, passed: B.highName !== char.name, autoPassed: B.highName !== char.name } : B); resolveBid(); return; } // no action by 0s = pass
     const t = setTimeout(() => setBid((B) => {
@@ -7578,16 +7388,32 @@ function LootBidModal({ items, party, char, commitChar, showNotif, onClose }) {
     }), 1000);
     return () => clearTimeout(t);
   }, [bid, done]);
-  const placeBid = (amt) => setBid((B) => {
-    if (!B || B.resolved || B.passed) return B;
-    const target = Math.max(B.high > 0 ? B.high + 20 : (B.min || 0), amt);     // can't bid under the reserve
-    if (target > (char.gold || 0)) { showNotif && showNotif("Not enough gold to bid that much"); return B; }
-    return { ...B, high: target, highName: char.name, timeLeft: Math.max(B.timeLeft, 4) };
-  });
+  const placeBid = (amt) => {
+    // Online the bid is a request: the room re-checks it against the purse it was told on join
+    // and against the current high, and answers with a `notice` if it refuses.
+    if (online) {
+      if (!bid || bid.resolved || bid.passed) return;
+      room && room.send("bid", { amount: Math.max(bid.minNext || bid.min || 0, amt) });
+      return;
+    }
+    setBid((B) => {
+      if (!B || B.resolved || B.passed) return B;
+      const target = Math.max(B.high > 0 ? B.high + 20 : (B.min || 0), amt);   // can't bid under the reserve
+      if (target > (char.gold || 0)) { showNotif && showNotif("Not enough gold to bid that much"); return B; }
+      return { ...B, high: target, highName: char.name, timeLeft: Math.max(B.timeLeft, 4) };
+    });
+  };
   // Passing steps you out of the bidding but keeps you in the room until the hammer falls —
   // the auction plays out in full so your cut is a share of the FINAL price, not an early one.
-  const passBid = () => setBid((B) => (!B || B.resolved) ? B : { ...B, passed: true });
-  const next = () => { if (idx + 1 < queue.length) setIdx(idx + 1); else setDone(true); };
+  const passBid = () => {
+    if (online) { room && room.send("pass", {}); setBid((B) => B && { ...B, passed: true }); return; }
+    setBid((B) => (!B || B.resolved) ? B : { ...B, passed: true });
+  };
+  // Online the room decides when the next lot opens; "next" is just acknowledging the result.
+  const next = () => {
+    if (online) { setBid((B) => B && { ...B, resolved: false, acked: true }); return; }
+    if (idx + 1 < queue.length) setIdx(idx + 1); else setDone(true);
+  };
   const buyCopy = () => {
     if ((char.ven || 0) < COPY_ITEM_VEN) { showNotif && showNotif(`Need ${COPY_ITEM_VEN} 💎 Ven for a copy`); return; }
     commitChar({ ...char, ven: (char.ven || 0) - COPY_ITEM_VEN, inventory: [...(char.inventory || []), { ...item }].slice(-120) });
@@ -7835,13 +7661,6 @@ const buildTrinityPartyOfSize = (char, ilvl, size) => {
 const partyForBid = (party) => (party || []).map((p, i) => p.isHuman
   ? { id: "me", name: p.char.name, me: true, power: mpPowerOf(p.char) }
   : { id: "p" + i, name: p.char.name, power: mpPowerOf(p.char) });
-const grpTargetFor = (enc, sk) => {
-  if (sk.heal || sk.offheal) { const w = grpInjured(enc.allies); return { targetAllyId: w ? w.id : null }; }
-  if (sk.interrupt) { const c = enc.enemies.find((e) => e.hp > 0 && e.castBar && e.castBar.interruptible) || grpPrimaryEnemy(enc); return { targetEnemyId: c ? c.id : null }; }
-  const p = grpPrimaryEnemy(enc); return { targetEnemyId: p ? p.id : null };
-};
-// Honor a manually-picked target when it's valid; hybrids (e.g. a smite that heals) resolve BOTH a
-// damage target (enemy) and a heal target (ally). Falls back to smart defaults for whatever isn't picked.
 
 // `room` (a Colyseus room) switches this from a locally-simulated fight to an authoritative
 // one: the server owns every tick and this renders its snapshots, sending intents instead of
@@ -7865,16 +7684,40 @@ function GroupCombat({ char, commitChar, onExit, bossId, bossDef, ilvl, party, o
   // NB: must sit above the `!enc` early return — declaring it later changes the hook count
   // between the waiting-room and in-combat renders (React #310).
   const localQueued = useRef(null);
+  // Why the last tap did nothing ("Not enough Rage", "on cooldown", "no potions left"). Online
+  // this arrives as a private `notice` message — it is nobody else's business — and solo it is
+  // read off the state the local step returns. Same core rules produce both.
+  const [notice, setNotice] = useState(null);
+  // Solo drives its own clock, so a potion has to ride the same input path the server uses
+  // rather than being applied here; that keeps ONE implementation of what a potion does.
+  const pendingInput = useRef(null);
   useEffect(() => {
     if (networked) {                                              // server drives time; we only render
       room.onMessage("state", setEnc);
       room.onMessage("assigned", (a) => setMyAllyId(a.allyId));
       room.onMessage("lobby", setLobby);
+      room.onMessage("notice", (n) => setNotice({ ...n, at: Date.now() }));
       return;
     }
-    const iv = setInterval(() => setEnc((p) => (p && !p.cleared && !p.wiped) ? stepEncounter(p, 120) : p), 120); // sim is ~0.13ms/step, so a fine tick is smooth & cheap
+    const iv = setInterval(() => setEnc((p) => {
+      if (!p || p.cleared || p.wiped) return p;
+      const inp = pendingInput.current; pendingInput.current = null;
+      const me = inp && p.allies.find((a) => a.isHuman);
+      return stepEncounter(p, 120, me ? { [me.id]: inp } : undefined);
+    }), 120); // sim is ~0.13ms/step, so a fine tick is smooth & cheap
     return () => clearInterval(iv);
   }, [networked]);
+  // Solo notices ride on the state the step returns (online they come as their own message).
+  useEffect(() => {
+    if (networked || !enc) return;
+    const n = (enc.notices || [])[0];
+    if (n) setNotice({ ...n, at: Date.now() });
+  }, [enc?.tick]);
+  useEffect(() => {
+    if (!notice) return;
+    const t = setTimeout(() => setNotice(null), 2600);
+    return () => clearTimeout(t);
+  }, [notice]);
   useEffect(() => {
     if (!enc?.cleared || rewarded.current) return;
     rewarded.current = true;
@@ -7915,8 +7758,13 @@ function GroupCombat({ char, commitChar, onExit, bossId, bossDef, ilvl, party, o
     ? (me.pendingSkillName || (localQueued.current && localQueued.current.tick + 4 > enc.tick ? localQueued.current.name : null))
     : (me.pendingAction && me.pendingAction.skill && me.pendingAction.skill.name);
   const cast = (sk) => {
+    if (enc.cleared || enc.wiped) return;
+    // Answer immediately from the same rules the server uses, so a refused tap explains itself
+    // instead of looking like a dead button. The server still re-checks online — this is
+    // feedback, not authority.
+    const rej = intentRejection(me, { skillName: sk.name }, enc.elapsed);
+    if (rej) { setNotice({ ...rej, at: Date.now() }); return; }
     if (networked) {
-      if (enc.cleared || enc.wiped || me.down) return;
       localQueued.current = { name: sk.name, tick: enc.tick };   // optimistic echo, expires in ~4 ticks
       // Name the skill; never send the object. The server re-checks it against our own loadout.
       room.send("intent", { skillName: sk.name, target: target || undefined });
@@ -7925,17 +7773,19 @@ function GroupCombat({ char, commitChar, onExit, bossId, bossDef, ilvl, party, o
     setEnc((p) => {
       if (!p || p.cleared || p.wiped) return p;
       const h = p.allies.find((a) => a.isHuman); if (!h || h.down) return p;
-      if ((h.bw.cooldowns[sk.name] || 0) > p.elapsed || !botCanAfford(char, h.bw, sk)) return p; // queue during GCD; block only on the skill's own cooldown / not enough resource
       return { ...p, allies: p.allies.map((a) => a.isHuman ? { ...a, pendingAction: { skill: sk, ...grpResolveTarget(p, sk, target) } } : a) };
     });
   };
-  // Potions mutate authoritative state, so they need their own validated server message.
-  // Until that exists they stay offline-only rather than silently desyncing the room.
-  const potion = () => networked ? undefined : setEnc((p) => {
-    if (!p || p.potionsUsed >= p.potionCap) return p;
-    const h = p.allies.find((a) => a.isHuman); if (!h || h.down) return p;
-    return { ...p, potionsUsed: p.potionsUsed + 1, log: [...p.log, `🧪 ${h.name} drinks a potion`].slice(-40), allies: p.allies.map((a) => a.isHuman ? { ...a, hp: Math.min(a.maxHp, a.hp + Math.round(a.maxHp * 0.5)) } : a) };
-  });
+  // A potion spends a charge belonging to the whole encounter, so online it is asked for and
+  // the server decides. Solo takes the identical path through the local step — the rules for
+  // what a potion does and when it is refused live in the core, once.
+  const potion = () => {
+    if (enc.cleared || enc.wiped) return;
+    const rej = potionRejection(enc, me);
+    if (rej) { setNotice({ ...rej, at: Date.now() }); return; }   // instant answer; the server still re-checks
+    if (networked) room.send("intent", { potion: true });
+    else pendingInput.current = { potion: true };
+  };
   const barPct = (c, m) => Math.max(0, Math.min(100, (c / (m || 1)) * 100));
   return (
     <div style={{ maxWidth: 520, margin: "0 auto", padding: "4px 2px" }}>
@@ -8001,14 +7851,24 @@ function GroupCombat({ char, commitChar, onExit, bossId, bossDef, ilvl, party, o
       <div style={{ color: "#8a83b8", fontSize: 9.5, marginBottom: 4, textAlign: "center" }}>{target ? (() => { const t = target.type === "ally" ? enc.allies.find((a) => a.id === target.id) : enc.enemies.find((e) => e.id === target.id); return t ? `🎯 Target: ${t && isMe(t) ? "You" : t.name}${target.type === "ally" ? " (heal)" : ""} · tap a frame to change` : "tap a frame to target"; })() : "Tap an ally to heal them or an enemy to focus — otherwise skills auto-target"}</div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
         {mySkills.map((sk) => { const cd = (me.bw.cooldowns[sk.name] || 0); const onCd = cd > nowE; const onGcd = nowE < (me.nextGcd || 0); const afford = botCanAfford(char, me.bw, sk); const ready = !onCd && afford && !me.down; const queued = queuedName === sk.name; const util = sk.heal || sk.healAoe ? "#5fd39a" : sk.taunt ? "#5b8fd6" : sk.interrupt ? "#c8a0ff" : "#e0a955"; const cdFrac = onCd && sk.cd ? Math.max(0, Math.min(1, (cd - nowE) / (sk.cd * 1000))) : 0; return (
-          <button key={sk.name} onClick={() => cast(sk)} disabled={!ready} style={{ position: "relative", overflow: "hidden", flex: "1 1 30%", background: ready ? "linear-gradient(135deg,#2a2450,#3a2d6a)" : "#15131f", border: `${queued ? 2 : 1}px solid ${queued ? "#ffd479" : ready ? util : !afford ? "#5a3a3a" : "#2a2550"}`, borderRadius: 9, color: ready ? "#e8ddff" : "#5a5478", fontSize: 11, fontWeight: 700, padding: "9px 5px", cursor: ready ? "pointer" : "default", boxShadow: queued ? "0 0 7px rgba(255,212,121,0.5)" : "none" }}>
+          // Deliberately NOT disabled when unavailable. A greyed-out button answers "you can't"
+          // but never "why", which is the actual complaint — you are left guessing whether the
+          // skill is on cooldown, unaffordable, or the button is simply broken. A tap now says.
+          <button key={sk.name} onClick={() => cast(sk)} style={{ position: "relative", overflow: "hidden", flex: "1 1 30%", background: ready ? "linear-gradient(135deg,#2a2450,#3a2d6a)" : "#15131f", border: `${queued ? 2 : 1}px solid ${queued ? "#ffd479" : ready ? util : !afford ? "#5a3a3a" : "#2a2550"}`, borderRadius: 9, color: ready ? "#e8ddff" : "#5a5478", fontSize: 11, fontWeight: 700, padding: "9px 5px", cursor: "pointer", boxShadow: queued ? "0 0 7px rgba(255,212,121,0.5)" : "none" }}>
             <span style={{ position: "relative", zIndex: 2 }}>{queued ? "▸ " : ""}{sk.icon || "✦"} {sk.name}{onCd ? ` ${Math.ceil((cd - nowE) / 1000)}s` : !afford ? " ·" : ""}</span>
             {onCd && <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${cdFrac * 100}%`, background: "rgba(10,8,18,0.72)", zIndex: 1, transition: "width 0.14s linear" }} />}
             {!onCd && onGcd && !me.down && !queued && <div style={{ position: "absolute", inset: 0, background: "rgba(10,8,18,0.45)", zIndex: 1 }} />}
           </button>
         ); })}
-        <button onClick={potion} disabled={networked || enc.potionsUsed >= enc.potionCap || me.down} title={networked ? "Potions are offline-only for now" : undefined} style={{ flex: "1 1 30%", background: enc.potionsUsed < enc.potionCap ? "linear-gradient(135deg,#3a2a1a,#5a3a1a)" : "#15131f", border: `1px solid ${enc.potionsUsed < enc.potionCap ? "#a8863a" : "#2a2550"}`, borderRadius: 9, color: enc.potionsUsed < enc.potionCap ? "#ffd479" : "#5a5478", fontSize: 11, fontWeight: 700, padding: "9px 5px", cursor: enc.potionsUsed < enc.potionCap ? "pointer" : "default" }}>🧪 Potion ({enc.potionCap - enc.potionsUsed})</button>
+        <button onClick={potion} style={{ flex: "1 1 30%", background: enc.potionsUsed < enc.potionCap ? "linear-gradient(135deg,#3a2a1a,#5a3a1a)" : "#15131f", border: `1px solid ${enc.potionsUsed < enc.potionCap ? "#a8863a" : "#2a2550"}`, borderRadius: 9, color: enc.potionsUsed < enc.potionCap ? "#ffd479" : "#5a5478", fontSize: 11, fontWeight: 700, padding: "9px 5px", cursor: "pointer" }}>🧪 Potion ({enc.potionCap - enc.potionsUsed})</button>
       </div>
+      {/* Why the last tap did nothing. Sits directly under the bar so it reads as an answer to
+          the button you just pressed, and clears itself after a couple of seconds. */}
+      {notice && (
+        <div style={{ background: "#2a1420", border: "1px solid #e0556a", borderRadius: 8, padding: "6px 10px", margin: "6px 0", color: "#ffb3c0", fontSize: 11, fontWeight: 700, textAlign: "center" }}>
+          {notice.code === "resource" ? "⚡" : notice.code === "cooldown" ? "⏳" : notice.code === "nopotions" ? "🧪" : "⛔"} {notice.text}
+        </div>
+      )}
       {/* log */}
       <div style={{ background: "#0a0812", border: "1px solid #1e1a30", borderRadius: 8, padding: 8, height: 96, overflowY: "auto", fontSize: 10.5, color: "#b9b3d6", lineHeight: 1.5, display: "flex", flexDirection: "column-reverse" }}>
         <div>{enc.log.slice(-8).map((l, i) => <div key={i}>{l}</div>)}</div>

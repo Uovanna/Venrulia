@@ -15,7 +15,9 @@ const me = fixture[0];
 
 const server = spawn(process.execPath, ["index.mjs"], {
   cwd: new URL(".", import.meta.url).pathname,
-  env: { ...process.env, PORT: String(PORT) },
+  // The lobby holds a room open for a full minute so friends can coordinate; that is correct in
+  // production and useless here, so shorten it for the test only.
+  env: { ...process.env, PORT: String(PORT), ROE_FILL_MS: "1500" },
   stdio: ["ignore", "pipe", "pipe"],
 });
 let serverLog = "";
@@ -83,10 +85,16 @@ console.log(`  ✓ assigned ally ${assigned.allyId} with ${assigned.skills.lengt
 // Drive the combatant over the wire. Outcome-sensitivity of inputs is asserted in
 // input.test.mjs against a mixed party; here the point is that the protocol round-trips
 // and that a forged skill name cannot crash or hijack the room.
+// A rejected intent should come back as a private `notice` explaining itself — the forged name
+// below is exactly the case. Collect them so the wire delivery is asserted, not just assumed.
+const notices = [];
+room.onMessage("notice", (n) => notices.push(n));
+
 let sent = 0;
 const spam = setInterval(() => {
   room.send("intent", { skillName: assigned.skills[sent % assigned.skills.length], target: { type: "enemy", id: "e0" } });
   room.send("intent", { skillName: "Kill Everything Instantly" });   // must be ignored, not fatal
+  if (sent === 3) room.send("intent", { potion: true });             // the intent that names no skill
   sent++;
 }, 600);
 
@@ -101,6 +109,14 @@ if (sent < 2) fail(`expected to send several intents, sent ${sent}`);
 console.log(`  ✓ ${sent} intent rounds sent (each with one forged skill name mixed in)`);
 if (!(await fetch(`${BASE}/health`)).ok) fail("server died while handling intents");
 console.log("  ✓ server survived forged intents");
+
+// The forged name above must produce a private explanation, not silence. This is the only place
+// the notice path is exercised over a real socket rather than against the sim directly.
+if (!notices.length) fail("forged intents produced no `notice` — the player would see a dead button");
+if (!notices.some((n) => n.code === "unknown")) fail(`no 'unknown' notice; got ${notices.map((n) => n.code).join(", ")}`);
+console.log(`  ✓ ${notices.length} notices delivered privately (codes: ${[...new Set(notices.map((n) => n.code))].join(", ")})`);
+if (last.potionsUsed !== 1) fail(`the potion intent did not resolve server-side (potionsUsed=${last.potionsUsed})`);
+console.log("  ✓ a { potion: true } intent was honoured over the wire");
 
 if (!snaps) fail("no snapshots were broadcast");
 for (const k of ["tick", "elapsed", "cleared", "wiped", "allies", "enemies"]) {
@@ -126,11 +142,29 @@ const expected = runEncounter({ party: buildPartyFromSeats(seats, content), boss
 const quietRoom = await new Client(`ws://127.0.0.1:${PORT}`).joinOrCreate("encounter", {
   contentId: "deadmines", name: "Quiet", role: me.role, seed: 4242, loadout: { char: me.char, tier: me.tier },
 });
+// This room is driven by nobody, so its human ally never acts and three bots carry the fight —
+// it takes far longer in ticks than the played room above (~1800 vs ~380). The room runs in real
+// time at TICK_MS, so the wait has to be derived from the replay rather than guessed: a flat 90s
+// used to fail here for no reason other than arithmetic.
+const quietBudgetMs = expected.steps * 120 + 30000;
+console.log(`  … un-driven replay is ${expected.steps} ticks; allowing ${Math.round(quietBudgetMs / 1000)}s of wall clock`);
 const quiet = await new Promise((resolve, reject) => {
   quietRoom.onMessage("result", resolve);
-  setTimeout(() => reject(new Error("timed out waiting for the quiet room")), 90000);
+  setTimeout(() => reject(new Error(`timed out waiting for the quiet room (${Math.round(quietBudgetMs / 1000)}s)`)), quietBudgetMs);
 }).catch((e) => fail(e.message));
 if (quiet.tick !== expected.steps || quiet.outcome !== expected.outcome) {
+  // Check the premise before blaming the wire. buildPartyFromSeats fills empty seats with bots
+  // whose GEAR is rolled through the ambient rng — unseeded — so the server process and this one
+  // build different parties from identical inputs and the fight legitimately differs. That is a
+  // real defect (it also undermines verifyEncounter, which claims a fight is reproducible from
+  // party/boss/seed/timeline), but it is NOT the transport, and reporting it as such would send
+  // the next person hunting the wrong bug.
+  const again = runEncounter({ party: buildPartyFromSeats(seats, content), boss: content.boss, seed: 4242 });
+  if (again.steps !== expected.steps) {
+    fail(`bot-fill is not reproducible: two headless builds of the SAME party gave ${expected.steps} and ${again.steps} ticks, `
+       + `so the room's ${quiet.tick} says nothing about the wire. Seed the bot-fill in buildPartyFromSeats `
+       + `(withRng(makeRng(seed), …)) before trusting this check — or verifyEncounter.`);
+  }
   fail(`transport perturbed the sim: room ${quiet.outcome}@${quiet.tick} vs headless ${expected.outcome}@${expected.steps}`);
 }
 console.log(`  ✓ an un-driven room matches the headless replay exactly (${quiet.outcome} @ tick ${quiet.tick})`);

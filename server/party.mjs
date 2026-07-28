@@ -64,13 +64,18 @@ const BOT_NAMES = ["Kaelen", "Sora", "Bran", "Yuki", "Rurik", "Mei", "Torvald", 
 // (a level-17 dungeon boss facing epic-geared 60s). Bots are now BUILT for the encounter:
 // the client's own buildBotChar, now in the shared core, rolls a character of the right class
 // and spec at the content's level and item level.
+// Score a skill for a role. Spec skills carry the mechanics that make a trinity work — taunt,
+// interrupt, party cooldowns — and they only reached the core recently, so these are weighted
+// hard: a bot tank without Challenging Shout never holds threat, and a bot support without
+// Counterspell can never answer the "interrupt it!" prompt the UI shows the party.
 const roleScore = (role, s) => {
-  const heal = (s.healPct || 0) + (s.hotPct || 0);
-  const util = (s.cleanse ? 60 : 0) + (s.wardPct || 0) + (s.empowerPct || 0) + (s.hastePct || 0);
+  const heal = (s.healPct || 0) / 100 + (s.heal || 0) + (s.offheal || 0) + (s.healAoe || 0) + (s.hotPct || 0) / 100 + (s.hot || 0);
+  const party = (s.partyWardPct || 0) + (s.partyHastePct || 0) + (s.partyEmpowerPct || 0);
   const dmg = (s.mult || 0) * (s.hits || 1) + (s.dotMult || 0);
-  if (role === "healer") return heal * 3 + util + dmg * 0.05;
-  if (role === "tank") return (s.wardPct || 0) * 3 + (s.cleanse ? 40 : 0) + dmg * 0.5;
-  if (role === "support") return ((s.empowerPct || 0) + (s.hastePct || 0)) * 3 + (s.cleanse ? 40 : 0) + dmg * 0.5;
+  if (role === "healer") return heal * 300 + (s.cleanse ? 120 : 0) + party * 2 + dmg * 0.05;
+  if (role === "tank") return (s.taunt ? 500 : 0) + (s.aoeThreat ? 300 : 0) + ((s.threatMult || 1) - 1) * 60
+                            + (s.wardPct || 0) * 3 + (s.cleanse ? 40 : 0) + dmg * 0.5;
+  if (role === "support") return (s.interrupt ? 500 : 0) + party * 4 + (s.cleanse ? 60 : 0) + heal * 40 + dmg * 0.5;
   return dmg;                                             // dps: just the biggest hits
 };
 
@@ -93,17 +98,24 @@ function botCharFor(role, content, level, name) {
 // index is the ally id the core assigns ("a0", "a1", …), so the caller can map a seat to its
 // combatant by position — that mapping is how the room routes intents.
 export function buildPartyFromSeats(seats, content) {
+  // Fill the roles the humans have NOT covered, rather than assigning by slot index. Index
+  // assignment meant a party whose only human queued as dps got no tank at all — the tank slot
+  // was index 0, which the human had taken. Core roles are filled first, then dps.
+  const covered = seats.slice(0, content.partySize).filter((s) => s && s.loadout?.char && !s.bot)
+                       .map((s) => s.role || "dps");
+  const need = ["tank", "healer", "support"].filter((r) => !covered.includes(r));
   const filled = [];
+  let botIdx = 0;
   for (let i = 0; i < content.partySize; i++) {
     const seat = seats[i];
     if (seat && seat.loadout && seat.loadout.char) {
-      filled.push({ char: seat.loadout.char, role: seat.role || ROLES[i] || "dps", tier: seat.loadout.tier, isHuman: !seat.bot });
+      filled.push({ char: seat.loadout.char, role: seat.role || "dps", tier: seat.loadout.tier, isHuman: !seat.bot });
       seat.allyId = "a" + i;   // ally ids are assigned by index in createEncounter
     } else {
       const template = seats.find((s) => s.loadout && s.loadout.char)?.loadout;
       if (!template) throw new Error("no loadout available to seed a combatant; publish loadout.char on join");
-      const role = ROLES[i] || "dps";
-      filled.push({ char: botCharFor(role, content, template.char.level || content.level, BOT_NAMES[i % BOT_NAMES.length]), role, tier: template.tier });
+      const role = need.shift() || "dps";
+      filled.push({ char: botCharFor(role, content, template.char.level || content.level, BOT_NAMES[botIdx++ % BOT_NAMES.length]), role, tier: template.tier });
       if (seat) seat.bot = true;
     }
   }

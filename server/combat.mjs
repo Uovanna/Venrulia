@@ -182,6 +182,116 @@ const PHYSICAL_SKILLS = new Set([
   "Shadow Veil", "Deft Reflexes", "Antidote", "Killer's Focus", "Vanish", "Backstab", "Twin Fangs", "Rending Cut", "Assassinate", "Death Mark",
   "Hunter's Focus", "Camouflage", "Herbal Salve", "Trail Ward", "Rapid Fire", "Snap Shot", "Barbed Arrow", "Sundering Shot", "Hail of Arrows", "Predator's Mark",
 ]);
+
+// ---------- SIGNATURE (spec) SKILLS ----------
+// These used to live in App.jsx, which merged them into SKILLS and PHYSICAL_SKILLS at module
+// load. The server never runs App.jsx, so its SKILLS table had no signature skills at all:
+// skillByName could not find "Cold Open", grpSkills dropped it, and resolveIntent rejected the
+// intent — a signature skill could never fire online. The PHYSICAL_SKILLS registration matters
+// just as much: without it these would scale off Int instead of Str, so client and server would
+// disagree on damage even when the skill did land.
+const SPEC_SKILL_DEFS = {
+  warrior: [
+    { name: "Frenzied Onslaught", icon: "🌀", unlockLevel: 10, spec: "w_berserk", cd: 5, hits: 3, mult: 1.1, gen: 20, desc: "3 hits of 110% · +20 Rage" },
+    { name: "Bloodletting Roar", icon: "📣", unlockLevel: 10, spec: "w_berserk", cd: 30, hastePct: 20, hasteDur: 10, gen: 20, desc: "+20% attack speed 10s · +20 Rage" },
+    { name: "Reckless Abandon", icon: "💢", unlockLevel: 10, spec: "w_berserk", cd: 8, mult: 2.4, gen: 30, desc: "240% damage · +30 Rage" },
+    { name: "Cataclysm Slam", icon: "💥", unlockLevel: 10, spec: "w_champion", cd: 14, mult: 2.2, spend: "all", spendMult: 0.02, desc: "220% damage +2% per Rage — consumes all Rage" },
+    { name: "Warbringer", icon: "🌪️", unlockLevel: 10, spec: "w_champion", cd: 40, empowerPct: 30, empowerDur: 10, cost: 25, desc: "+30% damage 10s · costs 25 Rage" },
+    { name: "Unbreakable Momentum", icon: "🛡️", unlockLevel: 10, spec: "w_champion", cd: 35, wardPct: 30, wardDur: 8, gen: 30, desc: "−30% damage taken 8s · +30 Rage" },
+    { name: "Spell Reflection", icon: "🪞", unlockLevel: 10, spec: "w_antimage", cd: 30, wardPct: 35, wardDur: 6, gen: 20, desc: "−35% damage taken 6s · +20 Rage" },
+    { name: "Runic Cleave", icon: "🩸", unlockLevel: 10, spec: "w_antimage", cd: 8, dotMult: 3.0, dotDur: 5, dotIcon: "🩸", gen: 15, desc: "Bleed 300% over 5s · +15 Rage" },
+    { name: "Bulwark Vengeance", icon: "🔨", unlockLevel: 10, spec: "w_antimage", cd: 12, mult: 3.4, gen: 15, desc: "340% damage · +15 Rage" },
+    { name: "Shield Slam", icon: "🛡️", unlockLevel: 10, spec: "w_prot", cd: 5, mult: 1.5, threatMult: 4, gen: 25, desc: "150% dmg · high threat · +25 Rage" },
+    { name: "Challenging Shout", icon: "📣", unlockLevel: 10, spec: "w_prot", cd: 12, mult: 0.6, taunt: true, threatMult: 6, gen: 15, desc: "Taunt all enemies to you · +15 Rage" },
+    { name: "Last Stand", icon: "🪨", unlockLevel: 10, spec: "w_prot", cd: 30, wardPct: 45, wardDur: 8, gen: 20, desc: "−45% damage taken 8s · +20 Rage" },
+    { name: "Thunder Clap", icon: "🌩️", unlockLevel: 10, spec: "w_prot", cd: 6, mult: 0.8, aoeThreat: true, threatMult: 3, gen: 20, desc: "High threat on ALL enemies (grabs adds) · +20 Rage" },
+    { name: "Shield Wall", icon: "🧱", unlockLevel: 10, spec: "w_prot", cd: 90, wardPct: 60, wardDur: 8, gen: 10, desc: "−60% damage taken 8s (major cooldown) · +10 Rage" },
+  ],
+  mage: [
+    { name: "Arcane Surge", icon: "✨", unlockLevel: 10, spec: "m_wild", cd: 6, mult: 2.2, gen: 2, desc: "220% damage · +2 Charges" },
+    { name: "Mana Rupture", icon: "💥", unlockLevel: 10, spec: "m_wild", cd: 14, mult: 2.4, spend: "all", spendMult: 0.30, desc: "240% damage +30% per Charge — consumes all Charges" },
+    { name: "Overcharged Nova", icon: "💠", unlockLevel: 10, spec: "m_wild", cd: 20, mult: 3.2, spend: "all", spendMult: 0.35, desc: "320% damage +35% per Charge — consumes all Charges" },
+    { name: "Glacial Chains", icon: "🧊", unlockLevel: 10, spec: "m_trick", cd: 10, mult: 1.6, slowPct: 50, slowDur: 3, gen: 1, desc: "160% damage, slow 50% 3s · +1 Charge" },
+    { name: "Frozen Orb", icon: "🔵", unlockLevel: 10, spec: "m_trick", cd: 10, dotMult: 3.0, dotDur: 6, dotIcon: "❄️", gen: 1, desc: "Frost 300% over 6s · +1 Charge" },
+    { name: "Winter's Bite", icon: "❄️", unlockLevel: 10, spec: "m_trick", cd: 6, mult: 2.4, gen: 1, desc: "240% damage · +1 Charge" },
+    { name: "Runeblade Strike", icon: "🗡️", unlockLevel: 10, spec: "m_sword", cd: 4, mult: 2.1, gen: 1, desc: "210% damage · +1 Charge" },
+    { name: "Blade Cadence", icon: "⏩", unlockLevel: 10, spec: "m_sword", cd: 30, hastePct: 25, hasteDur: 8, gen: 1, desc: "+25% attack speed 8s · +1 Charge" },
+    { name: "Arcane Riposte", icon: "🔆", unlockLevel: 10, spec: "m_sword", cd: 24, empowerPct: 30, empowerDur: 8, cost: 2, desc: "+30% damage 8s · costs 2 Charges" },
+    { name: "Counterspell", icon: "🚫", unlockLevel: 10, spec: "m_support", cd: 12, mult: 1.2, interrupt: true, gen: 1, desc: "Interrupt an enemy cast · 120% dmg · +1 Charge" },
+    { name: "Temporal Surge", icon: "⏩", unlockLevel: 10, spec: "m_support", cd: 40, partyHastePct: 20, partyHasteDur: 10, gen: 2, desc: "Party +20% attack speed 10s · +2 Charges" },
+    { name: "Arcane Ward", icon: "🔮", unlockLevel: 10, spec: "m_support", cd: 18, partyWardPct: 15, partyWardDur: 8, offheal: 0.15, gen: 1, desc: "Party −15% damage taken 8s + minor heal · +1 Charge" },
+    { name: "Arcane Barrage", icon: "🌠", unlockLevel: 10, spec: "m_support", cd: 4, mult: 2.2, gen: 1, desc: "220% arcane damage (filler) · +1 Charge" },
+    { name: "Dampen Magic", icon: "🌀", unlockLevel: 10, spec: "m_support", cd: 40, partyWardPct: 25, partyWardDur: 10, gen: 1, desc: "Party −25% damage taken 10s (raid cooldown) · +1 Charge" },
+  ],
+  rogue: [
+    { name: "Cold Open", icon: "🗡️", unlockLevel: 10, spec: "r_ambush", cd: 4, mult: 2.4, gen: 2, desc: "240% damage · +2 Combo Points" },
+    { name: "Killing Intent", icon: "🎯", unlockLevel: 10, spec: "r_ambush", cd: 24, empowerPct: 35, empowerDur: 8, cost: 2, desc: "+35% damage 8s · costs 2 Combo Points" },
+    { name: "Throat Slit", icon: "☠️", unlockLevel: 10, spec: "r_ambush", cd: 16, mult: 3.2, spend: "all", spendMult: 0.30, desc: "320% damage +30% per Combo Point — consumes all" },
+    { name: "Virulent Blades", icon: "🧪", unlockLevel: 10, spec: "r_corr", cd: 6, dotMult: 2.4, dotDur: 5, dotIcon: "🧪", gen: 1, desc: "Poison 240% over 5s · +1 Combo Point" },
+    { name: "Festering Wounds", icon: "🩸", unlockLevel: 10, spec: "r_corr", cd: 10, dotMult: 3.6, dotDur: 6, dotIcon: "🩸", gen: 1, desc: "Bleed 360% over 6s · +1 Combo Point" },
+    { name: "Toxic Bloom", icon: "☠️", unlockLevel: 10, spec: "r_corr", cd: 8, dotMult: 3.0, dotDur: 4, dotIcon: "☠️", gen: 1, desc: "Toxin 300% over 4s · +1 Combo Point" },
+    { name: "Relentless Flurry", icon: "✂️", unlockLevel: 10, spec: "r_wild", cd: 5, hits: 3, mult: 1.0, gen: 1, desc: "3 hits of 100% · +1 Combo Point" },
+    { name: "Fleetblade", icon: "🌀", unlockLevel: 10, spec: "r_wild", cd: 30, hastePct: 25, hasteDur: 8, gen: 1, desc: "+25% attack speed 8s · +1 Combo Point" },
+    { name: "Twin Daggers", icon: "🗡️", unlockLevel: 10, spec: "r_wild", cd: 4, hits: 2, mult: 1.2, gen: 2, desc: "2 hits of 120% · +2 Combo Points" },
+  ],
+  paladin: [
+    { name: "Verdict of Flame", icon: "🔥", unlockLevel: 10, spec: "p_just", cd: 12, mult: 2.2, spend: "all", spendMult: 0.010, desc: "220% damage +1% per Aegis — consumes shield" },
+    { name: "Sanctified Zeal", icon: "✨", unlockLevel: 10, spec: "p_just", cd: 40, empowerPct: 25, empowerDur: 12, gen: 30, desc: "+25% damage 12s · +30 Aegis" },
+    { name: "Judgment Beam", icon: "🔱", unlockLevel: 10, spec: "p_just", cd: 6, mult: 2.3, gen: 20, desc: "230% holy damage · +20 Aegis" },
+    { name: "Aegis Overflow", icon: "🛡️", unlockLevel: 10, spec: "p_king", cd: 5, mult: 2.0, gen: 40, desc: "200% damage · +40 Aegis" },
+    { name: "Consecrated Ground", icon: "🌟", unlockLevel: 10, spec: "p_king", cd: 40, wardPct: 35, wardDur: 12, gen: 60, desc: "−35% damage taken 12s · +60 Aegis" },
+    { name: "Retribution Wall", icon: "🪨", unlockLevel: 10, spec: "p_king", cd: 30, wardPct: 25, wardDur: 10, gen: 40, desc: "−25% damage taken 10s · +40 Aegis" },
+    { name: "Zealot's Flurry", icon: "⚔️", unlockLevel: 10, spec: "p_exile", cd: 5, hits: 3, mult: 1.0, gen: 20, desc: "3 hits of 100% · +20 Aegis" },
+    { name: "Righteous Momentum", icon: "📣", unlockLevel: 10, spec: "p_exile", cd: 30, hastePct: 20, hasteDur: 10, gen: 30, desc: "+20% attack speed 10s · +30 Aegis" },
+    { name: "Executioner's Verdict", icon: "🪓", unlockLevel: 10, spec: "p_exile", cd: 14, mult: 3.6, gen: 20, desc: "360% damage · +20 Aegis" },
+    { name: "Holy Light", icon: "🌅", unlockLevel: 10, spec: "p_holy", cd: 4, mult: 1.3, heal: 0.55, gen: 15, desc: "Heal an ally 55% · 130% holy dmg · +15 Aegis" },
+    { name: "Divine Radiance", icon: "🌟", unlockLevel: 10, spec: "p_holy", cd: 15, mult: 1.4, healAoe: 0.32, gen: 20, desc: "Heal the party 32% · 140% holy dmg · +20 Aegis" },
+    { name: "Holy Smite", icon: "☀️", unlockLevel: 10, spec: "p_holy", cd: 5, mult: 2.3, heal: 0.12, gen: 20, desc: "230% holy dmg · heal ally 12% · +20 Aegis" },
+    { name: "Beacon of Light", icon: "🕯️", unlockLevel: 10, spec: "p_holy", cd: 9, mult: 1.0, hot: 0.10, hotDur: 12, gen: 15, desc: "Heal-over-time 10%/s for 12s · 100% holy dmg · +15 Aegis" },
+    { name: "Cleanse", icon: "💧", unlockLevel: 10, spec: "p_holy", cd: 6, cleanse: true, gen: 5, desc: "Remove harmful effects from an ally · +5 Aegis" },
+    { name: "Aegis of Light", icon: "🌤️", unlockLevel: 10, spec: "p_holy", cd: 45, partyWardPct: 30, partyWardDur: 8, gen: 20, desc: "Party −30% damage taken 8s (raid cooldown) · +20 Aegis" },
+    { name: "Shield of the Righteous", icon: "🛡️", unlockLevel: 10, spec: "p_prot", cd: 5, mult: 1.6, threatMult: 4, gen: 25, desc: "160% dmg · high threat · +25 Aegis" },
+    { name: "Hand of Authority", icon: "✋", unlockLevel: 10, spec: "p_prot", cd: 12, mult: 0.8, taunt: true, threatMult: 6, gen: 15, desc: "Taunt · forces the enemy onto you · +15 Aegis" },
+    { name: "Guardian's Bulwark", icon: "🪨", unlockLevel: 10, spec: "p_prot", cd: 25, wardPct: 40, wardDur: 8, gen: 30, desc: "−40% damage taken 8s · +30 Aegis" },
+    { name: "Consecration", icon: "🔆", unlockLevel: 10, spec: "p_prot", cd: 8, mult: 0.7, aoeThreat: true, threatMult: 3, gen: 20, desc: "Hallowed ground — high threat on ALL enemies · +20 Aegis" },
+    { name: "Ardent Defender", icon: "🧱", unlockLevel: 10, spec: "p_prot", cd: 90, wardPct: 60, wardDur: 8, gen: 15, desc: "−60% damage taken 8s (major cooldown) · +15 Aegis" },
+  ],
+  hunter: [
+    { name: "Steady Aim", icon: "🎯", unlockLevel: 10, spec: "h_snipe", cd: 6, mult: 2.6, gen: 2, desc: "260% damage · +2 Marks" },
+    { name: "Piercing Focus", icon: "🔭", unlockLevel: 10, spec: "h_snipe", cd: 24, empowerPct: 35, empowerDur: 10, cost: 2, desc: "+35% damage 10s · costs 2 Marks" },
+    { name: "Deadeye Shot", icon: "💀", unlockLevel: 10, spec: "h_snipe", cd: 15, mult: 2.6, spend: "all", spendMult: 0.16, desc: "260% damage +16% per Mark — consumes all Marks" },
+    { name: "Savage Companion", icon: "🐺", unlockLevel: 10, spec: "h_trap", cd: 20, petEmpower: true, gen: 1, desc: "Instantly resummon your companion and empower it (+50% pet damage 10s) · +1 Mark" },
+    { name: "Snake Trap", icon: "🐍", unlockLevel: 10, spec: "h_trap", cd: 14, snakeVenom: 3, gen: 1, desc: "Loose a nest of snakes — apply 3 stacking Venom debuffs (feeds cooldown reduction) · +1 Mark" },
+    { name: "Venomous Companion", icon: "🐍", unlockLevel: 10, spec: "h_trap", cd: 8, dotMult: 2.6, dotDur: 5, dotIcon: "🐍", gen: 1, desc: "Your companion's venom — 260% poison over 5s · +1 Mark" },
+    { name: "Rapid Volley", icon: "⚡", unlockLevel: 10, spec: "h_range", cd: 4, hits: 3, mult: 0.9, gen: 1, desc: "3 hits of 90% · +1 Mark" },
+    { name: "Hunter's Rhythm", icon: "🏹", unlockLevel: 10, spec: "h_range", cd: 30, hastePct: 30, hasteDur: 8, gen: 2, desc: "+30% attack speed 8s · +2 Marks" },
+    { name: "Twin Shot", icon: "↗️", unlockLevel: 10, spec: "h_range", cd: 4, hits: 2, mult: 1.2, gen: 2, desc: "2 hits of 120% · +2 Marks" },
+    { name: "Disrupting Shot", icon: "🚫", unlockLevel: 10, spec: "h_support", cd: 12, mult: 1.4, interrupt: true, gen: 1, desc: "Interrupt an enemy cast · 140% dmg · +1 Mark" },
+    { name: "Rallying Anthem", icon: "🎶", unlockLevel: 10, spec: "h_support", cd: 40, partyEmpowerPct: 15, partyEmpowerDur: 10, gen: 2, desc: "Party +15% damage 10s · +2 Marks" },
+    { name: "Mending Volley", icon: "💚", unlockLevel: 10, spec: "h_support", cd: 10, mult: 1.2, offheal: 0.18, gen: 1, desc: "120% dmg · heal the party 18% · +1 Mark" },
+    { name: "Aimed Shot", icon: "🎯", unlockLevel: 10, spec: "h_support", cd: 4, mult: 2.4, gen: 1, desc: "240% damage (filler) · +1 Mark" },
+    { name: "Warding Cry", icon: "📯", unlockLevel: 10, spec: "h_support", cd: 40, partyWardPct: 25, partyWardDur: 10, gen: 1, desc: "Party −25% damage taken 10s (raid cooldown) · +1 Mark" },
+  ],
+  warlock: [
+    { name: "Chaos Bolt", icon: "🌑", unlockLevel: 10, spec: "l_scorch", cd: 14, mult: 2.4, spend: "all", spendMult: 0.35, desc: "240% damage +35% per Soul Shard — consumes all Shards" },
+    { name: "Immolation Burst", icon: "🔥", unlockLevel: 10, spec: "l_scorch", cd: 6, mult: 2.4, desc: "240% fire damage" },
+    { name: "Cataclysm", icon: "💀", unlockLevel: 10, spec: "l_scorch", cd: 20, mult: 3.2, spend: "all", spendMult: 0.40, desc: "320% damage +40% per Soul Shard — consumes all" },
+    { name: "Unstable Affliction", icon: "🕷️", unlockLevel: 10, spec: "l_hex", cd: 8, dotMult: 3.2, dotDur: 6, dotIcon: "🕷️", desc: "Affliction 320% over 6s — ticks harvest Shards" },
+    { name: "Corruption Spread", icon: "🕸️", unlockLevel: 10, spec: "l_hex", cd: 10, dotMult: 3.6, dotDur: 5, dotIcon: "🕸️", desc: "Blight 360% over 5s — ticks harvest Shards" },
+    { name: "Soul Harvest", icon: "🖤", unlockLevel: 10, spec: "l_hex", cd: 8, dotMult: 2.8, dotDur: 6, dotIcon: "🖤", desc: "Drain 280% over 6s — ticks harvest Shards" },
+    { name: "Soul Detonation", icon: "💥", unlockLevel: 10, spec: "l_hex", cd: 12, detonate: 1.30, desc: "Consume every affliction — bursts for 130% of their remaining damage (stack them high first)" },
+    { name: "Summon Fiend", icon: "😈", unlockLevel: 10, spec: "l_demon", cd: 12, dotMult: 3.4, dotDur: 8, dotIcon: "😈", desc: "Fiend rends 340% over 8s" },
+    { name: "Demonic Empowerment", icon: "🔆", unlockLevel: 10, spec: "l_demon", cd: 24, empowerPct: 35, empowerDur: 10, cost: 2, desc: "+35% damage 10s · costs 2 Soul Shards" },
+    { name: "Soul Link", icon: "💜", unlockLevel: 10, spec: "l_demon", cd: 5, mult: 2.1, gen: 1, desc: "210% shadow damage · +1 Soul Shard" },
+  ],
+};
+for (const cid in SPEC_SKILL_DEFS) SKILLS[cid] = [...(SKILLS[cid] || []), ...SPEC_SKILL_DEFS[cid]];
+// Register physical signature skills (all others default to Magic → Int scaling).
+["Frenzied Onslaught", "Bloodletting Roar", "Reckless Abandon", "Cataclysm Slam", "Warbringer", "Unbreakable Momentum", "Spell Reflection", "Runic Cleave", "Bulwark Vengeance",
+ "Cold Open", "Killing Intent", "Throat Slit", "Virulent Blades", "Festering Wounds", "Toxic Bloom", "Relentless Flurry", "Fleetblade", "Twin Daggers",
+ "Zealot's Flurry", "Righteous Momentum", "Executioner's Verdict",
+ "Steady Aim", "Piercing Focus", "Deadeye Shot", "Savage Companion", "Snare Trap", "Venom Coating", "Rapid Volley", "Hunter's Rhythm", "Twin Shot",
+].forEach((n) => PHYSICAL_SKILLS.add(n));
 const skillType = (name) => PHYSICAL_SKILLS.has(name) ? "physical" : "magic";
 const isMagicSkill = (skill) => skill && skillType(skill.name) === "magic";
 const CLASS_RESOURCES = {
@@ -701,7 +811,19 @@ const BOT_TIERS = {
 const PVP_TOUGHNESS = 0.25;
 const PVP_SKILL_CUT = 0.60;
 const PVP_SKILL_MULT = (1 - PVP_TOUGHNESS) * PVP_SKILL_CUT;
-const botCanAfford = (bc, bw, s) => { if (s.spend === "all") return resTotal(bw) > 0; if (typeof s.spend === "number") return resTotal(bw) >= s.spend; return true; };
+// Resource check. This gates BOTH the action bar's enabled state and the server's
+// resolveIntent, so it has to agree with what applySkillCore will actually do.
+//
+// It only looked at `spend` (8 skills) and ignored `cost` (17 skills), so a skill you could
+// not pay for looked ready, was accepted, ate your tap and then silently did nothing —
+// applySkillCore refuses it downstream. That is why a Paladin healer, whose kit spends Aegis,
+// found that no skills worked, while a rogue built out of generators found that all of them did.
+const botCanAfford = (bc, bw, s) => {
+  if (s.spend === "all") return resTotal(bw) > 0;
+  if (typeof s.spend === "number") return resTotal(bw) >= s.spend;
+  if (typeof s.cost === "number") return resTotal(bw) >= s.cost;
+  return true;
+};
 const chooseBotSkill = (bc, bw, now, tier) => {
   const skills = (bc.selectedSkills || []).map((n) => skillByName(bc, n)).filter(Boolean);
   const ready = skills.filter((s) => (bw.cooldowns[s.name] || 0) <= now && botCanAfford(bc, bw, s));
@@ -807,35 +929,36 @@ function applySkillCore(skill, c, bIn, now, log) {
     if (skill.cleanse) { const n = b.playerEffects.filter(isPlayerDebuff).length; b.playerEffects = b.playerEffects.filter((e) => !isPlayerDebuff(e)); log(n ? `${skill.icon} ${skill.name} clears ${n} debuff${n > 1 ? "s" : ""}!` : `${skill.icon} ${skill.name}: nothing to cleanse`, "#7CFC9E"); }
     return { battle: b, died: b.enemy.hp <= 0 };
 }
-// Group-encounter balance, calibrated for ~60s fights (see PHASE0.md).
-//   estCal  corrects grpEstDps, which sums offlinePlayerDps — an idle-throughput figure that
-//           under-counts a party actually using its rotation by more than an order of
-//           magnitude. Boss HP is grpEstDps * dur, so this is the time-to-kill dial.
-//   dmg     boss outgoing damage. Was 1.9, which killed a party in 20-40s regardless of how
-//           much HP the boss had, capping every fight well under its target duration.
-//   healCoeff  the healer's throughput. Kept above 1 because the only real heal in the game
-//           (Mending Touch) sits on a 90s cooldown, so sustain is otherwise almost nil — this
-//           is what turns the hardest content from a guaranteed wipe into a clear.
-const GRP = { estCal: 24, gcd: 1300, enemyAuto: 1500, threatTank: 2.6, threatDps: 1.0, threatHeal: 0.5, healCoeff: 1.6, resKick: 0, dmg: 0.28 };
+// Group-encounter balance.
+//   estCal  scales boss HEALTH (boss hp = grpEstDps * dur). The ~60s calibration pushed this
+//           to 24, which produced health pools that read as absurd in play — parked back at 1.
+//   dmg     boss outgoing damage, i.e. how fast the PARTY dies. Left at the calibrated 0.28:
+//           bots are now built at the encounter's own item level rather than as fixed epic
+//           60s, and at the original 1.9 that party is killed on every piece of content
+//           before it can finish anything. This is time-to-die, not time-to-kill.
+//   healCoeff  healer throughput, kept above 1 because the only real heal in the game
+//           (Mending Touch) is on a 90s cooldown, so sustain is otherwise almost nil.
+const GRP = { estCal: 1, gcd: 1300, enemyAuto: 1500, threatTank: 2.6, threatDps: 1.0, threatHeal: 0.5, healCoeff: 1.6, resKick: 0, dmg: 0.28 };
 const healPowerOf = (char) => Math.round(maxHpFor(char) * GRP.healCoeff);
-// These predicates drive the whole group-combat role system, and they must key off the
-// property names the SKILLS data actually uses. They previously looked for `heal`, `offheal`,
-// `hot`, `healAoe`, `partyHastePct`, … — none of which exist on a single skill in the game.
-// Every role branch therefore fell through to "just deal damage": healers never healed, and
-// the combat log stayed empty because its lines only fire on these effects. The real data
-// uses healPct / hotPct+hotDur / empowerPct+empowerDur / hastePct+hasteDur / wardPct / cleanse.
-//
-// `taunt` and `interrupt` genuinely do not exist on any skill yet, so the tank's taunt branch
-// and the "interrupt it!" prompt still cannot fire — that needs new skills, not a rename.
-const skHealPct = (s) => (s && s.healPct) || 0;
-const skIsHeal = (s) => !!s && skHealPct(s) > 0;
-const skIsHot = (s) => !!s && !!s.hotPct;
+// Group-combat role predicates. Skills come in TWO shapes and both are real:
+//   class skills  use percentages — healPct: 50, hotPct: 28 (total across hotDur)
+//   spec skills   use fractions   — heal: 0.55, offheal, healAoe, hot: 0.1 (PER SECOND)
+// An earlier pass keyed only on the percentage forms, because the spec skills lived in
+// App.jsx and were missing from the core's table entirely. Now that both are here, these
+// must accept both or a Paladin's Holy Light and Beacon of Light stop working.
+const skHealFrac = (s) => !s ? 0 : (s.heal || 0) + (s.offheal || 0) + (s.healPct || 0) / 100;
+const skHotPerSec = (s) => !s ? 0 : (s.hot || 0) + ((s.hotPct || 0) / 100) / (s.hotDur || 12);
+const skIsHeal = (s) => skHealFrac(s) > 0;
+const skIsHot = (s) => skHotPerSec(s) > 0;
 const skIsCleanse = (s) => !!s && !!s.cleanse;
-const skIsAoeHeal = (s) => !!s && !!s.healAoe;          // no skill has this yet
-const skIsTaunt = (s) => !!s && !!s.taunt;              // ditto
-const skIsInterrupt = (s) => !!s && !!s.interrupt;      // ditto
+const skIsAoeHeal = (s) => !!s && !!s.healAoe;
+const skIsTaunt = (s) => !!s && !!s.taunt;                 // Challenging Shout, Hand of Authority
+const skIsInterrupt = (s) => !!s && !!s.interrupt;         // Counterspell, Disrupting Shot
 const skIsDef = (s) => !!s && !!s.wardPct;
-const skIsPartyBuff = (s) => !!s && !!(s.empowerPct || s.hastePct);
+// Genuine PARTY buffs only. empowerPct / hastePct are self-buffs on ordinary class skills and
+// are applied by applySkillCore; treating them as raid cooldowns would hand 30-odd skills a
+// party-wide effect they were never written to have.
+const skIsPartyBuff = (s) => !!s && !!(s.partyHastePct || s.partyWardPct || s.partyEmpowerPct);
 const skThreatMult = (s) => (s && s.threatMult) || 1;
 const roleThreatBase = (role) => role === "tank" ? GRP.threatTank : role === "healer" ? GRP.threatHeal : role === "support" ? 0.7 : GRP.threatDps;
 const grpSkills = (ally) => (ally.char.selectedSkills || []).map((n) => skillByName(ally.char, n)).filter(Boolean);
@@ -1430,16 +1553,13 @@ const applyAllyAction = (st, ally, act, now) => {
     }
   } else { ally.bw = applySkillCore(sk, ally.char, ally.bw, now, () => {}).battle; }
   // role effects (interpreted by the engine)
-  // healPct / hotPct are PERCENTAGES of the caster's heal power, not raw amounts.
-  if (skIsHeal(sk)) { const amt = Math.round(skHealPct(sk) / 100 * healPowerOf(ally.char)); const tgt = st.allies.find((a) => a.id === act.targetAllyId && !a.down) || grpInjured(st.allies); if (tgt) { const before = tgt.hp; tgt.hp = Math.min(tgt.maxHp, tgt.hp + amt); st.log.push(`💚 ${ally.name} heals ${tgt.isHuman ? "you" : tgt.name} for ${Math.round(tgt.hp - before)}`); for (const en of st.enemies) if (en.hp > 0) grpAddThreat(en, ally.id, amt * GRP.threatHeal / Math.max(1, st.enemies.filter((e) => e.hp > 0).length)); } }
-  if (skIsHot(sk)) { const tgt = st.allies.find((a) => a.id === act.targetAllyId && !a.down) || grpInjured(st.allies); if (tgt) { const dur = sk.hotDur || 12; const per = Math.round(sk.hotPct / 100 * healPowerOf(ally.char) / dur); tgt.hots = [...(tgt.hots || []).filter((h) => h.src !== sk.name), { src: sk.name, healPerTick: per, nextTick: now + 1000, expires: now + dur * 1000 }]; st.log.push(`🕯️ ${ally.name} puts ${sk.name} on ${tgt.isHuman ? "you" : tgt.name}`); } }
+  if (skIsHeal(sk)) { const amt = Math.round(skHealFrac(sk) * healPowerOf(ally.char)); const tgt = st.allies.find((a) => a.id === act.targetAllyId && !a.down) || grpInjured(st.allies); if (tgt) { const before = tgt.hp; tgt.hp = Math.min(tgt.maxHp, tgt.hp + amt); st.log.push(`💚 ${ally.name} heals ${tgt.isHuman ? "you" : tgt.name} for ${Math.round(tgt.hp - before)}`); for (const en of st.enemies) if (en.hp > 0) grpAddThreat(en, ally.id, amt * GRP.threatHeal / Math.max(1, st.enemies.filter((e) => e.hp > 0).length)); } }
+  if (skIsHot(sk)) { const tgt = st.allies.find((a) => a.id === act.targetAllyId && !a.down) || grpInjured(st.allies); if (tgt) { const dur = sk.hotDur || 12; const per = Math.round(skHotPerSec(sk) * healPowerOf(ally.char)); tgt.hots = [...(tgt.hots || []).filter((h) => h.src !== sk.name), { src: sk.name, healPerTick: per, nextTick: now + 1000, expires: now + dur * 1000 }]; st.log.push(`🕯️ ${ally.name} puts ${sk.name} on ${tgt.isHuman ? "you" : tgt.name}`); } }
   if (sk.cleanse) { const tgt = st.allies.find((a) => a.id === act.targetAllyId && !a.down && (a.debuffs || []).length) || st.allies.find((a) => !a.down && (a.debuffs || []).length); if (tgt) { st.log.push(`💧 ${ally.name} cleanses ${tgt.isHuman ? "you" : tgt.name}`); tgt.debuffs = []; } }
   if (sk.healAoe) { const amt = Math.round(sk.healAoe * healPowerOf(ally.char)); for (const a of st.allies) if (!a.down) a.hp = Math.min(a.maxHp, a.hp + amt); for (const en of st.enemies) if (en.hp > 0) grpAddThreat(en, ally.id, amt * GRP.threatHeal); }
   if (sk.taunt) { for (const en of st.enemies) if (en.hp > 0) { const top = Math.max(0, ...Object.values(en.threat), 0); en.threat[ally.id] = top * 1.3 + 100; en.targetId = ally.id; } st.log.push(`🛡️ ${ally.name} taunts!`); }
   if (sk.interrupt) { const en = st.enemies.find((e) => e.id === act.targetEnemyId && e.castBar && e.castBar.interruptible) || st.enemies.find((e) => e.castBar && e.castBar.interruptible); if (en) { st.log.push(`🚫 ${ally.name} interrupted ${en.name}'s ${en.castBar.name}!`); en.castBar = null; en.nextCastAt = now + 11000; } }
-  // Empower/haste read as party-wide in a group fight — that is what the support role's
-  // "keep a buff rolling" branch is for, and what makes a support slot worth a seat.
-  if (skIsPartyBuff(sk)) { const dur = ((sk.hasteDur || sk.empowerDur) || 10) * 1000; for (const a of st.allies) if (!a.down) { if (sk.hastePct) a.bw.playerEffects.push({ kind: "haste", pct: sk.hastePct, expires: now + dur }); if (sk.empowerPct) a.bw.playerEffects.push({ kind: "empower", pct: sk.empowerPct, expires: now + dur }); } st.log.push(`✨ ${ally.name} casts ${sk.name} — the party is empowered!`); }
+  if (skIsPartyBuff(sk)) { const dur = ((sk.partyHasteDur || sk.partyWardDur || sk.partyEmpowerDur) || 10) * 1000; for (const a of st.allies) if (!a.down) { if (sk.partyHastePct) a.bw.playerEffects.push({ kind: "haste", pct: sk.partyHastePct, expires: now + dur }); if (sk.partyWardPct) a.bw.playerEffects.push({ kind: "ward", pct: sk.partyWardPct, expires: now + dur }); if (sk.partyEmpowerPct) a.bw.playerEffects.push({ kind: "empower", pct: sk.partyEmpowerPct, expires: now + dur }); } st.log.push(`✨ ${ally.name} casts ${sk.name} — ${sk.partyWardPct ? "the party is shielded" : sk.partyHastePct ? "the party hastens" : "the party is empowered"}!`); }
   // Defensives were silent too; a mitigation cooldown is exactly the thing a party wants to see.
   if (skIsDef(sk)) st.log.push(`🛡️ ${ally.name} braces with ${sk.name}`);
 };
@@ -1520,6 +1640,7 @@ const stepEncounter = (state, dt, inputs) => withRng(makeRng((state.seed ^ (stat
 });
 
 export {
+  SPEC_SKILL_DEFS,
   weaponRangeFor,
   POWER_PER_STAT,
   CLASSES,

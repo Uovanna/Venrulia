@@ -52,7 +52,10 @@ const geared = (stat, rating) => {
   // stopped binding on ordinary characters — which is the intent. What still reaches it is a
   // character STACKING Agility, and agility classes now have a damage reason to do exactly that,
   // so the cap has become an endgame consideration rather than something a rogue hit by existing.
-  const critty = buildBotChar("rogue", "r_ambush", 60, 63);
+  // Seeded: buildBotChar rolls RANDOM gear, so an unseeded troll rogue's Agility — and therefore
+  // whether it clears the soft cap at all — changes from run to run. That made this check pass
+  // alone and fail in the suite.
+  const critty = withRng(makeRng(4242), () => buildBotChar("rogue", "r_ambush", 60, 63));
   critty.race = "troll";
   const rogueBase = critChanceFor(critty);
   critty.equipment.trinket = { name: "Bench", slotId: "trinket", ilvl: 63, rarity: "epic", stats: { crit: 100000, agi: 200 } };
@@ -61,11 +64,19 @@ const geared = (stat, rating) => {
   ok(c > CRIT_SOFT_CAP, `a troll rogue stacking agility still exceeds the soft cap (${(c * 100).toFixed(0)}%) — excess is damped, not discarded`);
   ok(c < undamped + 0.35, "…and lands below the undamped sum, so the damping is real");
 
-  // An ordinary geared rogue must now sit clear of the cap, or the class bonus cut did nothing.
-  const plain = buildBotChar("rogue", "r_ambush", 60, 63);
-  plain.equipment.trinket = { name: "Bench", slotId: "trinket", ilvl: 63, rarity: "epic", stats: { crit: 100000 } };
-  ok(critChanceFor(plain) < CRIT_SOFT_CAP,
-     `a human rogue with maxed gear crit reads ${(critChanceFor(plain) * 100).toFixed(0)}%, under the cap rather than pinned against it`);
+  // The class-bonus cut has to be visible in the rogue's own contribution, independent of whatever
+  // Agility its gear happens to roll. Compare like for like: a stripped rogue against a stripped
+  // warrior, where the only difference IS the class bonus.
+  const strip = (cls) => { const c = buildBotChar(cls, cls === "rogue" ? "r_ambush" : "w_berserk", 60, 63);
+    for (const k in c.equipment) c.equipment[k] = null; return c; };
+  // Slightly more than the 3-point class bonus: a rogue also starts with 7 more Agility than a
+  // warrior, worth another ~1.4 points of crit. The check is that the gap is now small, not that
+  // it is exactly the constant — asserting the constant against itself would prove nothing.
+  const rogueOnly = critChanceFor(strip("rogue")) - critChanceFor(strip("warrior"));
+  ok(rogueOnly > 0 && rogueOnly < 0.06,
+     `a stripped rogue leads a stripped warrior by ${(rogueOnly * 100).toFixed(1)} points of crit (it was over 13)`);
+  ok(critChanceFor(strip("rogue")) + SEC_CAP.crit / 100 < CRIT_SOFT_CAP,
+     "a rogue can no longer reach the soft cap on class bonus plus maxed gear crit alone — it now takes stacked Agility");
   ok(critChanceFor(geared("crit", 0)) === base, "zero crit rating changes nothing");
 }
 

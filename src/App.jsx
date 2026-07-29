@@ -174,6 +174,7 @@ import {
   SEC_SIZE,
   pickLootSlot,
   zoneDropScale,
+  physScalingStat,
   gdkpBotCeiling,
   // These used to be defined a SECOND time in App.jsx. Nothing forced the two copies to agree,
   // so the client and the authoritative server could silently run different rules — which is
@@ -228,14 +229,43 @@ const dispositionFor = (name) => {
 // ---------- GEAR STAT WEIGHTS ----------
 // weight of a stat when scoring gear. Classes no longer have a primary stat, so all three
 // base stats are weighted equally; Stamina and combat secondaries follow.
-// What one point of a stat is worth when deciding whether an item is an upgrade. Note that clsId
-// is accepted and NOT used: all three main stats are priced identically for every class, even
-// though only Strength feeds physical damage and only Intellect feeds magic damage. Measured at
-// level 60 / ilvl 63, a rogue gains 12.0% dps from 30 Strength and 4.4% from 30 Agility, and no
-// class on the roster has Agility as its best stat. Pricing that honestly means first deciding
-// whether Agility should be a scaling stat at all, so it is deliberately left alone here.
+// What one point of a stat is worth when deciding whether an item is an upgrade.
+//
+// Main stats are priced per class, because they are not interchangeable. A class turns exactly
+// one stat into physical damage (physScalingStat — Agility for rogues and hunters, Strength for
+// everyone else) and Intellect into magic damage. Measured at level 60 / ilvl 63, 30 points of
+// the stat a class actually scales off is worth ~11-19% dps; 30 points of a stat it does not use
+// is worth 0.0%. Pricing all three at 1.0 meant a warrior chest rolling agi+int scored exactly as
+// well as one rolling str+agi while being ~7% worse, and auto-sell kept the wrong one.
+// Measured dps gain from +30 of each main stat at level 60 / ilvl 63, averaged over twelve seeded
+// gear rolls and normalised to each class's own best stat. game-core/mainstat-weights.test.cjs
+// re-measures and fails if the table drifts from what the combat code actually does.
+//
+// Declared explicitly rather than inferred from each class's `main`, because that declaration is
+// not reliable for hybrids: paladin declares "str" while its damage measurably comes from
+// Intellect (7.8% per 30 against Strength's 4.7%), so an inference would confidently mis-price it.
+//
+// The floor of 0.15 is deliberate. A stat a class genuinely cannot use measures 0.0%, but pricing
+// it at zero would let auto-sell vendor an otherwise excellent piece purely for carrying one dead
+// line, and main stats are only ever one part of an item.
+const MAIN_STAT_FLOOR = 0.15;
+const MAIN_WEIGHTS = {
+  warrior: { str: 1.0,  agi: 0.5,  int: 0.15 },
+  rogue:   { str: 0.15, agi: 1.0,  int: 0.15 },
+  hunter:  { str: 0.15, agi: 1.0,  int: 0.15 },
+  paladin: { str: 0.6,  agi: 0.75, int: 1.0  },
+  mage:    { str: 0.8,  agi: 0.85, int: 1.0  },
+  warlock: { str: 0.55, agi: 0.7,  int: 1.0  },
+};
+const mainStatWeightFor = (clsId, stat) => {
+  const row = MAIN_WEIGHTS[clsId];
+  if (row) return row[stat] ?? MAIN_STAT_FLOOR;
+  // An unknown class still has to score something sane: full weight on whatever it scales its
+  // physical damage off, and a real but smaller value everywhere else.
+  return stat === physScalingStat(clsId) ? 1.0 : 0.5;
+};
 const statWeight = (clsId, stat) => {
-  if (stat === "str" || stat === "agi" || stat === "int") return 1.0; // all primary stats equally valued
+  if (stat === "str" || stat === "agi" || stat === "int") return mainStatWeightFor(clsId, stat);
   if (stat === "sta") return 0.75;   // Stamina
   // Attack/Spell Power. Damage converts a main stat at x1.4 and Power at x1.0, so a point of
   // Power is worth 1/1.4 of a main stat — measured across six classes at 0.716 against the 0.714

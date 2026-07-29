@@ -57,13 +57,22 @@ js += `
 
   console.log("\\n=== 1. WHAT itemScore COUNTS ===");
   console.log("SCORE_STATS is the list itemScore walks; statWeight is what each one is worth.\\n");
-  for (const k of ["str","agi","int","sta","armor","leech","resil","vers","cdr","csd","crit","haste","ap","sp","dmg"]) {
+  // ap/sp and wdmg are handled by itemScore OUTSIDE the SCORE_STATS loop, so "not listed" does
+  // not mean "not counted" for those three. Probe the real function instead of reading the list.
+  const probe = (k) => {
+    const bare = { id:"p", slotId:"chest", rarity:"epic", ilvl:63, mains:["str"], sockets:[], enchant:null, wdmg:null,
+      stats:{ str:11,agi:0,int:0,sta:0,armor:0,dmg:0,leech:0,resil:0,vers:0,cdr:0,csd:0,crit:0,haste:0,ap:0,sp:0 } };
+    const with20 = JSON.parse(JSON.stringify(bare)); with20.stats[k] = (with20.stats[k] || 0) + 20;
+    return (itemScore(with20, "warrior") - itemScore(bare, "warrior")) / 20;
+  };
+  for (const k of ["str","agi","int","sta","armor","leech","resil","vers","cdr","csd","crit","haste","ap","sp"]) {
     const inList = SCORE_STATS.includes(k);
-    const w = statWeight("warrior", k);
-    const note = !inList && k !== "dmg" ? "  <- NOT in SCORE_STATS, never even looked at"
-               : w === 0 && k !== "dmg" ? "  <- in SCORE_STATS but statWeight returns 0, so it scores nothing"
+    const w = statWeight("warrior", k), real = probe(k);
+    const note = real === 0 ? "  <- scores NOTHING"
+               : !inList ? "  <- counted outside the SCORE_STATS loop"
                : "";
-    console.log("  " + pad(k, 7) + rpad(inList ? "listed" : "-", 8) + rpad("weight " + w, 12) + note);
+    console.log("  " + pad(k, 7) + rpad(inList ? "listed" : "-", 8) + rpad("weight " + w, 12)
+      + rpad("actually " + real.toFixed(2), 15) + note);
   }
 
   console.log("\\n=== 2. FOCUSED (1 main + Power) vs DUAL (2 mains) ===");

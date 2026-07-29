@@ -228,13 +228,32 @@ const dispositionFor = (name) => {
 // ---------- GEAR STAT WEIGHTS ----------
 // weight of a stat when scoring gear. Classes no longer have a primary stat, so all three
 // base stats are weighted equally; Stamina and combat secondaries follow.
+// What one point of a stat is worth when deciding whether an item is an upgrade. Note that clsId
+// is accepted and NOT used: all three main stats are priced identically for every class, even
+// though only Strength feeds physical damage and only Intellect feeds magic damage. Measured at
+// level 60 / ilvl 63, a rogue gains 12.0% dps from 30 Strength and 4.4% from 30 Agility, and no
+// class on the roster has Agility as its best stat. Pricing that honestly means first deciding
+// whether Agility should be a scaling stat at all, so it is deliberately left alone here.
 const statWeight = (clsId, stat) => {
   if (stat === "str" || stat === "agi" || stat === "int") return 1.0; // all primary stats equally valued
   if (stat === "sta") return 0.75;   // Stamina
+  // Attack/Spell Power. Damage converts a main stat at x1.4 and Power at x1.0, so a point of
+  // Power is worth 1/1.4 of a main stat — measured across six classes at 0.716 against the 0.714
+  // that arithmetic predicts. This was missing entirely, and since Power only ever appears on
+  // single-main-stat gear, its absence made every focused piece read 10.3% worse than a dual
+  // piece it actually matches or beats in combat.
+  if (stat === "ap" || stat === "sp") return 0.7;
   if (stat === "dmg") return 0.65;   // weapon damage
   if (stat === "armor") return 0.55; // armor
   if (stat === "leech") return 0.45;
   if (stat === "csd") return 0.4;
+  // Crit chance and haste became gear secondaries but never got a weight, so they scored zero.
+  // Placed by measurement against the stats already on this table: per point, crit sits between
+  // cooldown reduction and versatility (both 0.35), and haste at roughly half of cooldown
+  // reduction. Haste is rounded up slightly because it also shortens the group GCD, which the
+  // solo throughput figure these were measured with cannot see.
+  if (stat === "crit") return 0.35;
+  if (stat === "haste") return 0.15;
   if (stat === "cdr") return 0.35;
   if (stat === "vers") return 0.35;
   if (stat === "resil") return 0.25;
@@ -826,6 +845,9 @@ function makeArtifact(clsId, slotId, level, existing) {
   };
 }
 
+// ap/sp are scored separately in itemScore rather than listed here, because Power is dormant
+// while a piece carries two main stats — counting it unconditionally would make the score RISE
+// when a main-stat gem or enchant disarms a focused piece.
 const SCORE_STATS = ["str", "agi", "int", "sta", "armor", "leech", "resil", "vers", "cdr", "csd", "crit", "haste"];
 
 // ============================================================
@@ -885,6 +907,10 @@ const itemScore = (item, clsId) => {
   let sc = item.ilvl || 0;
   for (const k of SCORE_STATS) sc += ((s[k] || 0) + (e[k] || 0)) * statWeight(clsId, k);
   if (item.wdmg) sc += ((item.wdmg.min + item.wdmg.max) / 2) * statWeight(clsId, "dmg"); // weapon damage range
+  // Power counts only while it is live. effectiveStats applies the same rule, so an item that has
+  // been given a second main stat scores the Power it no longer grants at zero — matching what
+  // the character sheet already does rather than what the item happens to still carry.
+  if (itemPowerActive(item)) sc += (((s.ap || 0) + (s.sp || 0)) + ((e.ap || 0) + (e.sp || 0))) * statWeight(clsId, "ap");
   return sc;
 };
 

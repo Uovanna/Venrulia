@@ -4,7 +4,9 @@ import { rng, makeRng, withRng, pick, rngPick, rngInt, makeClock } from './rng.m
 const CLASSES = [
   { id: "warrior", name: "Warrior", icon: "⚔️", color: "#C79C6E", desc: "Mighty melee fighter with high armor", main: "str", stats: { str: 10, agi: 5, int: 2, sta: 8 }, passive: "+15% melee dmg" },
   { id: "mage", name: "Mage", icon: "🔮", color: "#69CCF0", desc: "Arcane caster of devastating spells", main: "int", stats: { str: 2, agi: 4, int: 12, sta: 4 }, passive: "+20% spell dmg" },
-  { id: "rogue", name: "Rogue", icon: "🗡️", color: "#FFF569", desc: "Swift assassin striking from shadows", main: "agi", stats: { str: 5, agi: 12, int: 3, sta: 6 }, passive: "+25% crit chance · Finesse: −16% raw damage", dmgMod: -0.16 },
+  // The passive text read "+25% crit chance" while the code granted 13%, and now grants 3% — a
+  // class description that overstated its own bonus by a factor of two before this change.
+  { id: "rogue", name: "Rogue", icon: "🗡️", color: "#FFF569", desc: "Swift assassin striking from shadows", main: "agi", stats: { str: 5, agi: 12, int: 3, sta: 6 }, passive: "+3% crit chance · Finesse: −16% raw damage", dmgMod: -0.16 },
   { id: "paladin", name: "Paladin", icon: "🛡️", color: "#F58CBA", desc: "Holy warrior who heals and tanks", main: "str", stats: { str: 8, agi: 3, int: 7, sta: 9 }, passive: "+10% healing" },
   { id: "hunter", name: "Hunter", icon: "🏹", color: "#ABD473", desc: "Ranged master with a loyal beast", main: "agi", stats: { str: 4, agi: 10, int: 5, sta: 7 }, passive: "+15% ranged dmg" },
   { id: "warlock", name: "Warlock", icon: "👁️", color: "#9482C9", desc: "Dark caster commanding demons", main: "int", stats: { str: 3, agi: 3, int: 11, sta: 6 }, passive: "+20% DoT dmg" },
@@ -786,11 +788,49 @@ const townBonuses = (char) => ({
 const HEX_MAX_STACKS = 5;
 const hexStackMult = (st) => 1 + (Math.max(1, st) - 1) * 0.40;
 const classDmgMod = (clsId) => { const c = CLASSES.find((x) => x.id === clsId); return (c && c.dmgMod) || 0; };
+// Which stat a class turns into PHYSICAL damage. Every class already declares a `main`, and
+// rogue and hunter have always declared "agi" — the damage term simply never read it, so a rogue
+// scaled off Strength while wearing gear named for Agility. Measured before this change, a rogue
+// gained 12.0% dps from 30 Strength and 4.4% from 30 Agility, and no class on the roster had
+// Agility as its best stat.
+//
+// Casters are deliberately excluded. Their `main` is Intellect and their real damage is magic,
+// which already scales off Intellect; routing their incidental auto-attack through it as well
+// would be a straight buff to mages and warlocks that nothing here is asking for.
+const physScalingStat = (clsId) => {
+  const cls = CLASSES.find((c) => c.id === clsId);
+  return cls && cls.main === "agi" ? "agi" : "str";
+};
+// All three convert at the same rate.
+//
+// Agility was briefly set to 1.0 here, on the reasoning that it also buys attack speed and crit
+// and so should pay for them. That was wrong, and wrong in a way worth recording: the 1.0 came
+// from the MARGINAL value of +30 Agility, but this rate multiplies the WHOLE damage term. Cutting
+// it to 1.0 took 29% off every Agility class's existing damage base — measured, rogue -12.1% and
+// hunter -9.6% total dps — which no marginal comparison could see.
+//
+// At 1.4 the double-dip is real at the margin (a point of Agility is worth 1.39x a warrior's
+// Strength to a rogue, 1.63x to a hunter) but it does not need paying for, because Strength and
+// Intellect are worth NOTHING to those classes while a warrior still gets value from Agility
+// gear. Priced as what a random main-stat roll is worth — which is what a drop actually is, since
+// gear rolls all three with equal probability — the roster reads:
+//
+//                    before        after
+//   warrior           1.00          1.00
+//   rogue             0.91          0.97
+//   hunter            1.07          1.12
+//   casters      1.05-1.07     1.05-1.07
+//   spread           x1.18         x1.16
+//
+// Concentration cancels the double-dip almost exactly, and the roster ends slightly tighter than
+// it started.
+const STAT_DMG_RATE = { str: 1.4, int: 1.4, agi: 1.4 };
 const computeDamage = (char, weaponDmg, magic) => {
   const eff = effectiveStats(char);
-  const statVal = magic ? (eff.int || 0) : (eff.str || 0); // Strength → physical/auto damage, Intellect → magic damage
+  const statKey = magic ? "int" : physScalingStat(char.cls);
+  const statVal = eff[statKey] || 0;
   const power = magic ? (eff.sp || 0) : (eff.ap || 0);      // Spell/Attack Power — flat damage from single-stat gear
-  let dmg = (char.level * 2 + 4 + statVal * 1.4 + weaponDmg + power) * 0.75; // weapon damage comes from its min–max range
+  let dmg = (char.level * 2 + 4 + statVal * STAT_DMG_RATE[statKey] + weaponDmg + power) * 0.75; // weapon damage comes from its min–max range
   dmg *= 1 + secondaryPcts(eff).vers / 100; // Versatility increases damage dealt
   const ab = activeBuffs(char);
   if (ab.dmgpct) dmg *= 1 + ab.dmgpct.amount / 100;
@@ -809,11 +849,19 @@ const agiAtkSpeed = (char) => Math.min(AGI_SPEED_CAP, (effectiveStats(char).agi 
 // it is at 0%. It also shortens the group GCD, so it is worth more online than solo.
 const hasteOf = (char) => secondaryPcts(effectiveStats(char)).haste / 100;
 const CRIT_SOFT_CAP = 0.55;   // total crit chance, gear included, before heavy damping
+const CRIT_BASE = 0.12;       // everyone
+// The rogue's class bonus. It used to be +13%, which put a level-1 rogue at 28% crit against a
+// warrior's 13% — more than twice the roster — and a geared level-60 rogue at 48%, close enough
+// to the 55% soft cap that its own Agility was being damped. At +3% a fresh rogue reads 18% and
+// a geared one 38% against the roster's ~33%: still visibly the crit class, no longer eating its
+// own headroom. Measured cost at the time of the change: -5.8% dps, paid back by Agility
+// becoming its damage stat.
+const CRIT_ROGUE_BONUS = 0.03;
 const critChanceFor = (char) => {
   if (talentFlag(char, "hardCrit80")) return 0.80; // Wild Striker — fixed 80%, ignores gear crit
   const cls = CLASSES.find((c) => c.id === char.cls);
-  let c = 0.12;
-  if (cls.id === "rogue") c += 0.13;
+  let c = CRIT_BASE;
+  if (cls.id === "rogue") c += CRIT_ROGUE_BONUS;
   if (char.race === "troll") c += 0.05;
   const eff = effectiveStats(char);
   c += Math.min(AGI_CRIT_CAP, eff.agi * AGI_RATE);
@@ -1625,10 +1673,24 @@ const migrateGambitKeys = (map, selectedSkills) => {
   return out;
 };
 
+// One-time refund for the classes whose physical damage moved from Strength to Agility. A rogue
+// or hunter who spent attribute points on Strength was buying their damage stat at the time; the
+// scaling change made those points inert, so they come back as unspent rather than dying quietly.
+//
+// Self-terminating rather than version-flagged: once the refund runs, allocated.str is 0, so the
+// condition cannot match again. A player who deliberately re-spends points into Strength keeps
+// them — the refund only ever fires on the first load after the change.
+const refundStrayScalingPoints = (c) => {
+  const allocated = { str: 0, agi: 0, int: 0, sta: 0, ...(c.allocated || {}) };
+  const attrPoints = c.attrPoints || 0;
+  if (physScalingStat(c.cls) !== "agi" || !(allocated.str > 0)) return { attrPoints, allocated };
+  return { attrPoints: attrPoints + allocated.str, allocated: { ...allocated, str: 0 } };
+};
 const normalizeChar = (c) => ({
   ...c,
   gold: c.gold || 0, kills: c.kills || 0, bossKills: c.bossKills || 0, dungeonClears: c.dungeonClears || 0,
-  honor: c.honor || 0, honorXp: c.honorXp || 0, attrPoints: c.attrPoints || 0, allocated: { str: 0, agi: 0, int: 0, sta: 0, ...(c.allocated || {}) },
+  honor: c.honor || 0, honorXp: c.honorXp || 0,
+  ...refundStrayScalingPoints(c),
   professions: { ...emptyProfessions(), ...(c.professions || {}) },
   gatherTier: c.gatherTier || {},
   offlineZoneId: c.offlineZoneId ?? null,
@@ -2145,6 +2207,11 @@ export {
   pickLootSlot,
   ZONE_DROP_MIN,
   zoneDropScale,
+  physScalingStat,
+  STAT_DMG_RATE,
+  refundStrayScalingPoints,
+  CRIT_ROGUE_BONUS,
+  CRIT_BASE,
   hasteOf,
   critHeal,
   secPct,

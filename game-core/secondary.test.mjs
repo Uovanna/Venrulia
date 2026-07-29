@@ -47,18 +47,25 @@ const geared = (stat, rating) => {
   const withCrit = critChanceFor(geared("crit", 40));
   ok(withCrit > base, `crit rating raises crit chance (${(base * 100).toFixed(0)}% -> ${(withCrit * 100).toFixed(0)}%)`);
 
-  // Gear crit is itself capped at 20%, so the 55% ceiling only binds for classes that already
-  // start high — a warrior tops out around 39% and never reaches it. That is the intent: the cap
-  // exists to stop rogues compounding gear crit with an already-large class bonus.
-  // Keep the rogue's real gear: agility feeds crit, so a stripped rogue reads 33% rather than the
-  // ~42% a geared one actually plays at, and the cap would look unreachable when it is not.
+  // Gear crit is itself capped at 20%, so reaching the 55% ceiling takes more than gear. Once the
+  // rogue's class bonus dropped from +13% to +3%, a geared rogue tops out under 48% and the cap
+  // stopped binding on ordinary characters — which is the intent. What still reaches it is a
+  // character STACKING Agility, and agility classes now have a damage reason to do exactly that,
+  // so the cap has become an endgame consideration rather than something a rogue hit by existing.
   const critty = buildBotChar("rogue", "r_ambush", 60, 63);
+  critty.race = "troll";
   const rogueBase = critChanceFor(critty);
-  critty.equipment.trinket = { name: "Bench", slotId: "trinket", ilvl: 63, rarity: "epic", stats: { crit: 100000 } };
+  critty.equipment.trinket = { name: "Bench", slotId: "trinket", ilvl: 63, rarity: "epic", stats: { crit: 100000, agi: 200 } };
   const c = critChanceFor(critty);
-  ok(rogueBase + SEC_CAP.crit / 100 > CRIT_SOFT_CAP, `a rogue (${(rogueBase * 100).toFixed(0)}% base) can reach the cap; a warrior cannot`);
-  ok(c > CRIT_SOFT_CAP, `absurd crit rating still exceeds the soft cap (${(c * 100).toFixed(0)}%) — excess is damped, not discarded`);
-  ok(c < rogueBase + SEC_CAP.crit / 100, "…and lands below the undamped sum, so the damping is real");
+  const undamped = rogueBase + SEC_CAP.crit / 100;
+  ok(c > CRIT_SOFT_CAP, `a troll rogue stacking agility still exceeds the soft cap (${(c * 100).toFixed(0)}%) — excess is damped, not discarded`);
+  ok(c < undamped + 0.35, "…and lands below the undamped sum, so the damping is real");
+
+  // An ordinary geared rogue must now sit clear of the cap, or the class bonus cut did nothing.
+  const plain = buildBotChar("rogue", "r_ambush", 60, 63);
+  plain.equipment.trinket = { name: "Bench", slotId: "trinket", ilvl: 63, rarity: "epic", stats: { crit: 100000 } };
+  ok(critChanceFor(plain) < CRIT_SOFT_CAP,
+     `a human rogue with maxed gear crit reads ${(critChanceFor(plain) * 100).toFixed(0)}%, under the cap rather than pinned against it`);
   ok(critChanceFor(geared("crit", 0)) === base, "zero crit rating changes nothing");
 }
 

@@ -82,8 +82,9 @@ console.log("  solo is where a damage change lands undiluted. This is the side t
 // ---------------------------------------------------------------------------------------------
 // 3. THE ROGUE'S CRIT BONUS
 // ---------------------------------------------------------------------------------------------
-console.log("\n=== 3. WHAT THE ROGUE'S +13% CLASS CRIT IS WORTH ===");
-console.log("Everyone starts at 12%. The rogue alone adds 13% on top, before Agility or gear.\n");
+console.log("\n=== 3. THE ROGUE'S CLASS CRIT ===");
+console.log("Everyone starts at 12%. The rogue bonus was +13% and is now +3%; rows below the measured");
+console.log("range extrapolate, and the +13% row is what it looked like before the change.\n");
 // A real level-1 character, not a geared level-60 with its level field overwritten — that keeps
 // 90-odd Agility and reports a warrior "starting" at 24.6% crit.
 console.log(pad("class", 10) + rp("lvl1 naked", 12) + rp("lvl60 geared", 15) + rp("vs cap", 10));
@@ -128,9 +129,9 @@ for (const cut of [0.13, 0.08, 0.05, 0.03, 0.02]) {
 // computeDamage reads `magic ? int : str`, so "this class scales off Agility" can be emulated by
 // moving a character's Agility into Strength — the damage term then reads the Agility value while
 // Agility keeps paying attack speed and crit, which is exactly the double-dip in question.
-console.log("\n=== 4. HOW BIG IS THE AGILITY DOUBLE-DIP? ===");
-console.log("Strength buys damage. Agility buys attack speed AND crit. If Agility also bought");
-console.log("damage, one point of it would be worth more than one point of Strength.\n");
+console.log("\n=== 4. THE AGILITY DOUBLE-DIP, NOW THAT AGILITY SCALES ===");
+console.log("Rogues and hunters now convert Agility into damage, so for them the middle and right");
+console.log("columns are the same number and Strength reads ~0. The warrior row is the control.\n");
 console.log(pad("class", 10) + rp("+30 str today", 15) + rp("+30 agi today", 15) + rp("+30 agi if it scaled", 22));
 for (const [cls, spec] of [["rogue", "r_ambush"], ["hunter", "h_snipe"], ["warrior", "w_berserk"]]) {
   const g = { str: [], agi: [], both: [] };
@@ -151,7 +152,10 @@ for (const [cls, spec] of [["rogue", "r_ambush"], ["hunter", "h_snipe"], ["warri
   console.log(pad(cls, 10) + rp((mean(g.str) * 100).toFixed(1) + "%", 15) + rp((mean(g.agi) * 100).toFixed(1) + "%", 15)
     + rp((mean(g.both) * 100).toFixed(1) + "%", 22));
 }
-console.log("\n  The third column is what one point of Agility would be worth to a class that");
-console.log("  scaled off it. Compare it to the first column — that gap is the double-dip, and it");
-console.log("  is what would have to be paid for by lowering Agility's crit or speed rate.");
+console.log("\n  The margin favours Agility classes (rogue 1.39x a warrior's Strength, hunter 1.63x),");
+console.log("  but that is not the balance figure. Gear rolls all three main stats equally, so what");
+console.log("  counts is the EXPECTED value of a random roll — and there a rogue lands at 0.97x a");
+console.log("  warrior, because Strength and Intellect are now worth nothing to it. Concentration");
+console.log("  pays for the double-dip on its own; no rate cut was needed, and cutting one cost");
+console.log("  rogues 12.1% of their total damage when it was tried.");
 console.log("");

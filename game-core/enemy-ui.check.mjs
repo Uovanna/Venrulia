@@ -100,7 +100,9 @@ console.log("→ in combat:", /COMBAT LOG|Auto-attack|hits for/.test(await txt()
 const ENEMY_RE = /([A-Z][a-z']+(?: [A-Z][a-z']+)?) Level (\d+) · [^❤]{0,40}❤️ \d+\/(\d+)/g;
 const RANKED = /(CHAMPION|BOSS|LORD)$/i;
 const byName = {};
-for (let k = 0; k < 60; k++) {
+const casts = {}; const autos = {};
+let lastSeen = null;
+for (let k = 0; k < 110; k++) {
   const chunk = await txt();
   for (const m of chunk.matchAll(ENEMY_RE)) {
     // A ranked enemy has its marker immediately before the name; rank multiplies health on its own
@@ -109,8 +111,18 @@ for (let k = 0; k < 60; k++) {
     const before = chunk.slice(Math.max(0, m.index - 14), m.index).trim();
     if (RANKED.test(before) || /(Champion|Lord|Boss)/i.test(name)) continue;
     (byName[name] = byName[name] || []).push({ hp: Number(m[3]), lvl: Number(m[2]) });
+    lastSeen = name;
   }
-  await p.waitForTimeout(900);
+  // Cadence check: count how much of the log is the enemy CASTING versus swinging. A mage-type
+  // should be visibly spell-heavy and a rogue-type almost pure autos. Attribute to whichever
+  // creature is on screen, and count only newly appended lines.
+  if (lastSeen) {
+    const hitN = (chunk.match(/ hits for /g) || []).length;
+    const castN = (chunk.match(/ casts /g) || []).length;
+    autos[lastSeen] = Math.max(autos[lastSeen] || 0, hitN);
+    casts[lastSeen] = Math.max(casts[lastSeen] || 0, castN);
+  }
+  await p.waitForTimeout(700);
 }
 
 // Compare against what the health WOULD have been without archetypes: (level * 26 + 50) at normal
@@ -140,9 +152,18 @@ const ok = [];
 ok.push(["real creatures were observed", rows.length >= 1]);
 ok.push(["they are level-appropriate, not starter-zone trash", rows.every((r) => r.lvl >= 30)]);
 // If makeEnemy ignored the archetype, every ratio would sit at 1.00 with only jitter around it.
-ok.push([`health is multiplied by the archetype, not left at the flat baseline (${rows.map((r) => "x" + r.ratio.toFixed(2)).join(", ")})`,
-         rows.some((r) => r.ratio < 0.95)]);
+// Whether a sub-1.00 archetype turns up is spawn luck — a zone has only a handful of creature
+// names and they can all hash to the same archetype. Require enough variety before asserting it,
+// rather than failing on an unlucky sample.
+ok.push(["enough creature variety to tell archetypes apart", rows.length >= 2]);
+if (rows.length >= 2) {
+  ok.push([`health is multiplied by the archetype, not left at the flat baseline (${rows.map((r) => "x" + r.ratio.toFixed(2)).join(", ")})`,
+           rows.some((r) => r.ratio < 0.95)]);
+}
 ok.push(["every creature's health matches a multiplier that is actually in the table", rows.every((r) => near(r.ratio))]);
+const totalCasts = Object.values(casts).reduce((a, b) => a + b, 0);
+console.log(`\n  enemy casts observed in the log: ${totalCasts}`);
+ok.push(["enemies cast skills at all, so cadence is live", totalCasts > 0]);
 ok.push(["no page errors", errs.length === 0]);
 
 console.log("");

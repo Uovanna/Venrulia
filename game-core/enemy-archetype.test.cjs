@@ -33,7 +33,12 @@ js += `
     const dmg = enemyBaseDamage(e);
     const mit = enemyMitigation(e, LVL);
     const hp = Math.floor((LVL * 26 + 50) * a.hp);
-    return { a, dmg, dps: dmg * (1 + a.crit * CRIT_BONUS) / a.atk, mit, hp, ehp: hp / (1 - mit) };
+    // TOTAL damage per second: autos AND casts. An earlier version of this test measured only the
+    // auto component, which is exactly why it passed while the shipped archetypes actually had a
+    // x1.33 dps spread — the multiplier scaled cast damage too but only compensated for swing speed.
+    const autoDps = dmg * AUTO_SHARE * (1 + a.crit * CRIT_BONUS) / a.atk;
+    const castDps = dmg * CAST_SHARE / a.cast;
+    return { a, dmg, autoDps, castDps, dps: autoDps + castDps, mit, hp, ehp: hp / (1 - mit) };
   };
 
   // --- the table covers everything, and unknown input is safe ----------------------------------
@@ -51,14 +56,23 @@ js += `
   {
     const dps = IDS.map((c) => profile(c).dps);
     const spread = Math.max(...dps) / Math.min(...dps);
-    ok(spread < 1.02, "every disposition deals the same damage per second (spread x" + spread.toFixed(3) + ")");
+    ok(spread < 1.02, "every disposition deals the same TOTAL damage per second (spread x" + spread.toFixed(3) + ")");
+    ok(Math.abs(AUTO_SHARE + CAST_SHARE - 1) < 1e-9, "the auto and cast shares account for all of an enemy's output");
+    // Assert the derivation itself rather than a proxy. Damage per hit is NOT monotonic in swing
+    // speed any more — a mage-type swings slowest of all yet hits softest, because it also casts
+    // most often and that share has to come out of the same budget. An earlier version of this
+    // check assumed monotonicity and failed on four archetypes for that reason alone.
     for (const cls of IDS) {
-      const p = profile(cls);
-      // A slower swing must hit harder and a faster one must hit softer, or the rhythm is fake.
-      const rel = p.dmg / profile("mage").dmg, atkRel = p.a.atk / ENEMY_ARCHETYPE.mage.atk;
-      ok((rel - 1) * (atkRel - 1) >= -1e-9,
-         cls + " swings x" + p.a.atk.toFixed(2) + " and hits for " + p.dmg.toFixed(0) + " — speed and weight move together");
+      const a = ENEMY_ARCHETYPE[cls];
+      const solved = archetypeDmgMult(a) * (AUTO_SHARE * (1 + a.crit * CRIT_BONUS) / a.atk + CAST_SHARE / a.cast);
+      ok(Math.abs(solved - 1) < 1e-9,
+         cls + ": swing x" + a.atk.toFixed(2) + ", cast x" + a.cast.toFixed(2) + ", crit "
+         + (a.crit * 100).toFixed(0) + "% solve back to parity");
     }
+    // Holding cast cadence and crit equal, a slower swing must still hit harder — otherwise the
+    // rhythm is cosmetic.
+    const same = (atk) => archetypeDmgMult({ atk, crit: 0, cast: 1 });
+    ok(same(1.3) > same(1.0) && same(1.0) > same(0.7), "at equal cadence, a slower swing hits harder");
   }
 
   // --- the archetypes are actually distinguishable ------------------------------------------------
@@ -69,6 +83,37 @@ js += `
     ok(profile("paladin").ehp > profile("rogue").ehp * 1.4, "a paladin-type is a wall next to a rogue-type");
     ok(profile("rogue").a.atk < 0.85 && profile("mage").a.atk > 1.15, "a rogue-type flurries where a mage-type winds up");
     ok(profile("rogue").a.crit > 0 && profile("mage").a.crit === 0, "only the archetypes meant to spike can crit");
+
+    // Cadence: the same total output, split completely differently between autos and casts.
+    const rogue = profile("rogue"), mage = profile("mage");
+    ok(rogue.autoDps / rogue.dps > 0.75, "a rogue-type is " + (rogue.autoDps / rogue.dps * 100).toFixed(0) + "% auto-attacks — it barely casts");
+    ok(mage.castDps / mage.dps > 0.5, "a mage-type is " + (mage.castDps / mage.dps * 100).toFixed(0) + "% casts — it leans on its spells");
+    ok(mage.a.cast < rogue.a.cast * 0.5, "…and a mage-type casts far more often than a rogue-type");
+    for (const cls of IDS) ok(ENEMY_ARCHETYPE[cls].cast > 0, cls + " has a cast cadence");
+  }
+
+  // --- the paladin filter bug ---------------------------------------------------------------------
+  // paladin declares main "str", so deriving its damage type from the stat block filtered its 21
+  // castable skills down to the 2 physical ones. It never used 19 of its own abilities, while being
+  // the most armoured and longest-lived thing in the zone.
+  {
+    const usableFor = (cls) => {
+      const castable = (core.SKILLS[cls] || []).filter((s) => s.unlockLevel <= 60 && ((s.mult && s.mult > 0) || s.dotMult || s.slowPct));
+      const magicCount = castable.filter(core.isMagicSkill).length;
+      const prefersMagic = magicCount * 2 > castable.length;
+      const typed = castable.filter((s) => core.isMagicSkill(s) === prefersMagic);
+      const lopsided = typed.length * 4 >= castable.length * 3;
+      return { all: castable.length, usable: ((lopsided && typed.length) ? typed : castable).length, prefersMagic };
+    };
+    const pal = usableFor("paladin");
+    ok(pal.prefersMagic, "a paladin-type is read as a caster, which is what 19 of its 21 skills are");
+    ok(pal.usable >= pal.all * 0.7, "it can now draw on " + pal.usable + " of its " + pal.all + " skills (it had 2)");
+    for (const cls of IDS) {
+      const u = usableFor(cls);
+      ok(u.usable >= 8, cls + " draws from a real pool (" + u.usable + " of " + u.all + ")");
+    }
+    ok(!usableFor("warrior").prefersMagic && usableFor("mage").prefersMagic,
+       "…and the rule still reads a warrior as physical and a mage as magical");
   }
 
   // --- armor is real, and only where it should be -------------------------------------------------

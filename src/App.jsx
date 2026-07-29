@@ -1410,21 +1410,34 @@ const rankOf = (e) => ENEMY_RANKS[rankNameOf(e)];
 // Health and armor are deliberately NOT held flat: that is where the archetypes are allowed to
 // differ, so a rogue-type dies fast and a paladin-type grinds. `armor` is a multiple of the level
 // curve where 1.0 is 20% mitigation.
+// `cast` scales the gap between skill casts, which is the other half of an archetype's rhythm: a
+// mage-type casts almost twice as often as the baseline while a rogue-type barely casts at all.
 const ENEMY_ARCHETYPE = {
-  warrior: { atk: 1.15, hp: 0.88, armor: 1.2, crit: 0.00 },  // slow, heavy, armoured
-  paladin: { atk: 1.10, hp: 1.00, armor: 1.5, crit: 0.00 },  // the wall — hardest to chew through
-  rogue:   { atk: 0.70, hp: 0.85, armor: 0.0, crit: 0.25 },  // a flurry of small spiky hits
-  hunter:  { atk: 0.90, hp: 0.90, armor: 0.5, crit: 0.15 },  // steady pressure
-  mage:    { atk: 1.30, hp: 0.80, armor: 0.0, crit: 0.00 },  // slow and squishy, leans on its cast
-  warlock: { atk: 1.20, hp: 0.90, armor: 0.0, crit: 0.00 },  // attrition rather than burst
+  warrior: { atk: 1.15, hp: 0.88, armor: 1.2, crit: 0.00, cast: 1.50 },  // slow, heavy, armoured; rarely casts
+  paladin: { atk: 1.10, hp: 1.00, armor: 1.5, crit: 0.00, cast: 0.85 },  // the wall — grinds and keeps casting
+  rogue:   { atk: 0.70, hp: 0.85, armor: 0.0, crit: 0.25, cast: 1.70 },  // a flurry of small spiky hits, almost pure autos
+  hunter:  { atk: 0.90, hp: 0.90, armor: 0.5, crit: 0.15, cast: 1.10 },  // steady pressure
+  mage:    { atk: 1.30, hp: 0.80, armor: 0.0, crit: 0.00, cast: 0.60 },  // slow swings, constant casting
+  warlock: { atk: 1.20, hp: 0.90, armor: 0.0, crit: 0.00, cast: 0.70 },  // attrition rather than burst
 };
-const NEUTRAL_ARCHETYPE = { atk: 1, hp: 1, armor: 0, crit: 0 };
+const NEUTRAL_ARCHETYPE = { atk: 1, hp: 1, armor: 0, crit: 0, cast: 1 };
 const archetypeOf = (e) => (e && ENEMY_ARCHETYPE[e.cls]) || NEUTRAL_ARCHETYPE;
-// Damage per hit is derived, never authored: whatever the swing interval and crit rate are, the
-// damage per second comes out at parity. Authoring both independently is how a "feel" change
-// quietly becomes a difficulty change.
-const CRIT_BONUS = 0.8;   // a crit deals 1.8x, so it adds 0.8 of a hit
-const archetypeDmgMult = (a) => a.atk / (1 + a.crit * CRIT_BONUS);
+// Damage per hit is derived, never authored: whatever the swing interval, crit rate and cast
+// cadence are, total damage per second comes out at parity. Authoring them independently is how a
+// "feel" change quietly becomes a difficulty change.
+//
+// Both halves of an enemy's output have to be in this, and the first version of it was wrong for
+// exactly that reason: it compensated only for swing speed while the multiplier it produced ALSO
+// scaled cast damage, handing slow archetypes free throughput. Measured, casts are 39% of an
+// enemy's damage at level 60 (autos 0.718 x base per second against casts 0.455), so ignoring them
+// left a x1.33 spread in real damage behind a table that claimed parity.
+const CRIT_BONUS = 0.8;    // a crit deals 1.8x, so it adds 0.8 of a hit
+const AUTO_SHARE = 0.61;   // measured: see game-core/enemy-identity-sim.cjs
+const CAST_SHARE = 0.39;
+// Auto damage scales with how fast you swing and how often you crit; cast damage scales with how
+// often you cast. Solve for the multiplier that puts the sum back at 1.
+const archetypeDmgMult = (a) =>
+  1 / (AUTO_SHARE * (1 + a.crit * CRIT_BONUS) / a.atk + CAST_SHARE / (a.cast || 1));
 // Armor that yields ARMOR_UNIT_MIT mitigation at factor 1.0, derived from the same mitigation
 // curve players use so it stays correct at every level rather than only at 60.
 const ARMOR_UNIT_MIT = 0.20;
@@ -2693,12 +2706,20 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     const arch = ENEMY_ARCHETYPE[cls] || NEUTRAL_ARCHETYPE;
     const baseHp = Math.floor((level * 26 + 50) * R.hp * T.hp * hpMult * arch.hp + Math.random() * 20); // rank + difficulty + archetype drive health
     const stats = enemyStatBlock(level, cls, { rank, tier });
-    // Priority 2: skill use follows the highest offensive stat — Int → magic, Str/Agi → physical
     const primaryOff = stats.int >= stats.str && stats.int >= stats.agi ? "int" : (stats.str >= stats.agi ? "str" : "agi");
-    const prefersMagic = primaryOff === "int";
     const castable = (SKILLS[cls] || []).filter((s) => s.unlockLevel <= level && ((s.mult && s.mult > 0) || s.dotMult || s.slowPct));
+    // Which damage type this creature favours is decided by its own KIT, not by the class's
+    // declared main stat. Deriving it from the stat block broke hybrids: paladin declares "str", so
+    // it read as physical and its 21 castable skills were filtered down to the 2 physical ones — a
+    // paladin-type never used 19 of its own abilities, while also being the most armoured and
+    // longest-lived thing in the zone. The same declaration is wrong in the gear system too, where
+    // a paladin's damage measurably comes from Intellect.
+    const magicCount = castable.filter(isMagicSkill).length;
+    const prefersMagic = magicCount * 2 > castable.length;   // majority of its own kit
     const typed = castable.filter((s) => isMagicSkill(s) === prefersMagic);
-    const usable = typed.length ? typed : castable;
+    // A kit that is close to evenly split keeps both halves rather than throwing one away.
+    const lopsided = typed.length * 4 >= castable.length * 3;
+    const usable = (lopsided && typed.length) ? typed : castable;
     const ccPool = usable.filter((s) => s.slowPct);
     const skillCount = R.skills; // Champion 2, Boss 3, Lord 4 (+CC) — from the rank table
     const chosen = [];
@@ -3259,7 +3280,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           const playerDied = enemyCast(c, w, now);
           if (playerDied) { applyDefeat(); return; }
         }
-        w.enemy.nextCastAt = now + (w.enemy.castCd || ENEMY_CAST_CD); dirty = true;
+        w.enemy.nextCastAt = now + (w.enemy.castCd || ENEMY_CAST_CD) * archetypeOf(w.enemy).cast; dirty = true;
       }
 
       // enemy attacks (respect stun/slow + dodge + reduce buff)

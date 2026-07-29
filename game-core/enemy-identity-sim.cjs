@@ -56,11 +56,12 @@ js += `
   console.log(pad("disposition", 13) + rp("castable", 10) + rp("magic", 8) + rp("phys", 7) + rp("with CC", 9) + "   pool it draws from");
   for (const cls of IDS) {
     const st = enemyStatBlock(60, cls, { rank: "normal", tier: "normal" });
-    const primaryOff = st.int >= st.str && st.int >= st.agi ? "int" : (st.str >= st.agi ? "str" : "agi");
-    const prefersMagic = primaryOff === "int";
     const castable = (SKILLS[cls] || []).filter((s) => s.unlockLevel <= 60 && ((s.mult && s.mult > 0) || s.dotMult || s.slowPct));
+    const magicCount = castable.filter(isMagicSkill).length;
+    const prefersMagic = magicCount * 2 > castable.length;
     const typed = castable.filter((s) => isMagicSkill(s) === prefersMagic);
-    const usable = typed.length ? typed : castable;
+    const lopsided = typed.length * 4 >= castable.length * 3;
+    const usable = (lopsided && typed.length) ? typed : castable;
     console.log(pad(cls, 13) + rp(castable.length, 10)
       + rp(castable.filter(isMagicSkill).length, 8)
       + rp(castable.filter((s) => !isMagicSkill(s)).length, 7)
@@ -93,29 +94,34 @@ js += `
   // Solo enemy health is level-based and does NOT self-calibrate the way group boss health does, so
   // any archetype change lands straight on the difficulty curve unless the budget is held.
   console.log("\\n=== 5. THREAT BUDGET — what the archetypes cost the difficulty curve ===");
-  console.log("dps is held at parity by deriving damage-per-hit from swing speed and crit.");
+  console.log("Total dps (autos AND casts) is held at parity by deriving damage-per-hit from swing");
+  console.log("speed, crit and cast cadence together.");
   console.log("Health and armor are where the archetypes are allowed to differ.\\n");
   const LVL = 60;
-  console.log(pad("disposition", 13) + rp("swing", 8) + rp("dmg/hit", 10) + rp("crit", 7)
-    + rp("dps", 8) + rp("hp", 8) + rp("mit", 7) + rp("ehp", 8) + rp("threat", 9));
+  console.log(pad("disposition", 13) + rp("swing", 8) + rp("cast", 7) + rp("dmg/hit", 10) + rp("crit", 7)
+    + rp("auto", 8) + rp("+cast", 8) + rp("= dps", 8) + rp("hp", 8) + rp("mit", 6) + rp("ehp", 7));
   const budget = [];
   for (const cls of IDS) {
     const a = ENEMY_ARCHETYPE[cls];
     const st = enemyStatBlock(LVL, cls, { rank: "normal", tier: "normal" });
     const e = { ...st, level: LVL, cls };
     const dmg = enemyBaseDamage(e);
-    const dps = dmg * (1 + a.crit * CRIT_BONUS) / a.atk;
+    // TOTAL damage per second — autos AND casts. Measuring only autos is what hid a x1.33 real
+    // spread behind a table that claimed parity.
+    const autoDps = dmg * AUTO_SHARE * (1 + a.crit * CRIT_BONUS) / a.atk;
+    const castDps = dmg * CAST_SHARE / a.cast;
+    const dps = autoDps + castDps;
     const hp = Math.floor((LVL * 26 + 50) * a.hp);
     const mit = enemyMitigation(e, LVL);
     const eh = hp / (1 - mit);
     budget.push({ cls, dps, eh, threat: dps * eh });
-    console.log(pad(cls, 13) + rp("x" + a.atk.toFixed(2), 8) + rp(dmg.toFixed(1), 10)
-      + rp((a.crit * 100).toFixed(0) + "%", 7) + rp(dps.toFixed(1), 8) + rp(hp, 8)
-      + rp((mit * 100).toFixed(0) + "%", 7) + rp(Math.round(eh), 8)
-      + rp((dps * eh / 1000).toFixed(0) + "k", 9));
+    console.log(pad(cls, 13) + rp("x" + a.atk.toFixed(2), 8) + rp("x" + a.cast.toFixed(2), 7)
+      + rp(dmg.toFixed(1), 10) + rp((a.crit * 100).toFixed(0) + "%", 7)
+      + rp(autoDps.toFixed(1), 8) + rp(castDps.toFixed(1), 8) + rp(dps.toFixed(1), 8)
+      + rp(hp, 8) + rp((mit * 100).toFixed(0) + "%", 6) + rp(Math.round(eh), 7));
   }
   const dpsV = budget.map((b) => b.dps), ehV = budget.map((b) => b.eh);
-  const base = { dps: 126.0, eh: 1610 };   // what every disposition was before archetypes
+  const base = { dps: 126.0, eh: 1610 };  // what every disposition was before archetypes   // what every disposition was before archetypes
   console.log("\\n  dps spread across dispositions:  x" + (Math.max(...dpsV) / Math.min(...dpsV)).toFixed(2)
     + "   (was x1.00 — held at parity on purpose)");
   console.log("  ehp spread across dispositions:  x" + (Math.max(...ehV) / Math.min(...ehV)).toFixed(2)

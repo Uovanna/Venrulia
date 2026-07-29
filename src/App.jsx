@@ -266,26 +266,43 @@ const mainStatWeightFor = (clsId, stat) => {
 };
 const statWeight = (clsId, stat) => {
   if (stat === "str" || stat === "agi" || stat === "int") return mainStatWeightFor(clsId, stat);
-  if (stat === "sta") return 0.75;   // Stamina
-  // Attack/Spell Power. Damage converts a main stat at x1.4 and Power at x1.0, so a point of
-  // Power is worth 1/1.4 of a main stat — measured across six classes at 0.716 against the 0.714
-  // that arithmetic predicts. This was missing entirely, and since Power only ever appears on
-  // single-main-stat gear, its absence made every focused piece read 10.3% worse than a dual
-  // piece it actually matches or beats in combat.
-  if (stat === "ap" || stat === "sp") return 0.7;
-  if (stat === "dmg") return 0.65;   // weapon damage
-  if (stat === "armor") return 0.55; // armor
+  // Secondaries are priced by measurement, not by hand. game-core/statweight-calibration.mjs
+  // measures each one through the real combat code across six classes and twelve seeded gear
+  // rolls, in units of one point of the class's OWN scaling stat, and
+  // game-core/itemscore.test.cjs re-measures the damage ones and fails if the table drifts.
+  //
+  // The hand-set values these replaced were internally inconsistent by up to 2.6x: crit damage
+  // measured 1.03 and was priced at 0.4, versatility measured 0.68 and was priced at 0.35. Main
+  // stats were correct, so secondaries were collectively undervalued against them and the upgrade
+  // label systematically preferred main-stat pieces over better secondary ones.
+  //
+  // Stamina stays the anchor for DEFENCE at 0.75 against a measured 1.40 points of effective
+  // health, an exchange rate of 0.536. That rate is the game's existing view on how much
+  // survivability is worth against damage, and it is preserved rather than re-decided here.
+  if (stat === "sta") return 0.75;
+  // Attack/Spell Power, and weapon damage, all enter computeDamage as flat additions where a main
+  // stat enters at x1.4 — so a point of any of them is worth 1/1.4 of a main stat. Measured across
+  // six classes at 0.716 against the 0.714 arithmetic predicts. Power was missing entirely before,
+  // and since it only ever appears on single-main-stat gear its absence made every focused piece
+  // read 10.3% worse than a dual piece it actually matches or beats in combat.
+  if (stat === "ap" || stat === "sp" || stat === "dmg") return 0.7;
+  if (stat === "csd") return 1.05;    // measured 1.03 — the largest error in the old table
+  if (stat === "vers") return 0.7;    // measured 0.68
+  if (stat === "crit") return 0.55;   // measured 0.53
+  if (stat === "cdr") return 0.45;    // measured 0.43
+  if (stat === "armor") return 0.45;  // measured 0.47 as effective health
+  if (stat === "haste") return 0.2;   // measured 0.19
+  // Leech and resilience are the two this harness cannot measure honestly, so both keep their
+  // existing hand-set values rather than being moved on a model.
+  //
+  // Leech returns a share of damage dealt as healing, so its worth is proportional to how long the
+  // fight lasts: 0.21 over a 2s trash kill, 1.04 over 10s, 6.27 against a group boss. 0.45 sits at
+  // roughly a 4s fight, which matches a game where trash dies in about 1.5 seconds. Moving it is a
+  // decision about which content the upgrade label should optimise for, not a correction.
   if (stat === "leech") return 0.45;
-  if (stat === "csd") return 0.4;
-  // Crit chance and haste became gear secondaries but never got a weight, so they scored zero.
-  // Placed by measurement against the stats already on this table: per point, crit sits between
-  // cooldown reduction and versatility (both 0.35), and haste at roughly half of cooldown
-  // reduction. Haste is rounded up slightly because it also shortens the group GCD, which the
-  // solo throughput figure these were measured with cannot see.
-  if (stat === "crit") return 0.35;
-  if (stat === "haste") return 0.15;
-  if (stat === "cdr") return 0.35;
-  if (stat === "vers") return 0.35;
+  // Resilience cuts damage-over-time and gives a chance to resist stuns and slows. Neither shows
+  // up in throughput or effective health, so it measures 0.00 here — which is a limit of the
+  // harness, not the stat. Left at judgement; scoring it at zero would be actively wrong.
   if (stat === "resil") return 0.25;
   return 0;
 };

@@ -93,6 +93,50 @@ js += `
     }
   }
 
+  // --- the secondary weights match what the combat code does -----------------------------------
+  // These were hand-set and had drifted by up to 2.6x (crit damage measured 1.03 and was priced at
+  // 0.4). They are now measured, so this re-measures them and fails if the table drifts again.
+  {
+    const { buildBotChar, offlinePlayerDps } = core;
+    const rngm = require("${path.join(__dirname, 'rng.mjs').replace(/\\/g, '/')}");
+    // The same twelve seeds the calibration uses. Stats sitting near their soft cap have a
+    // marginal value that depends on how much of them the gear already rolled — versatility reads
+    // 0.55 on six seeds and 0.68 on twelve, a uniform shift across every class rather than noise —
+    // so the sample has to match or the test and the tool disagree by construction.
+    const SEEDS = [11, 22, 33, 44, 55, 66, 77, 88, 99, 101, 202, 303];
+    const mean = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
+    // The same six classes the calibration script uses. A smaller sample reads differently
+    // (versatility measures 0.54 on three classes against 0.68 on six), and a test that disagrees
+    // with the tool the numbers came from is worse than no test.
+    const SCALES_OFF = { warrior: "str", rogue: "agi", hunter: "agi", paladin: "int", mage: "int", warlock: "int" };
+    const SPECS = { warrior: "w_berserk", rogue: "r_ambush", hunter: "h_snipe",
+                    paladin: "p_just", mage: "m_fire", warlock: "l_scorch" };
+    const armed = (cls, sd) => rngm.withRng(rngm.makeRng(sd), () => {
+      const c = buildBotChar(cls, SPECS[cls], 60, 63); c.spec = SPECS[cls];
+      c.autoSkillsOwned = {}; c.autoSkills = {};
+      for (const n of (c.selectedSkills || [])) { c.autoSkillsOwned[n] = true; c.autoSkills[n] = true; }
+      c.equipment.chest = { ...c.equipment.chest, stats: { ...c.equipment.chest.stats, ap: 0, sp: 0 } };
+      return c;
+    });
+    const gain = (cls, stat, amt) => mean(SEEDS.map((sd) => {
+      const b = armed(cls, sd), d0 = offlinePlayerDps(b);
+      const k = JSON.parse(JSON.stringify(b));
+      k.equipment.chest.stats[stat] = (k.equipment.chest.stats[stat] || 0) + amt;
+      return offlinePlayerDps(k) / d0 - 1;
+    }));
+    // In units of one point of the class's OWN scaling stat, averaged over classes. Using one
+    // class's Strength as the unit would be wrong: it is worth 0.00% to a rogue.
+    for (const stat of ["csd", "vers", "crit", "cdr", "haste"]) {
+      const measured = mean(Object.keys(SPECS).map((cls) => gain(cls, stat, 30) / gain(cls, SCALES_OFF[cls], 30)));
+      const w = statWeight("warrior", stat);
+      ok(Math.abs(w - measured) < 0.15,
+         stat + " is priced " + w + " against a measured " + measured.toFixed(2) + " per point");
+    }
+    // Weapon damage and Power enter computeDamage identically, so they must be priced identically.
+    ok(statWeight("warrior", "dmg") === statWeight("warrior", "ap"),
+       "weapon damage and Attack Power are priced the same — they are the same flat addition");
+  }
+
   console.log(fail ? "\\n\\u274c " + fail + " itemScore check(s) failed"
                    : "\\n\\u2705 itemScore: every rollable stat counts, Power counts only while live, focused matches dual");
   process.exit(fail ? 1 : 0);

@@ -6,7 +6,14 @@ const CLASSES = [
   { id: "mage", name: "Mage", icon: "🔮", color: "#69CCF0", desc: "Arcane caster of devastating spells", main: "int", stats: { str: 2, agi: 4, int: 12, sta: 4 }, passive: "+20% spell dmg" },
   // The passive text read "+25% crit chance" while the code granted 13%, and now grants 3% — a
   // class description that overstated its own bonus by a factor of two before this change.
-  { id: "rogue", name: "Rogue", icon: "🗡️", color: "#FFF569", desc: "Swift assassin striking from shadows", main: "agi", stats: { str: 5, agi: 12, int: 3, sta: 6 }, passive: "+3% crit chance · Finesse: −16% raw damage", dmgMod: -0.16 },
+  //
+  // Finesse (dmgMod -0.16) stays. It was originally payment for the large class crit bonus, and
+  // once that dropped to +3% it looked like an unpaid penalty — but what it now pays for is
+  // Agility scaling: a point of Agility is worth 1.39x a warrior's Strength to a rogue, the
+  // steepest per-point scaling on the roster. Measured at level 60 / ilvl 63 the rogue sits at
+  // 1047 dps against a warrior's 1213 and a mage's 931, so it is mid-pack, not starved. Removing
+  // Finesse would put it at 1247 — top of the roster — and widen the spread from x1.30 to x1.34.
+  { id: "rogue", name: "Rogue", icon: "🗡️", color: "#FFF569", desc: "Swift assassin striking from shadows", main: "agi", stats: { str: 5, agi: 12, int: 3, sta: 6 }, passive: "+3% crit · Finesse: −16% raw damage, +39% Agility scaling", dmgMod: -0.16 },
   { id: "paladin", name: "Paladin", icon: "🛡️", color: "#F58CBA", desc: "Holy warrior who heals and tanks", main: "str", stats: { str: 8, agi: 3, int: 7, sta: 9 }, passive: "+10% healing" },
   { id: "hunter", name: "Hunter", icon: "🏹", color: "#ABD473", desc: "Ranged master with a loyal beast", main: "agi", stats: { str: 4, agi: 10, int: 5, sta: 7 }, passive: "+15% ranged dmg" },
   { id: "warlock", name: "Warlock", icon: "👁️", color: "#9482C9", desc: "Dark caster commanding demons", main: "int", stats: { str: 3, agi: 3, int: 11, sta: 6 }, passive: "+20% DoT dmg" },

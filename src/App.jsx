@@ -1396,6 +1396,44 @@ const ENEMY_RANKS = {
 const rankNameOf = (e) => e.isBoss ? "boss" : e.isLord ? "lord" : e.isChampion ? "champion" : "normal";
 const rankOf = (e) => ENEMY_RANKS[rankNameOf(e)];
 
+// ---------- ENEMY ARCHETYPES: making a disposition mean something ----------
+// Every creature already had a disposition, and it decided almost nothing: measured at level 60,
+// all six produced identical damage (126.0), identical health (1610) and no armor at all, because
+// enemyBaseDamage takes max(str, agi, int) and erases which stat the disposition chose. The only
+// real difference was which single skill a trash mob occasionally cast.
+//
+// These multipliers give each one a shape. `atk` scales the swing interval, so a rogue-type swings
+// fast and light where a warrior-type swings slow and heavy; `dmg` is then derived to hold damage
+// per second at parity, since solo enemy health is level-based and does NOT self-calibrate the way
+// group boss health does — an unbudgeted change here lands straight on the difficulty curve.
+//
+// Health and armor are deliberately NOT held flat: that is where the archetypes are allowed to
+// differ, so a rogue-type dies fast and a paladin-type grinds. `armor` is a multiple of the level
+// curve where 1.0 is 20% mitigation.
+const ENEMY_ARCHETYPE = {
+  warrior: { atk: 1.15, hp: 0.88, armor: 1.2, crit: 0.00 },  // slow, heavy, armoured
+  paladin: { atk: 1.10, hp: 1.00, armor: 1.5, crit: 0.00 },  // the wall — hardest to chew through
+  rogue:   { atk: 0.70, hp: 0.85, armor: 0.0, crit: 0.25 },  // a flurry of small spiky hits
+  hunter:  { atk: 0.90, hp: 0.90, armor: 0.5, crit: 0.15 },  // steady pressure
+  mage:    { atk: 1.30, hp: 0.80, armor: 0.0, crit: 0.00 },  // slow and squishy, leans on its cast
+  warlock: { atk: 1.20, hp: 0.90, armor: 0.0, crit: 0.00 },  // attrition rather than burst
+};
+const NEUTRAL_ARCHETYPE = { atk: 1, hp: 1, armor: 0, crit: 0 };
+const archetypeOf = (e) => (e && ENEMY_ARCHETYPE[e.cls]) || NEUTRAL_ARCHETYPE;
+// Damage per hit is derived, never authored: whatever the swing interval and crit rate are, the
+// damage per second comes out at parity. Authoring both independently is how a "feel" change
+// quietly becomes a difficulty change.
+const CRIT_BONUS = 0.8;   // a crit deals 1.8x, so it adds 0.8 of a hit
+const archetypeDmgMult = (a) => a.atk / (1 + a.crit * CRIT_BONUS);
+// Armor that yields ARMOR_UNIT_MIT mitigation at factor 1.0, derived from the same mitigation
+// curve players use so it stays correct at every level rather than only at 60.
+const ARMOR_UNIT_MIT = 0.20;
+// How much of an incoming blow an enemy's archetype turns. Uses the same mitigation curve players
+// do, so an armoured enemy behaves the way an armoured player does.
+const enemyMitigation = (enemy, attackerLevel) => mitigation((enemy && enemy.armor) || 0, attackerLevel || 1);
+const enemyArmorFor = (level, factor) =>
+  factor > 0 ? Math.round((ARMOR_UNIT_MIT / (1 - ARMOR_UNIT_MIT)) * (45 + (level || 1) * 15) / 5 * factor) : 0;
+
 // Difficulty = the content tier a foe is fought in. `lvlBonus` raises its effective stat level, so
 // power grows along the same curve as levelling rather than as a flat multiplier bolted on top.
 const DIFFICULTY_TIERS = {
@@ -1415,13 +1453,16 @@ const enemyStatBlock = (level, cls, { rank = "normal", tier = "normal" } = {}) =
     agi: Math.round(B * ENEMY_OFF_SPREAD),
     int: Math.round(B * ENEMY_OFF_SPREAD),
     sta: Math.round(B * R.hp * T.hp),
+    // Armor comes from the archetype, so a warrior-type actually turns blows and a mage-type does
+    // not. Enemies had no armor field at all before this.
+    armor: enemyArmorFor(level + T.lvlBonus, (ENEMY_ARCHETYPE[cls] || NEUTRAL_ARCHETYPE).armor),
   };
   st[c.main] = Math.round(B * R.off * T.off); // the class main stat (str/agi/int) carries the primary value
   return st;
 };
 const enemyDamageStat = (enemy) => Math.max(enemy.str || 0, enemy.int || 0, enemy.agi || 0);
 // full pre-mitigation base damage for an enemy (used by both auto-attacks and skill casts)
-const enemyBaseDamage = (enemy) => (enemy.str != null ? enemyDamageStat(enemy) * DMG_PER_STAT : enemyDamageForLevel(enemy.level) * rankOf(enemy).off) * instanceDmgMult(enemy);
+const enemyBaseDamage = (enemy) => (enemy.str != null ? enemyDamageStat(enemy) * DMG_PER_STAT : enemyDamageForLevel(enemy.level) * rankOf(enemy).off) * instanceDmgMult(enemy) * archetypeDmgMult(archetypeOf(enemy));
 
 // ---------- SAVE ----------
 // All save data lives in localStorage under a stable key so it persists across app
@@ -2643,10 +2684,14 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     const { isBoss = false, dungeon = null, name = null, hpMult = 1, champion = false, mimic = false, lord = false, tier = "normal" } = opts;
     const rank = isBoss ? "boss" : lord ? "lord" : (champion || mimic) ? "champion" : "normal";
     const R = ENEMY_RANKS[rank], T = diffTier(tier);
-    const baseHp = Math.floor((level * 26 + 50) * R.hp * T.hp * hpMult + Math.random() * 20); // rank + difficulty tables drive health
     const inst = dungeon ? instanceById(dungeon) : null;
     const nm = mimic ? "Mimic Chest" : (name || (inst?.enemies ? pick(inst.enemies) : pick(getZoneForLevel(level).enemies)));
     const cls = dispositionFor(nm); // fixed disposition per creature (matches the Bestiary)
+    // Archetype health sits alongside rank and difficulty: a rogue-type is fragile, a paladin-type
+    // is a wall. Damage per second is held at parity, so this is where the archetypes are allowed
+    // to actually differ. Resolved after `cls`, which it depends on.
+    const arch = ENEMY_ARCHETYPE[cls] || NEUTRAL_ARCHETYPE;
+    const baseHp = Math.floor((level * 26 + 50) * R.hp * T.hp * hpMult * arch.hp + Math.random() * 20); // rank + difficulty + archetype drive health
     const stats = enemyStatBlock(level, cls, { rank, tier });
     // Priority 2: skill use follows the highest offensive stat — Int → magic, Str/Agi → physical
     const primaryOff = stats.int >= stats.str && stats.int >= stats.agi ? "int" : (stats.str >= stats.agi ? "str" : "agi");
@@ -3102,6 +3147,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
         if (crit) { dmg *= critMultFor(c) + (w.autoCritStacks || 0) * critStackPer; w.autoCritStacks = 0; } // spend banked Frenzy stacks
         else if (critStackPer > 0) w.autoCritStacks = (w.autoCritStacks || 0) + 1;
         dmg = Math.max(1, Math.floor(dmg * (w.pvp ? PVP_AUTO_MULT : 1)));
+        dmg = Math.max(1, Math.floor(dmg * (1 - enemyMitigation(w.enemy, c.level))));   // armoured archetypes turn blows
         w.enemy.hp = Math.max(0, w.enemy.hp - dmg);
         if (execThresh > 0 && w.enemy.hp > 0 && w.enemy.hp <= (w.enemy.maxHp || 0) * execThresh) { w.enemy.hp = 0; addLog("👁️ Executioner's Eye — slain!", "#ff5555"); } // instant kill on execute
         if (sp.leech > 0 || talentMods(c).leech > 0) { const h = Math.floor(dmg * (sp.leech + talentMods(c).leech) / 100); if (h > 0) w.hp = Math.min(maxHp, w.hp + h); }
@@ -3221,14 +3267,17 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       if (w.enemy.mirror) { /* mirror bot deals its damage via botStep */ }
       else if (slowMult <= 0) { if (w.enemyNextAt < now + 150) { w.enemyNextAt = now + 150; dirty = true; } }
       else {
-        const eInterval = ENEMY_BASE_INTERVAL / slowMult;
+        // Swing rhythm is the archetype's: a rogue-type flurries, a mage-type winds up.
+        const eArch = archetypeOf(w.enemy);
+        const eInterval = (ENEMY_BASE_INTERVAL * eArch.atk) / slowMult;
         const eff = effectiveStats(c); const mit = mitigation(eff.armor, w.enemy.level); const ab = activeBuffs(c);
         const dodgeChance = Math.max(c.race === "nightelf" ? 0.03 : 0, dodgePctOf(w.playerEffects));
         let g3 = 0;
         while (now >= w.enemyNextAt && g3++ < 6) {
           if (Math.random() < dodgeChance) { addLog("🌀 Dodged the attack!", "#9fd"); }
           else {
-            const rawDmg = enemyBaseDamage(w.enemy) * (enemyCanCast(w.enemy) ? enemyAutoMult(w.enemy.level) : 1) * enrageMult(w, now); // Hard Mode damage now lives in enemy stats; dungeon enrage still applies
+            const eCrit = eArch.crit > 0 && Math.random() < eArch.crit;   // only the archetypes that are meant to spike
+            const rawDmg = enemyBaseDamage(w.enemy) * (enemyCanCast(w.enemy) ? enemyAutoMult(w.enemy.level) : 1) * enrageMult(w, now) * (eCrit ? 1 + CRIT_BONUS : 1); // Hard Mode damage now lives in enemy stats; dungeon enrage still applies
             let eDmg = Math.max(1, Math.floor(rawDmg * (1 - mit)));
             if (ab.reducepct) eDmg = Math.max(1, Math.floor(eDmg * (1 - ab.reducepct.amount / 100)));
             eDmg = Math.max(1, Math.floor(eDmg * (1 - sp.vers / 200))); // Versatility reduces auto-attack (white) damage

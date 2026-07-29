@@ -89,8 +89,48 @@ js += `
   for (const n of ZONE_NAMES) names[dispositionFor(n)]++;
   console.log("  dispositions across " + ZONE_NAMES.length + " real creature names:");
   for (const cls of IDS) console.log("    " + pad(cls, 12) + names[cls] + " creature(s)");
-  console.log("\\n  So a player meets all six, but they differ only in which single skill they");
-  console.log("  occasionally cast. Damage, health, attack speed and armor are identical.");
+  // ---- 5. THREAT BUDGET -------------------------------------------------------------------------
+  // Solo enemy health is level-based and does NOT self-calibrate the way group boss health does, so
+  // any archetype change lands straight on the difficulty curve unless the budget is held.
+  console.log("\\n=== 5. THREAT BUDGET — what the archetypes cost the difficulty curve ===");
+  console.log("dps is held at parity by deriving damage-per-hit from swing speed and crit.");
+  console.log("Health and armor are where the archetypes are allowed to differ.\\n");
+  const LVL = 60;
+  console.log(pad("disposition", 13) + rp("swing", 8) + rp("dmg/hit", 10) + rp("crit", 7)
+    + rp("dps", 8) + rp("hp", 8) + rp("mit", 7) + rp("ehp", 8) + rp("threat", 9));
+  const budget = [];
+  for (const cls of IDS) {
+    const a = ENEMY_ARCHETYPE[cls];
+    const st = enemyStatBlock(LVL, cls, { rank: "normal", tier: "normal" });
+    const e = { ...st, level: LVL, cls };
+    const dmg = enemyBaseDamage(e);
+    const dps = dmg * (1 + a.crit * CRIT_BONUS) / a.atk;
+    const hp = Math.floor((LVL * 26 + 50) * a.hp);
+    const mit = enemyMitigation(e, LVL);
+    const eh = hp / (1 - mit);
+    budget.push({ cls, dps, eh, threat: dps * eh });
+    console.log(pad(cls, 13) + rp("x" + a.atk.toFixed(2), 8) + rp(dmg.toFixed(1), 10)
+      + rp((a.crit * 100).toFixed(0) + "%", 7) + rp(dps.toFixed(1), 8) + rp(hp, 8)
+      + rp((mit * 100).toFixed(0) + "%", 7) + rp(Math.round(eh), 8)
+      + rp((dps * eh / 1000).toFixed(0) + "k", 9));
+  }
+  const dpsV = budget.map((b) => b.dps), ehV = budget.map((b) => b.eh);
+  const base = { dps: 126.0, eh: 1610 };   // what every disposition was before archetypes
+  console.log("\\n  dps spread across dispositions:  x" + (Math.max(...dpsV) / Math.min(...dpsV)).toFixed(2)
+    + "   (was x1.00 — held at parity on purpose)");
+  console.log("  ehp spread across dispositions:  x" + (Math.max(...ehV) / Math.min(...ehV)).toFixed(2)
+    + "   (was x1.00 — this is the identity)");
+  const meanDps = dpsV.reduce((x, y) => x + y, 0) / dpsV.length;
+  const meanEh = ehV.reduce((x, y) => x + y, 0) / ehV.length;
+  console.log("\\n  population average vs before:  dps x" + (meanDps / base.dps).toFixed(3)
+    + "   effective health x" + (meanEh / base.eh).toFixed(3));
+  // Dispositions are not evenly distributed — dispositionFor hashes the creature NAME, so the real
+  // load depends on how often each one actually turns up.
+  let wEh = 0, wN = 0;
+  for (const n of ZONE_NAMES) { const c = dispositionFor(n); wEh += budget.find((b) => b.cls === c).eh; wN++; }
+  console.log("  weighted by how often each disposition really appears: effective health x"
+    + (wEh / wN / base.eh).toFixed(3));
+  console.log("  A player meeting a mix of dispositions should feel about the same total load.");
   console.log("");
 })();`;
 const run = path.join(dir, 'enemyid.cjs'); fs.writeFileSync(run, js);

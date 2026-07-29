@@ -843,23 +843,19 @@ function makeArtifact(clsId, slotId, level, existing) {
   const mains = ARTIFACT_STATS[clsId] || ["str", "agi"]; // class-appropriate primaries, always both
   const perStat = Math.max(1, Math.round((1 + ilvl * 0.05) * RARITY_STAT_MULT[rIdx]));
   const secBase = Math.max(1, Math.round(perStat * 0.7));
-  const SIZE = { sta: 1.0, leech: 0.5, vers: 0.5, resil: 0.5, cdr: 0.5, csd: 0.5 };
-  // legendary rolls 4 secondaries; the 2 guaranteed mains consume one slot → 3 secondaries
+  // legendary rolls 4 secondaries; the 2 guaranteed mains consume one slot → 3 secondaries.
+  // Rolled through the SAME shared table as every other drop. This carried its own copy of the
+  // secondary pool, its own size table and its own stamina bias, all of which went stale: crit and
+  // haste never rolled on an artifact at all, stamina lines came out 21% small (11 against 14),
+  // and a weapon ignored its csd/crit identity entirely.
   let secs = existing?.shape?.secs;
   if (!secs) {
-    const avail = ["sta", "leech", "vers", "resil", "cdr", "csd"];
     secs = [];
-    for (let i = 0; i < 3 && avail.length; i++) {
-      const w = avail.map((k) => (k === "sta" ? 3 : 1));
-      const tot = w.reduce((a, b) => a + b, 0);
-      let r = Math.random() * tot, idx = 0;
-      while (r >= w[idx]) { r -= w[idx]; idx++; }
-      secs.push(avail[idx]); avail.splice(idx, 1);
-    }
+    for (let i = 0; i < 3; i++) { const k = pickSlotSecondary(slotId, secs); if (!k) break; secs.push(k); }
   }
   const stats = { str: 0, agi: 0, int: 0, sta: 0, armor: 0, dmg: 0, leech: 0, resil: 0, vers: 0, cdr: 0, csd: 0, crit: 0, haste: 0, ap: 0, sp: 0 };
   mains.forEach((k) => { stats[k] += perStat; });
-  secs.forEach((k) => { stats[k] += Math.max(1, Math.round(secBase * (SIZE[k] || 0.5))); });
+  secs.forEach((k) => { stats[k] += Math.max(1, Math.round(secBase * (SEC_SIZE[k] || 0.5))); });
   // focused artifacts earn Power on the same terms as any other gear
   if (mains.length === 1 && ilvl >= POWER_AFFIX_MIN_ILVL) stats[mains[0] === "int" ? "sp" : "ap"] += Math.max(1, Math.round(perStat * POWER_PER_STAT));
   const isWeapon = slotId === "weapon";

@@ -964,7 +964,13 @@ function rollGem({ level, isBoss, dungeonId, dropMult = 1 }) {
   if (!dungeonId && !isBoss) return null; // open-world trash never drops gems — they come from elites & instances
   const inst = dungeonId ? instanceById(dungeonId) : null;
   const isRaid = !!inst?.raid;
-  const chance = GEM_DROP_RATE * (isBoss ? 4 : 1) * (isRaid ? 3 : dungeonId ? 2 : 1) * DROP_RATE_MULT * dropMult;
+  // Zone-scaled on the same curve as gear. The comment above says gems ride the normal gear drop
+  // system, and once gear started thinning out toward the endgame they stopped doing so — gems
+  // were quietly becoming MORE common relative to gear exactly where gear was being starved.
+  //
+  // Unlike gear, the raid is NOT exempt here. That exemption exists solely to keep the ilvl-64
+  // bridge from normal mode to hard mode open, and gems are not part of that bridge.
+  const chance = GEM_DROP_RATE * (isBoss ? 4 : 1) * (isRaid ? 3 : dungeonId ? 2 : 1) * DROP_RATE_MULT * dropMult * zoneDropScale(level);
   if (Math.random() > chance) return null;
   const rarity = dungeonId ? rollRarityForDungeon(dungeonId) : rollRarityForZone(level);
   const pool = ALL_GEMS.filter((g) => g.rarity === rarity.id);
@@ -4103,9 +4109,13 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     // Reroll follows the SAME slot weighting drops use, so the shop cannot launder slot identity
     // back out — rerolling a chest into pure crit damage would make the whole table meaningless.
     // Off-stats stay reachable (~1 roll in 3), so an off-spec piece is a find, not an impossibility.
-    // The line's current stat is excluded so a paid reroll always changes something; that is not
-    // the same as de-duplicating ACROSS lines, which is still allowed and still stacks.
-    const newStat = pickSlotSecondary(item.slotId, [ln.stat]) || pick(TEMPER_CFG.reroll.pool);
+    // Every stat already on the item is excluded, not just this line's: that guarantees a paid
+    // reroll changes something AND stops it landing on a stat another line already carries, which
+    // would silently sum into one larger line rather than reading as a second one. Drops have
+    // de-duplicated since slot identity shipped; this brings the shop in line with them.
+    // Four lines is the maximum and there are eight secondaries, so at least four remain.
+    const taken = (item.lines || []).map((l) => l.stat);
+    const newStat = pickSlotSecondary(item.slotId, taken) || pickSlotSecondary(item.slotId, [ln.stat]) || pick(TEMPER_CFG.reroll.pool);
     ln.stat = newStat;
     ln.base = rollRerollValue(item.ilvl, item.rarity, newStat);
     item.rerolls += 1;

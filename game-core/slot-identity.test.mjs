@@ -64,6 +64,17 @@ const dist = (slot, exclude = [], n = 60000) => {
   const all = pickSlotSecondary("hands", SECONDARY_POOL);
   ok(all === null, "excluding everything returns null rather than throwing (the caller falls back)");
 
+  // The temper shop now excludes EVERY stat already on the item, not just the line being rerolled,
+  // so a paid reroll cannot land on a stat another line already carries — that would silently sum
+  // into one larger line instead of reading as a second one. Four lines is the maximum and there
+  // are eight secondaries, so a legal answer always exists.
+  for (const slot of LOOT_SLOTS.map((s) => s.id)) {
+    const taken = SECONDARY_POOL.slice(0, 4);              // a full four-line item
+    const picks = new Set(Array.from({ length: 400 }, () => pickSlotSecondary(slot, taken)));
+    ok(![...picks].some((k) => k === null || taken.includes(k)),
+       `${slot}: rerolling a four-line item never returns a stat already on it`);
+  }
+
   // An unknown slot must still work — relics and anything added later.
   const u = dist("nonesuch", [], 6000);
   ok(Object.keys(u).length === SECONDARY_POOL.length, "a slot with no entry falls back to an even pool");

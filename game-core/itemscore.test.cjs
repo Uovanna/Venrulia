@@ -137,6 +137,32 @@ js += `
        "weapon damage and Attack Power are priced the same — they are the same flat addition");
   }
 
+  // --- the temper shop's reroll cannot stack a stat onto a line that already has it -------------
+  // rerollLine itself lives inside the React component and cannot be called here, but everything it
+  // touches is module-level. This runs the same sequence — ensureTemperData, the exclusion the
+  // reroll uses, then syncItemStats — and checks the invariant that motivated the change: a stat
+  // landing twice would silently SUM into one larger line rather than reading as a second one.
+  {
+    // generateItem/pickSlotSecondary are IMPORTED by App.jsx, so in the transpiled module they are
+    // not bare locals — only App.jsx's own definitions are. Take them from the core.
+    const { rarityById, generateItem, pickSlotSecondary } = core;
+    let collisions = 0, nulls = 0;
+    for (let i = 0; i < 600; i++) {
+      const it = ensureTemperData(generateItem(63, rarityById("legendary"), "chest", "warrior"));
+      if (!Array.isArray(it.lines) || !it.lines.length) { nulls++; continue; }
+      const idx = i % it.lines.length;
+      const taken = it.lines.map((l) => l.stat);
+      const picked = pickSlotSecondary(it.slotId, taken) || pickSlotSecondary(it.slotId, [it.lines[idx].stat]);
+      if (picked == null) { nulls++; continue; }
+      it.lines[idx].stat = picked;
+      syncItemStats(it);
+      // After the reroll every line must still be its own stat.
+      if (new Set(it.lines.map((l) => l.stat)).size !== it.lines.length) collisions++;
+    }
+    ok(collisions === 0, "600 rerolls on 4-line items produced no duplicated line (" + collisions + " collisions)");
+    ok(nulls === 0, "…and the exclusion always left a legal stat to pick (" + nulls + " fallbacks)");
+  }
+
   console.log(fail ? "\\n\\u274c " + fail + " itemScore check(s) failed"
                    : "\\n\\u2705 itemScore: every rollable stat counts, Power counts only while live, focused matches dual");
   process.exit(fail ? 1 : 0);

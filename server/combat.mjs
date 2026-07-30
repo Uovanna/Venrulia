@@ -4,8 +4,20 @@ import { rng, makeRng, withRng, pick, rngPick, rngInt, makeClock } from './rng.m
 const CLASSES = [
   { id: "warrior", name: "Warrior", icon: "⚔️", color: "#C79C6E", desc: "Mighty melee fighter with high armor", main: "str", stats: { str: 10, agi: 5, int: 2, sta: 8 }, passive: "+15% melee dmg" },
   { id: "mage", name: "Mage", icon: "🔮", color: "#69CCF0", desc: "Arcane caster of devastating spells", main: "int", stats: { str: 2, agi: 4, int: 12, sta: 4 }, passive: "+20% spell dmg" },
-  { id: "rogue", name: "Rogue", icon: "🗡️", color: "#FFF569", desc: "Swift assassin striking from shadows", main: "agi", stats: { str: 5, agi: 12, int: 3, sta: 6 }, passive: "+25% crit chance · Finesse: −16% raw damage", dmgMod: -0.16 },
-  { id: "paladin", name: "Paladin", icon: "🛡️", color: "#F58CBA", desc: "Holy warrior who heals and tanks", main: "str", stats: { str: 8, agi: 3, int: 7, sta: 9 }, passive: "+10% healing" },
+  // The passive text read "+25% crit chance" while the code granted 13%, and now grants 3% — a
+  // class description that overstated its own bonus by a factor of two before this change.
+  //
+  // Finesse (dmgMod -0.16) stays. It was originally payment for the large class crit bonus, and
+  // once that dropped to +3% it looked like an unpaid penalty — but what it now pays for is
+  // Agility scaling: a point of Agility is worth 1.39x a warrior's Strength to a rogue, the
+  // steepest per-point scaling on the roster. Measured at level 60 / ilvl 63 the rogue sits at
+  // 1047 dps against a warrior's 1213 and a mage's 931, so it is mid-pack, not starved. Removing
+  // Finesse would put it at 1247 — top of the roster — and widen the spread from x1.30 to x1.34.
+  { id: "rogue", name: "Rogue", icon: "🗡️", color: "#FFF569", desc: "Swift assassin striking from shadows", main: "agi", stats: { str: 5, agi: 12, int: 3, sta: 6 }, passive: "+3% crit · Finesse: −16% raw damage, +39% Agility scaling", dmgMod: -0.16 },
+  // Declares Intellect: 19 of its 21 castable skills are magic, and measured at level 60 a
+  // paladin gains 7.8% dps from 30 Intellect against 4.7% from Strength. It read "str" for a long
+  // time, which filtered its enemy skill pool down to 2 abilities and mispriced its gear.
+  { id: "paladin", name: "Paladin", icon: "🛡️", color: "#F58CBA", desc: "Holy warrior who heals and tanks", main: "int", stats: { str: 8, agi: 3, int: 7, sta: 9 }, passive: "+10% healing" },
   { id: "hunter", name: "Hunter", icon: "🏹", color: "#ABD473", desc: "Ranged master with a loyal beast", main: "agi", stats: { str: 4, agi: 10, int: 5, sta: 7 }, passive: "+15% ranged dmg" },
   { id: "warlock", name: "Warlock", icon: "👁️", color: "#9482C9", desc: "Dark caster commanding demons", main: "int", stats: { str: 3, agi: 3, int: 11, sta: 6 }, passive: "+20% DoT dmg" },
 ];
@@ -420,7 +432,7 @@ function activeBuffs(char) {
   return out;
 }
 function effectiveStats(char) {
-  const eq = { str: 0, agi: 0, int: 0, sta: 0, armor: 0, dmg: 0, leech: 0, resil: 0, vers: 0, cdr: 0, csd: 0, ap: 0, sp: 0 };
+  const eq = { str: 0, agi: 0, int: 0, sta: 0, armor: 0, dmg: 0, leech: 0, resil: 0, vers: 0, cdr: 0, csd: 0, crit: 0, haste: 0, ap: 0, sp: 0 };
   Object.values(char.equipment || {}).forEach((it) => {
     if (!it) return;
     for (const k in eq) { if (k === "ap" || k === "sp") continue; eq[k] += (it.stats[k] || 0) + ((it.enchant && it.enchant[k]) || 0); }
@@ -443,6 +455,8 @@ function effectiveStats(char) {
     vers: eq.vers,
     cdr: eq.cdr,
     csd: eq.csd,
+    crit: eq.crit,     // crit CHANCE rating from gear
+    haste: eq.haste,   // attack-speed rating from gear
     ap: eq.ap, // Attack Power — flat physical damage
     sp: eq.sp, // Spell Power  — flat magic damage
   };
@@ -784,11 +798,49 @@ const townBonuses = (char) => ({
 const HEX_MAX_STACKS = 5;
 const hexStackMult = (st) => 1 + (Math.max(1, st) - 1) * 0.40;
 const classDmgMod = (clsId) => { const c = CLASSES.find((x) => x.id === clsId); return (c && c.dmgMod) || 0; };
+// Which stat a class turns into PHYSICAL damage. Every class already declares a `main`, and
+// rogue and hunter have always declared "agi" — the damage term simply never read it, so a rogue
+// scaled off Strength while wearing gear named for Agility. Measured before this change, a rogue
+// gained 12.0% dps from 30 Strength and 4.4% from 30 Agility, and no class on the roster had
+// Agility as its best stat.
+//
+// Casters are deliberately excluded. Their `main` is Intellect and their real damage is magic,
+// which already scales off Intellect; routing their incidental auto-attack through it as well
+// would be a straight buff to mages and warlocks that nothing here is asking for.
+const physScalingStat = (clsId) => {
+  const cls = CLASSES.find((c) => c.id === clsId);
+  return cls && cls.main === "agi" ? "agi" : "str";
+};
+// All three convert at the same rate.
+//
+// Agility was briefly set to 1.0 here, on the reasoning that it also buys attack speed and crit
+// and so should pay for them. That was wrong, and wrong in a way worth recording: the 1.0 came
+// from the MARGINAL value of +30 Agility, but this rate multiplies the WHOLE damage term. Cutting
+// it to 1.0 took 29% off every Agility class's existing damage base — measured, rogue -12.1% and
+// hunter -9.6% total dps — which no marginal comparison could see.
+//
+// At 1.4 the double-dip is real at the margin (a point of Agility is worth 1.39x a warrior's
+// Strength to a rogue, 1.63x to a hunter) but it does not need paying for, because Strength and
+// Intellect are worth NOTHING to those classes while a warrior still gets value from Agility
+// gear. Priced as what a random main-stat roll is worth — which is what a drop actually is, since
+// gear rolls all three with equal probability — the roster reads:
+//
+//                    before        after
+//   warrior           1.00          1.00
+//   rogue             0.91          0.97
+//   hunter            1.07          1.12
+//   casters      1.05-1.07     1.05-1.07
+//   spread           x1.18         x1.16
+//
+// Concentration cancels the double-dip almost exactly, and the roster ends slightly tighter than
+// it started.
+const STAT_DMG_RATE = { str: 1.4, int: 1.4, agi: 1.4 };
 const computeDamage = (char, weaponDmg, magic) => {
   const eff = effectiveStats(char);
-  const statVal = magic ? (eff.int || 0) : (eff.str || 0); // Strength → physical/auto damage, Intellect → magic damage
+  const statKey = magic ? "int" : physScalingStat(char.cls);
+  const statVal = eff[statKey] || 0;
   const power = magic ? (eff.sp || 0) : (eff.ap || 0);      // Spell/Attack Power — flat damage from single-stat gear
-  let dmg = (char.level * 2 + 4 + statVal * 1.4 + weaponDmg + power) * 0.75; // weapon damage comes from its min–max range
+  let dmg = (char.level * 2 + 4 + statVal * STAT_DMG_RATE[statKey] + weaponDmg + power) * 0.75; // weapon damage comes from its min–max range
   dmg *= 1 + secondaryPcts(eff).vers / 100; // Versatility increases damage dealt
   const ab = activeBuffs(char);
   if (ab.dmgpct) dmg *= 1 + ab.dmgpct.amount / 100;
@@ -802,28 +854,106 @@ const computeDamage = (char, weaponDmg, magic) => {
 const playerBaseDamage = (char, magic) => computeDamage(char, weaponAvgDmg(char), magic);
 const AGI_SPEED_CAP = 0.30, AGI_CRIT_CAP = 0.35, AGI_RATE = 0.002;
 const agiAtkSpeed = (char) => Math.min(AGI_SPEED_CAP, (effectiveStats(char).agi || 0) * AGI_RATE);
+// Haste from gear, as a fraction. Attacks per second scale 1/(1-h), so this is hyperbolic and
+// the 15% cap is what keeps it finite — at 30% the marginal value of +5% is already double what
+// it is at 0%. It also shortens the group GCD, so it is worth more online than solo.
+const hasteOf = (char) => secondaryPcts(effectiveStats(char)).haste / 100;
+const CRIT_SOFT_CAP = 0.55;   // total crit chance, gear included, before heavy damping
+const CRIT_BASE = 0.12;       // everyone
+// The rogue's class bonus. It used to be +13%, which put a level-1 rogue at 28% crit against a
+// warrior's 13% — more than twice the roster — and a geared level-60 rogue at 48%, close enough
+// to the 55% soft cap that its own Agility was being damped. At +3% a fresh rogue reads 18% and
+// a geared one 38% against the roster's ~33%: still visibly the crit class, no longer eating its
+// own headroom. Measured cost at the time of the change: -5.8% dps, paid back by Agility
+// becoming its damage stat.
+const CRIT_ROGUE_BONUS = 0.03;
 const critChanceFor = (char) => {
   if (talentFlag(char, "hardCrit80")) return 0.80; // Wild Striker — fixed 80%, ignores gear crit
   const cls = CLASSES.find((c) => c.id === char.cls);
-  let c = 0.12;
-  if (cls.id === "rogue") c += 0.13;
+  let c = CRIT_BASE;
+  if (cls.id === "rogue") c += CRIT_ROGUE_BONUS;
   if (char.race === "troll") c += 0.05;
   const eff = effectiveStats(char);
   c += Math.min(AGI_CRIT_CAP, eff.agi * AGI_RATE);
   c += talentMods(char).crit; // Precision
-  return Math.min(1, Math.max(0, c));
+  c += secondaryPcts(eff).crit / 100;   // crit CHANCE is a gear secondary now, not class-only
+  // Total crit soft-caps at 55%. Without a ceiling, gear crit compounds with crit damage (each
+  // makes the other better) and the pair eats every other secondary; it would also make the Wild
+  // Striker talent's fixed 80% meaningless. Excess is not discarded, just heavily damped.
+  return Math.min(1, Math.max(0, c <= CRIT_SOFT_CAP ? c : CRIT_SOFT_CAP + (c - CRIT_SOFT_CAP) * 0.25));
 };
 const mitigation = (armor, attackerLevel) => clamp((armor * 5) / (armor * 5 + 45 + attackerLevel * 15), 0, 0.75);
+// Which damage type a creature favours, and the pool it draws from. Decided by the MAJORITY of the
+// class's own kit rather than by its declared main stat: deriving it from the declaration broke
+// hybrids, filtering a paladin's 21 castable skills down to the 2 physical ones.
+//
+// Lives here rather than in the client because two places need the same answer — makeEnemy, which
+// picks what a creature actually casts, and the Bestiary, which tells the player what to expect.
+// They had separate copies of the rule and would have disagreed about paladins.
+const enemyCastable = (clsId, level) =>
+  (SKILLS[clsId] || []).filter((s) => s.unlockLevel <= (level || 1) && ((s.mult && s.mult > 0) || s.dotMult || s.slowPct));
+const enemyPrefersMagic = (clsId, level) => {
+  const pool = enemyCastable(clsId, level);
+  return pool.filter(isMagicSkill).length * 2 > pool.length;
+};
+// A kit close to evenly split keeps both halves rather than throwing one away.
+const enemyUsableSkills = (clsId, level) => {
+  const pool = enemyCastable(clsId, level);
+  const typed = pool.filter((s) => isMagicSkill(s) === enemyPrefersMagic(clsId, level));
+  return (typed.length && typed.length * 4 >= pool.length * 3) ? typed : pool;
+};
 const enemyDamageForLevel = (level) => Math.floor(level * 2 + 6);
 const LEECH_MULT = 0.67;
+// ---------- SECONDARY CONVERSION ----------
+// Rating -> percentage. Two rules changed here and both were measured first.
+//
+// 1) DIMINISHING RETURNS. Every secondary used to convert linearly and then slam into a hard cap,
+//    and because the rates were chosen to match the caps they ALL capped at exactly 50 rating.
+//    A naturally geared 60 carries ~14 rating per stat; rerolling every line into one stat
+//    reaches ~100 — twice the cap, with half the investment doing literally nothing and no reason
+//    to stop short of exactly 50. Now: linear up to a soft cap at half the hard cap, then a
+//    hyperbolic tail that approaches the hard cap without reaching it. Natural gearing is
+//    unchanged, stacking keeps paying but pays less, and no point is ever worth exactly zero.
+//
+//    A plain saturating curve (cap * r/(r+K)) was tried first and rejected: it also halved a
+//    normally geared player, because the problem was never that rating is worth too much.
+//
+// 2) csd REPRICED 4 -> 1.5. Crit damage multiplies with crit chance while versatility is flat, so
+//    10 rating of csd was worth x1.09 a versatility point at 12% crit and x4.88 at 80% — the same
+//    stat swinging x4.5 in value by class, and every real spec sat at x2.3-x3.4. It was not a
+//    choice, it was the answer. 1.5 lands it beside versatility at ~35% crit, where the roster is.
+const SEC_CAP  = { leech: 25, resil: 30, vers: 20, cdr: 15, csd: 200, crit: 20, haste: 15 };
+const SEC_RATE = { leech: 0.5, resil: 0.6, vers: 0.4, cdr: 0.3, csd: 1.5, crit: 0.35, haste: 0.3 };
+const SEC_SOFT_FRAC = 0.5;   // soft cap sits at half the hard cap
+const SEC_TAIL = 50;         // tail width: how slowly the hard cap is approached beyond it
+
+// Effective rating after diminishing returns.
+const secEffectiveRating = (stat, r) => {
+  const cap = SEC_CAP[stat], rate = SEC_RATE[stat];
+  if (!cap || !rate || r <= 0) return 0;
+  const hard = cap / rate, soft = hard * SEC_SOFT_FRAC;
+  if (r <= soft) return r;
+  return soft + (hard - soft) * (r - soft) / ((r - soft) + SEC_TAIL);
+};
+const secPct = (stat, r) => secEffectiveRating(stat, r) * SEC_RATE[stat];
+
 const secondaryPcts = (eff) => ({
-  leech: Math.min(25, (eff.leech || 0) * 0.5) * LEECH_MULT,   // % of damage dealt returned as healing
-  resil: Math.min(30, (eff.resil || 0) * 0.6),   // % reduction to DoT damage AND % chance to resist stun/slow
-  vers: Math.min(20, (eff.vers || 0) * 0.4),     // % more damage dealt; and (half that) reduces auto-attack damage taken
-  cdr: Math.min(15, (eff.cdr || 0) * 0.3),       // % skill cooldown reduction (cap 15%)
-  csd: Math.min(200, (eff.csd || 0) * 4),        // % bonus critical strike damage (cap +200%)
+  leech: secPct("leech", eff.leech || 0) * LEECH_MULT,  // % of damage dealt returned as healing
+  resil: secPct("resil", eff.resil || 0),   // % reduction to DoT damage AND % chance to resist stun/slow
+  vers: secPct("vers", eff.vers || 0),      // % more damage dealt; and (half that) reduces auto-attack damage taken
+  cdr: secPct("cdr", eff.cdr || 0),         // % skill cooldown reduction
+  csd: secPct("csd", eff.csd || 0),         // % bonus critical strike damage
+  crit: secPct("crit", eff.crit || 0),      // % critical strike CHANCE from gear
+  haste: secPct("haste", eff.haste || 0),   // % faster attacks; also shortens the group GCD
 });
 const critMultFor = (char) => 1.8 + secondaryPcts(effectiveStats(char)).csd / 100;
+// Heals crit, on the same chance and multiplier as damage. Before this, crit chance and crit
+// damage were worth exactly nothing to a healer — they had no way to convert either stat into
+// output, so half of every gear roll was dead for them while a dps got full value.
+const critHeal = (char, amount) => {
+  const crit = rng() < Math.min(1, critChanceFor(char));
+  return { amount: crit ? Math.round(amount * critMultFor(char)) : Math.round(amount), crit };
+};
 const cdrPerCdOf = (char) => socketedGems(char).reduce((n, g) => n + (g.cdrPerCd || 0), 0);
 const PET = { interval: 2000, hitFrac: 1.8, hpFrac: 0.40, resummonMs: 15000, snipe: 0.25, empower: 0.5, empowerMs: 10000 };
 const petMaxHp = (char) => Math.max(1, Math.round(maxHpFor(char) * PET.hpFrac));
@@ -850,7 +980,7 @@ const offlinePlayerDps = (char) => {
   const tm = talentMods(char);
   const critFactor = 1 + critChanceFor(char) * (critMultFor(char) - 1); // crits deal critMult (1.8x + CSD)
   const autoBase = (talentFlag(char, "intAuto") ? magicBase : physBase) * (1 + tm.autoPct); // Spellsword/Demon Int autos, Exiled/Hexer autoPct
-  let dps = (autoBase * critFactor * Math.max(0.1, 1 + agiAtkSpeed(char) + tm.atkSpeed)) / (PLAYER_BASE_INTERVAL / 1000);
+  let dps = (autoBase * critFactor * Math.max(0.1, 1 + agiAtkSpeed(char) + tm.atkSpeed + hasteOf(char))) / (PLAYER_BASE_INTERVAL / 1000);
   const hexStacked = talentFlag(char, "hexStack") ? hexStackMult(3.5) : 1; // Curseweaver: afflictions sit around 3-4 stacks once maintained
   let dotPool = 0, detonator = null;
   if (!talentFlag(char, "noSkills")) for (const name of (char.selectedSkills || []).slice(0, unlockedSlotCount(char.level))) {
@@ -994,7 +1124,9 @@ function applySkillCore(skill, c, bIn, now, log) {
     if (skill.dodgePct) { b.playerEffects = b.playerEffects.filter((e) => e.kind !== "dodge"); b.playerEffects.push({ kind: "dodge", icon: "🌀", pct: skill.dodgePct, expires: now + skill.dodgeDur * 1000 * (1 + tm.buffDur) }); log(`${skill.icon} ${skill.dodgePct}% dodge ${skill.dodgeDur}s`, "#7CFC9E"); }
     if (skill.healPct) {
       const healPct = skill.healPct + (spent > 0 && skill.spendHeal ? spent * skill.spendHeal : 0); // combo-point heal finisher
-      const h = Math.floor(maxHp * healPct / 100); b.hp = Math.min(maxHp, b.hp + h); log(`${skill.icon} Healed ${h}`, "#7CFC9E");
+      const hr = critHeal(c, maxHp * healPct / 100);
+      b.hp = Math.min(maxHp, b.hp + hr.amount);
+      log(`${skill.icon} Healed ${hr.amount}${hr.crit ? " ⚡" : ""}`, hr.crit ? "#FFD700" : "#7CFC9E");
     }
     if (skill.hotPct) { const per = Math.max(1, Math.floor((maxHp * skill.hotPct / 100) / skill.hotDur)); b.playerEffects = b.playerEffects.filter((e) => e.kind !== "hot"); b.playerEffects.push({ kind: "hot", icon: "➕", healPerTick: per, nextTick: now + 1000, expires: now + skill.hotDur * 1000 }); log(`${skill.icon} Healing ${per}/s for ${skill.hotDur}s`, "#7CFC9E"); }
     if (skill.empowerPct) { const d = skill.empowerDur + (spent > 0 && skill.spendDur ? spent * skill.spendDur : 0); b.playerEffects = b.playerEffects.filter((e) => e.kind !== "empower"); b.playerEffects.push({ kind: "empower", icon: "💥", pct: skill.empowerPct, expires: now + d * 1000 * (1 + tm.buffDur) }); log(`${skill.icon} +${skill.empowerPct}% damage ${d.toFixed(0)}s`, "#7CFC9E"); }
@@ -1248,6 +1380,63 @@ const ARMOR_BASE_MULT = 2.2;
 const WEAPON_DMG_MULT = 5.1; // nerfed 15% from 6
 const weaponRangeFor = (ilvl, rarityIdx) => { const avg = gearStatBase(ilvl, rarityIdx) * WEAPON_DMG_MULT; return { min: Math.max(1, Math.round(avg * 0.85)), max: Math.max(2, Math.round(avg * 1.15)) }; };
 const ARMOR_SLOT_WEIGHT = { chest: 1.0, legs: 0.9, offhand: 0.9, head: 0.8, shoulder: 0.7, hands: 0.6, feet: 0.6, ring: 0.3, trinket: 0.3 };
+
+// ---------- SLOT IDENTITY ----------
+// Which secondaries each slot leans toward. Before this, main stats and secondaries rolled
+// identically on every slot and ARMOR_SLOT_WEIGHT was the ONLY thing separating a helm from a
+// chest — measured spread across non-weapon slots was x1.03 in damage, i.e. noise. Two favoured
+// stats per slot gives each piece a recognisable character.
+//
+// Every secondary has at least two homes so nothing becomes unfindable, and stamina keeps a floor
+// everywhere: confining it to its four favoured slots quietly cost ~7% of a full set's effective
+// HP, which is a balance change hiding inside a flavour change.
+//
+// Shared by BOTH the drop generator and the reroll shop — if only drops used it, a player could
+// reroll a chest into pure crit damage and launder the identity straight back out.
+const SECONDARY_POOL = ["sta", "leech", "vers", "resil", "cdr", "csd", "crit", "haste"];
+// Redistributed once crit and haste joined the pool: eight stats over ten slots, two favoured
+// each, so every stat has at least two homes and no slot repeats another's pair.
+const SLOT_SECONDARY = {
+  head:     ["crit",  "cdr"],    // Precision — land more crits, act more often
+  shoulder: ["sta",   "vers"],   // Bulwark-lite
+  chest:    ["sta",   "resil"],  // Bulwark — the tankiest plate
+  hands:    ["haste", "crit"],   // Aggression — the pure throughput piece
+  legs:     ["sta",   "leech"],  // Endurance
+  feet:     ["haste", "cdr"],    // Uptime
+  weapon:   ["csd",   "crit"],   // Lethality — crit damage wants crit chance beside it
+  offhand:  ["resil", "sta"],    // Guard
+  ring:     ["csd",   "haste"],  // Attunement
+  trinket:  ["leech", "vers"],   // Esoteric
+};
+const SEC_FAV_WEIGHT = 5;    // a favoured stat is this many times as likely as an ordinary one
+const SEC_STA_WEIGHT = 2;    // stamina's floor on slots that do not favour it
+
+// How large one line of a stat rolls, relative to the ilvl/rarity budget. Stamina rolls big
+// because it is now favoured on only four slots instead of being biased on all ten: a full set
+// carries roughly a third fewer stamina lines than it used to, and without a bigger roll behind
+// each one that reads as a silent ~5% EHP cut to every existing character. Measured against a
+// full epic set: 1.3 lands within 1% of the old effective health (2313 hp vs 2332), and the
+// per-line rounding is coarse enough that 1.35 already overshoots by +1.4%.
+// One table, exported — the drop generator and the temper shop both read it. Two copies drifting
+// apart is the failure this project keeps having.
+const SEC_SIZE = { sta: 1.3, leech: 0.5, vers: 0.5, resil: 0.5, cdr: 0.5, csd: 0.5, crit: 0.5, haste: 0.5 };
+
+const secondaryWeight = (slotId, stat) => {
+  const fav = SLOT_SECONDARY[slotId];
+  if (fav && fav.includes(stat)) return SEC_FAV_WEIGHT;
+  return stat === "sta" ? SEC_STA_WEIGHT : 1;
+};
+
+// Weighted pick for one secondary line on a slot. `exclude` keeps a single roll from repeating a
+// stat the caller has already placed. Returns null only if everything is excluded.
+const pickSlotSecondary = (slotId, exclude = []) => {
+  const avail = SECONDARY_POOL.filter((k) => !exclude.includes(k));
+  if (!avail.length) return null;
+  const w = avail.map((k) => secondaryWeight(slotId, k));
+  let r = rng() * w.reduce((a, b) => a + b, 0), i = 0;
+  while (r >= w[i] && i < w.length - 1) { r -= w[i]; i++; }
+  return avail[i];
+};
 const gearStatBase = (ilvl, rarityIdx) => (1 + ilvl * 0.05) * (RARITY_STAT_MULT[rarityIdx] || 1);
 const baseArmorFor = (ilvl, rarityIdx, slotId) => (slotId === "weapon" ? 0 : Math.max(1, Math.round(gearStatBase(ilvl, rarityIdx) * (ARMOR_SLOT_WEIGHT[slotId] || 0.5) * ARMOR_BASE_MULT)));
 const RARITY_STAT_MULT = [0.5, 0.8, 1.2, 1.8, 2.6, 3.8, 3.8];
@@ -1291,6 +1480,46 @@ const GEAR_SLOTS = [
   { id: "relic", name: "Relic", icon: "🔱" },
 ];
 const LOOT_SLOTS = GEAR_SLOTS.filter((s) => s.id !== "relic");
+
+// How often each slot is the one that drops. Every drop site used to pick uniformly, so a weapon
+// — measured at 3.7x the damage value of any armour piece, because it is the only slot carrying a
+// damage range rather than a stat spread — was exactly as common as a pair of boots. The slot a
+// player actually wants was never the slot they had to chase.
+//
+// Weights are inverse to how much a slot is worth, softened: pricing weapons at a strict 1/3.7
+// would put them under 3% of drops and turn the whole game into waiting for one item. Boots and
+// gloves are the filler that keeps a bad session from feeling empty.
+const SLOT_DROP_WEIGHT = {
+  weapon: 0.4,                                    // ~4% of drops — the chase item
+  trinket: 0.7, ring: 0.8,                        // no armour, pure secondaries
+  offhand: 1.0,
+  head: 1.1, chest: 1.1, legs: 1.1,               // the big armour pieces
+  shoulder: 1.2, hands: 1.2, feet: 1.2,           // filler
+};
+// Zone-scaled drop rate. Gear used to drop at one flat rate everywhere — the level-10 starter
+// wood and the level-60 endgame zone both paid out ~18 items per 100 kills — so a solo player's
+// gear never got harder to come by, only higher in ilvl. Levelling should stay generous (the
+// drops are what makes those zones readable); the endgame is where gear is supposed to be worth
+// chasing, so that is where the tap closes.
+//
+// Linear from the first zone to the last. The raid is deliberately exempt at its own 0.85: it is
+// the designed bridge from normal mode to hard mode, and starving it would close the only route
+// out of normal mode rather than making the route feel earned.
+const ZONE_DROP_MIN = 0.4;      // level-60 zones pay 40% of a level-10 zone's rate
+const ZONE_DROP_FLOOR_LEVEL = 10, ZONE_DROP_CAP_LEVEL = 60;
+const zoneDropScale = (level) => {
+  const t = (Math.max(1, level || 1) - ZONE_DROP_FLOOR_LEVEL) / (ZONE_DROP_CAP_LEVEL - ZONE_DROP_FLOOR_LEVEL);
+  return clamp(1 - clamp(t, 0, 1) * (1 - ZONE_DROP_MIN), ZONE_DROP_MIN, 1);
+};
+
+// One weighted picker for every drop site. `pick(LOOT_SLOTS)` was repeated at eight call sites
+// across the client and the core, which is eight places to forget when scarcity changes.
+const pickLootSlot = () => {
+  const w = LOOT_SLOTS.map((s) => SLOT_DROP_WEIGHT[s.id] ?? 1);
+  let r = rng() * w.reduce((a, b) => a + b, 0), i = 0;
+  while (r >= w[i] && i < w.length - 1) { r -= w[i]; i++; }
+  return LOOT_SLOTS[i].id;
+};
 const emptyEquipment = () => GEAR_SLOTS.reduce((acc, s) => { acc[s.id] = null; return acc; }, {});
 function generateItem(ilvl, rarity, slotId, clsId) {
   ilvl = Math.max(1, Math.floor(ilvl));
@@ -1307,7 +1536,7 @@ function generateItem(ilvl, rarity, slotId, clsId) {
   // modest boosts; notable upgrades come from the higher rarities dropped by dungeons & raids.
   const perStat = Math.max(1, Math.round((1 + ilvl * 0.05) * (RARITY_STAT_MULT[rarityIdx] || 1)));
   const secBase = Math.max(1, Math.round(perStat * 0.7));
-  const stats = { str: 0, agi: 0, int: 0, sta: 0, armor: 0, dmg: 0, leech: 0, resil: 0, vers: 0, cdr: 0, csd: 0, ap: 0, sp: 0 };
+  const stats = { str: 0, agi: 0, int: 0, sta: 0, armor: 0, dmg: 0, leech: 0, resil: 0, vers: 0, cdr: 0, csd: 0, crit: 0, haste: 0, ap: 0, sp: 0 };
 
   // ----- MAIN stats (str/agi/int) -----
   // Always 1 main stat. Purple & Gold have a 50% chance to roll a SECOND main stat, which
@@ -1318,7 +1547,6 @@ function generateItem(ilvl, rarity, slotId, clsId) {
   const mainStats = [firstMain];
 
   // ----- SECONDARY stats (armor is now inherent base Armor; weapon damage is a range) -----
-  const SIZE = { sta: 1.0, leech: 0.5, vers: 0.5, resil: 0.5, cdr: 0.5, csd: 0.5 }; // non-stamina weights reset & unified
   // White 1, Green 2, Blue 3, Purple 3, Gold 4 (Poor 0) — Purple & Gold each dropped one line.
   let secondaryCount = [0, 1, 2, 3, 3, 4, 4][rarityIdx] ?? 1; // artifact matches legendary
 
@@ -1329,22 +1557,17 @@ function generateItem(ilvl, rarity, slotId, clsId) {
   }
   mainStats.forEach((k) => { stats[k] += perStat; });
 
-  const pool = ["sta", "leech", "vers", "resil", "cdr", "csd"];
+  // Secondaries follow the SLOT's identity rather than one flat stamina-favoured roll shared by
+  // every slot. Before this, a helm and a chest of the same ilvl were the same item with a
+  // different name — nothing about the slot changed what could roll on it. Excluding what is
+  // already placed keeps a single piece from stacking the same stat on two lines.
   const chosen = [];
-  if (secondaryCount === 1) {
-    // gear with a single secondary: ~50% Stamina
-    chosen.push(rng() < 0.5 ? "sta" : pick(pool.filter((k) => k !== "sta")));
-  } else {
-    const avail = [...pool];
-    for (let i = 0; i < secondaryCount && avail.length; i++) {
-      const weights = avail.map((k) => (k === "sta" ? 3 : 1)); // stamina favored
-      const total = weights.reduce((a, b) => a + b, 0);
-      let r = rng() * total, idx = 0;
-      while (r >= weights[idx]) { r -= weights[idx]; idx++; }
-      chosen.push(avail[idx]); avail.splice(idx, 1);
-    }
+  for (let i = 0; i < secondaryCount; i++) {
+    const k = pickSlotSecondary(slotId, chosen);
+    if (!k) break;
+    chosen.push(k);
   }
-  chosen.forEach((k) => { stats[k] += Math.max(1, Math.round(secBase * (SIZE[k] || 0.5))); });
+  chosen.forEach((k) => { stats[k] += Math.max(1, Math.round(secBase * (SEC_SIZE[k] || 0.5))); });
 
   // inherent Armor on all non-weapon gear; weapons instead carry a damage range
   if (!isWeapon) stats.armor += baseArmorFor(ilvl, rarityIdx, slotId);
@@ -1462,7 +1685,7 @@ const rollGuildLoot = ({ ilvl, count = 1, clsIds = [], legendaryChance = 0, seed
     for (let i = 0; i < count; i++) {
       const leg = legendaryChance > 0 && rng() < legendaryChance;
       const cls = clsIds.length ? rngPick(clsIds) : "warrior";
-      out.push(generateItem(ilvl, rarityById(leg ? "legendary" : "epic"), rngPick(LOOT_SLOTS).id, cls));
+      out.push(generateItem(ilvl, rarityById(leg ? "legendary" : "epic"), pickLootSlot(), cls));
     }
     return out;
   };
@@ -1479,10 +1702,24 @@ const migrateGambitKeys = (map, selectedSkills) => {
   return out;
 };
 
+// One-time refund for the classes whose physical damage moved from Strength to Agility. A rogue
+// or hunter who spent attribute points on Strength was buying their damage stat at the time; the
+// scaling change made those points inert, so they come back as unspent rather than dying quietly.
+//
+// Self-terminating rather than version-flagged: once the refund runs, allocated.str is 0, so the
+// condition cannot match again. A player who deliberately re-spends points into Strength keeps
+// them — the refund only ever fires on the first load after the change.
+const refundStrayScalingPoints = (c) => {
+  const allocated = { str: 0, agi: 0, int: 0, sta: 0, ...(c.allocated || {}) };
+  const attrPoints = c.attrPoints || 0;
+  if (physScalingStat(c.cls) !== "agi" || !(allocated.str > 0)) return { attrPoints, allocated };
+  return { attrPoints: attrPoints + allocated.str, allocated: { ...allocated, str: 0 } };
+};
 const normalizeChar = (c) => ({
   ...c,
   gold: c.gold || 0, kills: c.kills || 0, bossKills: c.bossKills || 0, dungeonClears: c.dungeonClears || 0,
-  honor: c.honor || 0, honorXp: c.honorXp || 0, attrPoints: c.attrPoints || 0, allocated: { str: 0, agi: 0, int: 0, sta: 0, ...(c.allocated || {}) },
+  honor: c.honor || 0, honorXp: c.honorXp || 0,
+  ...refundStrayScalingPoints(c),
   professions: { ...emptyProfessions(), ...(c.professions || {}) },
   gatherTier: c.gatherTier || {},
   offlineZoneId: c.offlineZoneId ?? null,
@@ -1734,10 +1971,10 @@ const applyAllyAction = (st, ally, act, now) => {
     }
   } else { ally.bw = applySkillCore(sk, ally.char, ally.bw, now, () => {}).battle; }
   // role effects (interpreted by the engine)
-  if (skIsHeal(sk)) { const amt = Math.round(skHealFrac(sk) * healPowerOf(ally.char)); const tgt = st.allies.find((a) => a.id === act.targetAllyId && !a.down) || grpInjured(st.allies); if (tgt) { const before = tgt.hp; tgt.hp = Math.min(tgt.maxHp, tgt.hp + amt); st.log.push(`💚 ${ally.name} heals ${tgt.isHuman ? "you" : tgt.name} for ${Math.round(tgt.hp - before)}`); for (const en of st.enemies) if (en.hp > 0) grpAddThreat(en, ally.id, amt * GRP.threatHeal / Math.max(1, st.enemies.filter((e) => e.hp > 0).length)); } }
-  if (skIsHot(sk)) { const tgt = st.allies.find((a) => a.id === act.targetAllyId && !a.down) || grpInjured(st.allies); if (tgt) { const dur = sk.hotDur || 12; const per = Math.round(skHotPerSec(sk) * healPowerOf(ally.char)); tgt.hots = [...(tgt.hots || []).filter((h) => h.src !== sk.name), { src: sk.name, healPerTick: per, nextTick: now + 1000, expires: now + dur * 1000 }]; st.log.push(`🕯️ ${ally.name} puts ${sk.name} on ${tgt.isHuman ? "you" : tgt.name}`); } }
+  if (skIsHeal(sk)) { const _hc = critHeal(ally.char, skHealFrac(sk) * healPowerOf(ally.char)); const amt = _hc.amount; const tgt = st.allies.find((a) => a.id === act.targetAllyId && !a.down) || grpInjured(st.allies); if (tgt) { const before = tgt.hp; tgt.hp = Math.min(tgt.maxHp, tgt.hp + amt); st.log.push(`💚 ${ally.name} heals ${tgt.isHuman ? "you" : tgt.name} for ${Math.round(tgt.hp - before)}`); for (const en of st.enemies) if (en.hp > 0) grpAddThreat(en, ally.id, amt * GRP.threatHeal / Math.max(1, st.enemies.filter((e) => e.hp > 0).length)); } }
+  if (skIsHot(sk)) { const tgt = st.allies.find((a) => a.id === act.targetAllyId && !a.down) || grpInjured(st.allies); if (tgt) { const dur = sk.hotDur || 12; const per = critHeal(ally.char, skHotPerSec(sk) * healPowerOf(ally.char)).amount; tgt.hots = [...(tgt.hots || []).filter((h) => h.src !== sk.name), { src: sk.name, healPerTick: per, nextTick: now + 1000, expires: now + dur * 1000 }]; st.log.push(`🕯️ ${ally.name} puts ${sk.name} on ${tgt.isHuman ? "you" : tgt.name}`); } }
   if (sk.cleanse) { const tgt = st.allies.find((a) => a.id === act.targetAllyId && !a.down && (a.debuffs || []).length) || st.allies.find((a) => !a.down && (a.debuffs || []).length); if (tgt) { st.log.push(`💧 ${ally.name} cleanses ${tgt.isHuman ? "you" : tgt.name}`); tgt.debuffs = []; } }
-  if (sk.healAoe) { const amt = Math.round(sk.healAoe * healPowerOf(ally.char)); for (const a of st.allies) if (!a.down) a.hp = Math.min(a.maxHp, a.hp + amt); for (const en of st.enemies) if (en.hp > 0) grpAddThreat(en, ally.id, amt * GRP.threatHeal); }
+  if (sk.healAoe) { const amt = critHeal(ally.char, sk.healAoe * healPowerOf(ally.char)).amount; for (const a of st.allies) if (!a.down) a.hp = Math.min(a.maxHp, a.hp + amt); for (const en of st.enemies) if (en.hp > 0) grpAddThreat(en, ally.id, amt * GRP.threatHeal); }
   if (sk.taunt) { for (const en of st.enemies) if (en.hp > 0) { const top = Math.max(0, ...Object.values(en.threat), 0); en.threat[ally.id] = top * 1.3 + 100; en.targetId = ally.id; } st.log.push(`🛡️ ${ally.name} taunts!`); }
   if (sk.interrupt) { const en = st.enemies.find((e) => e.id === act.targetEnemyId && e.castBar && e.castBar.interruptible) || st.enemies.find((e) => e.castBar && e.castBar.interruptible); if (en) { st.log.push(`🚫 ${ally.name} interrupted ${en.name}'s ${en.castBar.name}!`); en.castBar = null; en.nextCastAt = now + 11000; } }
   if (skIsPartyBuff(sk)) { const dur = ((sk.partyHasteDur || sk.partyWardDur || sk.partyEmpowerDur) || 10) * 1000; for (const a of st.allies) if (!a.down) { if (sk.partyHastePct) a.bw.playerEffects.push({ kind: "haste", pct: sk.partyHastePct, expires: now + dur }); if (sk.partyWardPct) a.bw.playerEffects.push({ kind: "ward", pct: sk.partyWardPct, expires: now + dur }); if (sk.partyEmpowerPct) a.bw.playerEffects.push({ kind: "empower", pct: sk.partyEmpowerPct, expires: now + dur }); } st.log.push(`✨ ${ally.name} casts ${sk.name} — ${sk.partyWardPct ? "the party is shielded" : sk.partyHastePct ? "the party hastens" : "the party is empowered"}!`); }
@@ -1801,7 +2038,9 @@ const stepEncounter = (state, dt, inputs) => withRng(makeRng((state.seed ^ (stat
     for (const d of ally.debuffs) { let g = 0; while (now >= d.nextTick && g++ < 6) { ally.hp = Math.max(0, ally.hp - d.dmgPerTick); d.nextTick += 1000; } }
     if (now >= (ally.nextGcd || 0)) {
       const act = chooseAllyAction(s, ally, now);
-      const mult = ally.tier.key === "new" ? 1.3 : ally.tier.key === "expert" ? 0.9 : 1;
+      // Haste shortens the global cooldown in group play — this is where the stat earns its
+      // keep online, since group allies never auto-attack and all damage is on the GCD.
+      const mult = (ally.tier.key === "new" ? 1.3 : ally.tier.key === "expert" ? 0.9 : 1) / (1 + hasteOf(ally.char));
       if (act) { applyAllyAction(s, ally, act, now); ally.nextGcd = now + GRP.gcd * mult; }
       else if (!ally.isHuman) { ally.nextGcd = now + GRP.gcd * mult; } // humans keep their turn open until they tap
     }
@@ -1988,6 +2227,30 @@ export {
   baseArmorFor,
   gearStatBase,
   ARMOR_SLOT_WEIGHT,
+  SLOT_SECONDARY,
+  SECONDARY_POOL,
+  secondaryWeight,
+  pickSlotSecondary,
+  SEC_SIZE,
+  SLOT_DROP_WEIGHT,
+  pickLootSlot,
+  ZONE_DROP_MIN,
+  zoneDropScale,
+  physScalingStat,
+  STAT_DMG_RATE,
+  enemyCastable,
+  enemyPrefersMagic,
+  enemyUsableSkills,
+  refundStrayScalingPoints,
+  CRIT_ROGUE_BONUS,
+  CRIT_BASE,
+  hasteOf,
+  critHeal,
+  secPct,
+  secEffectiveRating,
+  SEC_CAP,
+  SEC_RATE,
+  CRIT_SOFT_CAP,
   ARMOR_BASE_MULT,
   PREFIXES,
   nameWithSuffix,

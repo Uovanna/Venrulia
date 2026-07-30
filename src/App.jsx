@@ -168,6 +168,15 @@ import {
   potionRejection,
   migrateGambitKeys,
   gdkpReserve,
+  SECONDARY_POOL,
+  hasteOf,
+  pickSlotSecondary,
+  SEC_SIZE,
+  pickLootSlot,
+  zoneDropScale,
+  physScalingStat,
+  enemyPrefersMagic,
+  enemyUsableSkills,
   gdkpBotCeiling,
   // These used to be defined a SECOND time in App.jsx. Nothing forced the two copies to agree,
   // so the client and the authoritative server could silently run different rules — which is
@@ -222,15 +231,80 @@ const dispositionFor = (name) => {
 // ---------- GEAR STAT WEIGHTS ----------
 // weight of a stat when scoring gear. Classes no longer have a primary stat, so all three
 // base stats are weighted equally; Stamina and combat secondaries follow.
+// What one point of a stat is worth when deciding whether an item is an upgrade.
+//
+// Main stats are priced per class, because they are not interchangeable. A class turns exactly
+// one stat into physical damage (physScalingStat — Agility for rogues and hunters, Strength for
+// everyone else) and Intellect into magic damage. Measured at level 60 / ilvl 63, 30 points of
+// the stat a class actually scales off is worth ~11-19% dps; 30 points of a stat it does not use
+// is worth 0.0%. Pricing all three at 1.0 meant a warrior chest rolling agi+int scored exactly as
+// well as one rolling str+agi while being ~7% worse, and auto-sell kept the wrong one.
+// Measured dps gain from +30 of each main stat at level 60 / ilvl 63, averaged over twelve seeded
+// gear rolls and normalised to each class's own best stat. game-core/mainstat-weights.test.cjs
+// re-measures and fails if the table drifts from what the combat code actually does.
+//
+// Declared explicitly rather than inferred from each class's `main`, because that declaration is
+// not reliable for hybrids: paladin declares "str" while its damage measurably comes from
+// Intellect (7.8% per 30 against Strength's 4.7%), so an inference would confidently mis-price it.
+//
+// The floor of 0.15 is deliberate. A stat a class genuinely cannot use measures 0.0%, but pricing
+// it at zero would let auto-sell vendor an otherwise excellent piece purely for carrying one dead
+// line, and main stats are only ever one part of an item.
+const MAIN_STAT_FLOOR = 0.15;
+const MAIN_WEIGHTS = {
+  warrior: { str: 1.0,  agi: 0.5,  int: 0.15 },
+  rogue:   { str: 0.15, agi: 1.0,  int: 0.15 },
+  hunter:  { str: 0.15, agi: 1.0,  int: 0.15 },
+  paladin: { str: 0.6,  agi: 0.75, int: 1.0  },
+  mage:    { str: 0.8,  agi: 0.85, int: 1.0  },
+  warlock: { str: 0.55, agi: 0.7,  int: 1.0  },
+};
+const mainStatWeightFor = (clsId, stat) => {
+  const row = MAIN_WEIGHTS[clsId];
+  if (row) return row[stat] ?? MAIN_STAT_FLOOR;
+  // An unknown class still has to score something sane: full weight on whatever it scales its
+  // physical damage off, and a real but smaller value everywhere else.
+  return stat === physScalingStat(clsId) ? 1.0 : 0.5;
+};
 const statWeight = (clsId, stat) => {
-  if (stat === "str" || stat === "agi" || stat === "int") return 1.0; // all primary stats equally valued
-  if (stat === "sta") return 0.75;   // Stamina
-  if (stat === "dmg") return 0.65;   // weapon damage
-  if (stat === "armor") return 0.55; // armor
+  if (stat === "str" || stat === "agi" || stat === "int") return mainStatWeightFor(clsId, stat);
+  // Secondaries are priced by measurement, not by hand. game-core/statweight-calibration.mjs
+  // measures each one through the real combat code across six classes and twelve seeded gear
+  // rolls, in units of one point of the class's OWN scaling stat, and
+  // game-core/itemscore.test.cjs re-measures the damage ones and fails if the table drifts.
+  //
+  // The hand-set values these replaced were internally inconsistent by up to 2.6x: crit damage
+  // measured 1.03 and was priced at 0.4, versatility measured 0.68 and was priced at 0.35. Main
+  // stats were correct, so secondaries were collectively undervalued against them and the upgrade
+  // label systematically preferred main-stat pieces over better secondary ones.
+  //
+  // Stamina stays the anchor for DEFENCE at 0.75 against a measured 1.40 points of effective
+  // health, an exchange rate of 0.536. That rate is the game's existing view on how much
+  // survivability is worth against damage, and it is preserved rather than re-decided here.
+  if (stat === "sta") return 0.75;
+  // Attack/Spell Power, and weapon damage, all enter computeDamage as flat additions where a main
+  // stat enters at x1.4 — so a point of any of them is worth 1/1.4 of a main stat. Measured across
+  // six classes at 0.716 against the 0.714 arithmetic predicts. Power was missing entirely before,
+  // and since it only ever appears on single-main-stat gear its absence made every focused piece
+  // read 10.3% worse than a dual piece it actually matches or beats in combat.
+  if (stat === "ap" || stat === "sp" || stat === "dmg") return 0.7;
+  if (stat === "csd") return 1.05;    // measured 1.03 — the largest error in the old table
+  if (stat === "vers") return 0.7;    // measured 0.68
+  if (stat === "crit") return 0.55;   // measured 0.53
+  if (stat === "cdr") return 0.45;    // measured 0.43
+  if (stat === "armor") return 0.45;  // measured 0.47 as effective health
+  if (stat === "haste") return 0.2;   // measured 0.19
+  // Leech and resilience are the two this harness cannot measure honestly, so both keep their
+  // existing hand-set values rather than being moved on a model.
+  //
+  // Leech returns a share of damage dealt as healing, so its worth is proportional to how long the
+  // fight lasts: 0.21 over a 2s trash kill, 1.04 over 10s, 6.27 against a group boss. 0.45 sits at
+  // roughly a 4s fight, which matches a game where trash dies in about 1.5 seconds. Moving it is a
+  // decision about which content the upgrade label should optimise for, not a correction.
   if (stat === "leech") return 0.45;
-  if (stat === "csd") return 0.4;
-  if (stat === "cdr") return 0.35;
-  if (stat === "vers") return 0.35;
+  // Resilience cuts damage-over-time and gives a chance to resist stuns and slows. Neither shows
+  // up in throughput or effective health, so it measures 0.00 here — which is a limit of the
+  // harness, not the stat. Left at judgement; scoring it at zero would be actively wrong.
   if (stat === "resil") return 0.25;
   return 0;
 };
@@ -788,23 +862,19 @@ function makeArtifact(clsId, slotId, level, existing) {
   const mains = ARTIFACT_STATS[clsId] || ["str", "agi"]; // class-appropriate primaries, always both
   const perStat = Math.max(1, Math.round((1 + ilvl * 0.05) * RARITY_STAT_MULT[rIdx]));
   const secBase = Math.max(1, Math.round(perStat * 0.7));
-  const SIZE = { sta: 1.0, leech: 0.5, vers: 0.5, resil: 0.5, cdr: 0.5, csd: 0.5 };
-  // legendary rolls 4 secondaries; the 2 guaranteed mains consume one slot → 3 secondaries
+  // legendary rolls 4 secondaries; the 2 guaranteed mains consume one slot → 3 secondaries.
+  // Rolled through the SAME shared table as every other drop. This carried its own copy of the
+  // secondary pool, its own size table and its own stamina bias, all of which went stale: crit and
+  // haste never rolled on an artifact at all, stamina lines came out 21% small (11 against 14),
+  // and a weapon ignored its csd/crit identity entirely.
   let secs = existing?.shape?.secs;
   if (!secs) {
-    const avail = ["sta", "leech", "vers", "resil", "cdr", "csd"];
     secs = [];
-    for (let i = 0; i < 3 && avail.length; i++) {
-      const w = avail.map((k) => (k === "sta" ? 3 : 1));
-      const tot = w.reduce((a, b) => a + b, 0);
-      let r = Math.random() * tot, idx = 0;
-      while (r >= w[idx]) { r -= w[idx]; idx++; }
-      secs.push(avail[idx]); avail.splice(idx, 1);
-    }
+    for (let i = 0; i < 3; i++) { const k = pickSlotSecondary(slotId, secs); if (!k) break; secs.push(k); }
   }
-  const stats = { str: 0, agi: 0, int: 0, sta: 0, armor: 0, dmg: 0, leech: 0, resil: 0, vers: 0, cdr: 0, csd: 0, ap: 0, sp: 0 };
+  const stats = { str: 0, agi: 0, int: 0, sta: 0, armor: 0, dmg: 0, leech: 0, resil: 0, vers: 0, cdr: 0, csd: 0, crit: 0, haste: 0, ap: 0, sp: 0 };
   mains.forEach((k) => { stats[k] += perStat; });
-  secs.forEach((k) => { stats[k] += Math.max(1, Math.round(secBase * (SIZE[k] || 0.5))); });
+  secs.forEach((k) => { stats[k] += Math.max(1, Math.round(secBase * (SEC_SIZE[k] || 0.5))); });
   // focused artifacts earn Power on the same terms as any other gear
   if (mains.length === 1 && ilvl >= POWER_AFFIX_MIN_ILVL) stats[mains[0] === "int" ? "sp" : "ap"] += Math.max(1, Math.round(perStat * POWER_PER_STAT));
   const isWeapon = slotId === "weapon";
@@ -820,7 +890,10 @@ function makeArtifact(clsId, slotId, level, existing) {
   };
 }
 
-const SCORE_STATS = ["str", "agi", "int", "sta", "armor", "leech", "resil", "vers", "cdr", "csd"];
+// ap/sp are scored separately in itemScore rather than listed here, because Power is dormant
+// while a piece carries two main stats — counting it unconditionally would make the score RISE
+// when a main-stat gem or enchant disarms a focused piece.
+const SCORE_STATS = ["str", "agi", "int", "sta", "armor", "leech", "resil", "vers", "cdr", "csd", "crit", "haste"];
 
 // ============================================================
 // TEMPERING FORGE — BDO-style enhancement (+N) + secondary reroll
@@ -836,10 +909,11 @@ const TEMPER_CFG = {
   grantAtRank: (r) => (r === 10 ? 6 : 1),                 // stat points added to each secondary line on success → +5 at +5, +15 at +10
   failStackPct: 0.04,       // 4% double-chance per stack → 25 stacks = guaranteed
   failStackMax: 25,
-  reroll: { start: 100000, max: 250000, rampRolls: 10, jitter: 0.30, pool: ["sta", "leech", "resil", "vers", "cdr", "csd"] },
+  reroll: { start: 100000, max: 250000, rampRolls: 10, jitter: 0.30, pool: SECONDARY_POOL },
 };
-const SECONDARY_KEYS = ["sta", "leech", "resil", "vers", "cdr", "csd"];
-const SEC_SIZE = { sta: 1.0, leech: 0.5, resil: 0.5, vers: 0.5, cdr: 0.5, csd: 0.5 };
+// Derived from the core rather than restated: these used to be hand-kept copies, so adding a
+// secondary meant remembering to update the temper shop too or it would silently ignore it.
+const SECONDARY_KEYS = SECONDARY_POOL;
 const isTemperable = (it) => !!it && !it.relicId && it.slotId !== "relic"; // relics excluded; all rarities + artifacts allowed
 // nominal secondary rating for a stat at a given ilvl/rarity (mirrors generateItem's formula)
 function secNominal(ilvl, rarityId, stat) {
@@ -878,6 +952,10 @@ const itemScore = (item, clsId) => {
   let sc = item.ilvl || 0;
   for (const k of SCORE_STATS) sc += ((s[k] || 0) + (e[k] || 0)) * statWeight(clsId, k);
   if (item.wdmg) sc += ((item.wdmg.min + item.wdmg.max) / 2) * statWeight(clsId, "dmg"); // weapon damage range
+  // Power counts only while it is live. effectiveStats applies the same rule, so an item that has
+  // been given a second main stat scores the Power it no longer grants at zero — matching what
+  // the character sheet already does rather than what the item happens to still carry.
+  if (itemPowerActive(item)) sc += (((s.ap || 0) + (s.sp || 0)) + ((e.ap || 0) + (e.sp || 0))) * statWeight(clsId, "ap");
   return sc;
 };
 
@@ -888,7 +966,13 @@ function rollGem({ level, isBoss, dungeonId, dropMult = 1 }) {
   if (!dungeonId && !isBoss) return null; // open-world trash never drops gems — they come from elites & instances
   const inst = dungeonId ? instanceById(dungeonId) : null;
   const isRaid = !!inst?.raid;
-  const chance = GEM_DROP_RATE * (isBoss ? 4 : 1) * (isRaid ? 3 : dungeonId ? 2 : 1) * DROP_RATE_MULT * dropMult;
+  // Zone-scaled on the same curve as gear. The comment above says gems ride the normal gear drop
+  // system, and once gear started thinning out toward the endgame they stopped doing so — gems
+  // were quietly becoming MORE common relative to gear exactly where gear was being starved.
+  //
+  // Unlike gear, the raid is NOT exempt here. That exemption exists solely to keep the ilvl-64
+  // bridge from normal mode to hard mode open, and gems are not part of that bridge.
+  const chance = GEM_DROP_RATE * (isBoss ? 4 : 1) * (isRaid ? 3 : dungeonId ? 2 : 1) * DROP_RATE_MULT * dropMult * zoneDropScale(level);
   if (Math.random() > chance) return null;
   const rarity = dungeonId ? rollRarityForDungeon(dungeonId) : rollRarityForZone(level);
   const pool = ALL_GEMS.filter((g) => g.rarity === rarity.id);
@@ -901,14 +985,15 @@ function rollLoot({ level, isBoss, dungeonId, guaranteed, clsId, dropMult = 1 })
   const items = [];
   const inst = dungeonId ? instanceById(dungeonId) : null;
   const isRaid = !!inst?.raid;
-  // The normal-mode raid is the bridge to Hard Mode: it drops frequently so one clear yields several pieces.
-  const dropChance = guaranteed ? 1 : isRaid ? 0.85 : (isBoss ? 1 : 0.34) * DROP_RATE_MULT * dropMult;
+  // The normal-mode raid is the bridge to Hard Mode: it drops frequently so one clear yields
+  // several pieces, and it is exempt from the zone scaling below for exactly that reason.
+  const dropChance = guaranteed ? 1 : isRaid ? 0.85 : (isBoss ? 1 : 0.34) * DROP_RATE_MULT * dropMult * zoneDropScale(level);
   if (Math.random() > dropChance) return items;
   // Normal mode caps at ilvl 63 (Blighted Marches); the raid always drops ilvl 64 → lets you reach avg 64 for Hard Mode.
   const ilvl = isRaid ? 64 : Math.max(1, Math.min(63, Math.round(level + (Math.random() * 4 - 1))));
   const rar = () => (dungeonId ? rollRarityForDungeon(dungeonId) : rollRarityForZone(level));
-  items.push(generateItem(ilvl, rar(), pick(LOOT_SLOTS).id, clsId));
-  if (isBoss && Math.random() < 0.5) items.push(generateItem(isRaid ? 64 : Math.min(63, ilvl + 1), rar(), pick(LOOT_SLOTS).id, clsId));
+  items.push(generateItem(ilvl, rar(), pickLootSlot(), clsId));
+  if (isBoss && Math.random() < 0.5) items.push(generateItem(isRaid ? 64 : Math.min(63, ilvl + 1), rar(), pickLootSlot(), clsId));
   return items;
 }
 
@@ -1313,6 +1398,57 @@ const ENEMY_RANKS = {
 const rankNameOf = (e) => e.isBoss ? "boss" : e.isLord ? "lord" : e.isChampion ? "champion" : "normal";
 const rankOf = (e) => ENEMY_RANKS[rankNameOf(e)];
 
+// ---------- ENEMY ARCHETYPES: making a disposition mean something ----------
+// Every creature already had a disposition, and it decided almost nothing: measured at level 60,
+// all six produced identical damage (126.0), identical health (1610) and no armor at all, because
+// enemyBaseDamage takes max(str, agi, int) and erases which stat the disposition chose. The only
+// real difference was which single skill a trash mob occasionally cast.
+//
+// These multipliers give each one a shape. `atk` scales the swing interval, so a rogue-type swings
+// fast and light where a warrior-type swings slow and heavy; `dmg` is then derived to hold damage
+// per second at parity, since solo enemy health is level-based and does NOT self-calibrate the way
+// group boss health does — an unbudgeted change here lands straight on the difficulty curve.
+//
+// Health and armor are deliberately NOT held flat: that is where the archetypes are allowed to
+// differ, so a rogue-type dies fast and a paladin-type grinds. `armor` is a multiple of the level
+// curve where 1.0 is 20% mitigation.
+// `cast` scales the gap between skill casts, which is the other half of an archetype's rhythm: a
+// mage-type casts almost twice as often as the baseline while a rogue-type barely casts at all.
+const ENEMY_ARCHETYPE = {
+  warrior: { atk: 1.15, hp: 0.88, armor: 1.2, crit: 0.00, cast: 1.50 },  // slow, heavy, armoured; rarely casts
+  paladin: { atk: 1.10, hp: 1.00, armor: 1.5, crit: 0.00, cast: 0.85 },  // the wall — grinds and keeps casting
+  rogue:   { atk: 0.70, hp: 0.85, armor: 0.0, crit: 0.25, cast: 1.70 },  // a flurry of small spiky hits, almost pure autos
+  hunter:  { atk: 0.90, hp: 0.90, armor: 0.5, crit: 0.15, cast: 1.10 },  // steady pressure
+  mage:    { atk: 1.30, hp: 0.80, armor: 0.0, crit: 0.00, cast: 0.60 },  // slow swings, constant casting
+  warlock: { atk: 1.20, hp: 0.90, armor: 0.0, crit: 0.00, cast: 0.70 },  // attrition rather than burst
+};
+const NEUTRAL_ARCHETYPE = { atk: 1, hp: 1, armor: 0, crit: 0, cast: 1 };
+const archetypeOf = (e) => (e && ENEMY_ARCHETYPE[e.cls]) || NEUTRAL_ARCHETYPE;
+// Damage per hit is derived, never authored: whatever the swing interval, crit rate and cast
+// cadence are, total damage per second comes out at parity. Authoring them independently is how a
+// "feel" change quietly becomes a difficulty change.
+//
+// Both halves of an enemy's output have to be in this, and the first version of it was wrong for
+// exactly that reason: it compensated only for swing speed while the multiplier it produced ALSO
+// scaled cast damage, handing slow archetypes free throughput. Measured, casts are 39% of an
+// enemy's damage at level 60 (autos 0.718 x base per second against casts 0.455), so ignoring them
+// left a x1.33 spread in real damage behind a table that claimed parity.
+const CRIT_BONUS = 0.8;    // a crit deals 1.8x, so it adds 0.8 of a hit
+const AUTO_SHARE = 0.61;   // measured: see game-core/enemy-identity-sim.cjs
+const CAST_SHARE = 0.39;
+// Auto damage scales with how fast you swing and how often you crit; cast damage scales with how
+// often you cast. Solve for the multiplier that puts the sum back at 1.
+const archetypeDmgMult = (a) =>
+  1 / (AUTO_SHARE * (1 + a.crit * CRIT_BONUS) / a.atk + CAST_SHARE / (a.cast || 1));
+// Armor that yields ARMOR_UNIT_MIT mitigation at factor 1.0, derived from the same mitigation
+// curve players use so it stays correct at every level rather than only at 60.
+const ARMOR_UNIT_MIT = 0.20;
+// How much of an incoming blow an enemy's archetype turns. Uses the same mitigation curve players
+// do, so an armoured enemy behaves the way an armoured player does.
+const enemyMitigation = (enemy, attackerLevel) => mitigation((enemy && enemy.armor) || 0, attackerLevel || 1);
+const enemyArmorFor = (level, factor) =>
+  factor > 0 ? Math.round((ARMOR_UNIT_MIT / (1 - ARMOR_UNIT_MIT)) * (45 + (level || 1) * 15) / 5 * factor) : 0;
+
 // Difficulty = the content tier a foe is fought in. `lvlBonus` raises its effective stat level, so
 // power grows along the same curve as levelling rather than as a flat multiplier bolted on top.
 const DIFFICULTY_TIERS = {
@@ -1332,13 +1468,16 @@ const enemyStatBlock = (level, cls, { rank = "normal", tier = "normal" } = {}) =
     agi: Math.round(B * ENEMY_OFF_SPREAD),
     int: Math.round(B * ENEMY_OFF_SPREAD),
     sta: Math.round(B * R.hp * T.hp),
+    // Armor comes from the archetype, so a warrior-type actually turns blows and a mage-type does
+    // not. Enemies had no armor field at all before this.
+    armor: enemyArmorFor(level + T.lvlBonus, (ENEMY_ARCHETYPE[cls] || NEUTRAL_ARCHETYPE).armor),
   };
   st[c.main] = Math.round(B * R.off * T.off); // the class main stat (str/agi/int) carries the primary value
   return st;
 };
 const enemyDamageStat = (enemy) => Math.max(enemy.str || 0, enemy.int || 0, enemy.agi || 0);
 // full pre-mitigation base damage for an enemy (used by both auto-attacks and skill casts)
-const enemyBaseDamage = (enemy) => (enemy.str != null ? enemyDamageStat(enemy) * DMG_PER_STAT : enemyDamageForLevel(enemy.level) * rankOf(enemy).off) * instanceDmgMult(enemy);
+const enemyBaseDamage = (enemy) => (enemy.str != null ? enemyDamageStat(enemy) * DMG_PER_STAT : enemyDamageForLevel(enemy.level) * rankOf(enemy).off) * instanceDmgMult(enemy) * archetypeDmgMult(archetypeOf(enemy));
 
 // ---------- SAVE ----------
 // All save data lives in localStorage under a stable key so it persists across app
@@ -1428,7 +1567,7 @@ const CombatLog = ({ log }) => {
   );
 };
 
-const STAT_LABEL = { str: "Str", agi: "Agi", int: "Int", sta: "Sta", armor: "Armor", dmg: "Dmg", leech: "Leech", resil: "Resilience", vers: "Versatility", cdr: "Cooldown Reduction", csd: "Crit Damage", ap: "Attack Power", sp: "Spell Power" };
+const STAT_LABEL = { str: "Str", agi: "Agi", int: "Int", sta: "Sta", armor: "Armor", dmg: "Dmg", leech: "Leech", resil: "Resilience", vers: "Versatility", cdr: "Cooldown Reduction", csd: "Crit Damage", crit: "Crit Chance", haste: "Haste", ap: "Attack Power", sp: "Spell Power" };
 
 // ============================================================
 // AUCTION HOUSE — economy config, value anchors, catalogs
@@ -1668,7 +1807,7 @@ function ItemTooltip({ item, onClose, actions, onSocket }) {
   const r = rarityById(item.rarity);
   const merged = { ...item.stats }; if (item.enchant) for (const k in item.enchant) merged[k] = (merged[k] || 0) + item.enchant[k];
   const mainKeys = ["str", "agi", "int", "sta"];
-  const secKeys = ["ap", "sp", "leech", "resil", "vers", "cdr", "csd"];
+  const secKeys = ["ap", "sp", "leech", "resil", "vers", "cdr", "csd", "crit", "haste"];
   const temperBonus = item.temperBonus || 0;
   const temperByStat = {};
   if (temperBonus > 0 && Array.isArray(item.lines)) for (const ln of item.lines) temperByStat[ln.stat] = (temperByStat[ln.stat] || 0) + temperBonus;
@@ -2560,17 +2699,17 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     const { isBoss = false, dungeon = null, name = null, hpMult = 1, champion = false, mimic = false, lord = false, tier = "normal" } = opts;
     const rank = isBoss ? "boss" : lord ? "lord" : (champion || mimic) ? "champion" : "normal";
     const R = ENEMY_RANKS[rank], T = diffTier(tier);
-    const baseHp = Math.floor((level * 26 + 50) * R.hp * T.hp * hpMult + Math.random() * 20); // rank + difficulty tables drive health
     const inst = dungeon ? instanceById(dungeon) : null;
     const nm = mimic ? "Mimic Chest" : (name || (inst?.enemies ? pick(inst.enemies) : pick(getZoneForLevel(level).enemies)));
     const cls = dispositionFor(nm); // fixed disposition per creature (matches the Bestiary)
+    // Archetype health sits alongside rank and difficulty: a rogue-type is fragile, a paladin-type
+    // is a wall. Damage per second is held at parity, so this is where the archetypes are allowed
+    // to actually differ. Resolved after `cls`, which it depends on.
+    const arch = ENEMY_ARCHETYPE[cls] || NEUTRAL_ARCHETYPE;
+    const baseHp = Math.floor((level * 26 + 50) * R.hp * T.hp * hpMult * arch.hp + Math.random() * 20); // rank + difficulty + archetype drive health
     const stats = enemyStatBlock(level, cls, { rank, tier });
-    // Priority 2: skill use follows the highest offensive stat — Int → magic, Str/Agi → physical
-    const primaryOff = stats.int >= stats.str && stats.int >= stats.agi ? "int" : (stats.str >= stats.agi ? "str" : "agi");
-    const prefersMagic = primaryOff === "int";
-    const castable = (SKILLS[cls] || []).filter((s) => s.unlockLevel <= level && ((s.mult && s.mult > 0) || s.dotMult || s.slowPct));
-    const typed = castable.filter((s) => isMagicSkill(s) === prefersMagic);
-    const usable = typed.length ? typed : castable;
+    // Shared with the Bestiary — one definition of what a creature fights with.
+    const usable = enemyUsableSkills(cls, level);
     const ccPool = usable.filter((s) => s.slowPct);
     const skillCount = R.skills; // Champion 2, Boss 3, Lord 4 (+CC) — from the rank table
     const chosen = [];
@@ -2578,7 +2717,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     const rest = usable.filter((s) => !chosen.includes(s));
     for (let i = rest.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [rest[i], rest[j]] = [rest[j], rest[i]]; }
     for (const s of rest) { if (chosen.length >= skillCount) break; chosen.push(s); }
-    return { ...stats, primaryOff, name: nm, iconKey: nm, isBoss, isChampion: champion || mimic || lord, isLord: lord, isMimic: mimic, dungeonId: dungeon, level, icon: mimic ? "🧰" : isBoss ? "💀" : lord ? "👑" : champion ? "⚔️" : "👹", hp: baseHp, maxHp: baseHp, cls, skills: chosen, nextCastAt: 0 };
+    return { ...stats, name: nm, iconKey: nm, isBoss, isChampion: champion || mimic || lord, isLord: lord, isMimic: mimic, dungeonId: dungeon, level, icon: mimic ? "🧰" : isBoss ? "💀" : lord ? "👑" : champion ? "⚔️" : "👹", hp: baseHp, maxHp: baseHp, cls, skills: chosen, nextCastAt: 0 };
   };
 
   // ---------- award loot (auto-equip or to bag) ----------
@@ -2719,7 +2858,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       const rate = (b.hardKind === "zone" ? 0.10 : 0.6) * (enemy.isBoss || enemy.isLord ? 1.6 : 1) * (1 + townBonuses(nc).drop);
       if (Math.random() < rate && !(guildRunRef.current && (enemy.isBoss || enemy.hardBoss))) { // Guild boss gear is awarded through the GDKP bid, not auto-looted
         const rar = b.dropIlvl >= 70 ? rollRarityForDungeon("stratholme") : rollRarityForZone(60);
-        nc = grantLoot(nc, [generateItem(b.dropIlvl, rar, pick(LOOT_SLOTS).id, nc.cls)]);
+        nc = grantLoot(nc, [generateItem(b.dropIlvl, rar, pickLootSlot(), nc.cls)]);
       }
       nc = grantGem(nc, rollGem({ level: enemy.level, isBoss: enemy.isBoss || enemy.isLord, dungeonId: "stratholme", dropMult: 1 + townBonuses(nc).drop }));
       // progression tracking
@@ -2856,8 +2995,8 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     if (res.battle === null && guildRunRef.current && (bSnap.mode === "dungeon" || bSnap.mode === "hard") && bSnap.hardKind !== "zone") {
       const gr = guildRunRef.current; guildRunRef.current = null;
       const floor = rarityById("epic");
-      const items = [generateItem(gr.ilvl, floor, pick(LOOT_SLOTS).id, res.char.cls)];
-      if (gr.raid) items.push(generateItem(gr.ilvl, floor, pick(LOOT_SLOTS).id, res.char.cls)); // raids drop two
+      const items = [generateItem(gr.ilvl, floor, pickLootSlot(), res.char.cls)];
+      if (gr.raid) items.push(generateItem(gr.ilvl, floor, pickLootSlot(), res.char.cls)); // raids drop two
       setGuildBid({ items, party: gr.party });
     }
   };
@@ -3004,7 +3143,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       }
 
       // player auto-attacks (class rate × haste, reduced by enemy slow/stun debuffs)
-      const pSpeed = Math.max(0.1, 1 + agiAtkSpeed(c) + talentMods(c).atkSpeed) * hasteMultOf(w.playerEffects) * playerSpeedMultOf(w.playerEffects);
+      const pSpeed = Math.max(0.1, 1 + agiAtkSpeed(c) + talentMods(c).atkSpeed + hasteOf(c)) * hasteMultOf(w.playerEffects) * playerSpeedMultOf(w.playerEffects);
       const stunned = pSpeed <= 0;
       if (stunned) { if (w.playerNextAt < now + 150) { w.playerNextAt = now + 150; dirty = true; } }
       const pInterval = stunned ? Infinity : PLAYER_BASE_INTERVAL / pSpeed;
@@ -3019,6 +3158,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
         if (crit) { dmg *= critMultFor(c) + (w.autoCritStacks || 0) * critStackPer; w.autoCritStacks = 0; } // spend banked Frenzy stacks
         else if (critStackPer > 0) w.autoCritStacks = (w.autoCritStacks || 0) + 1;
         dmg = Math.max(1, Math.floor(dmg * (w.pvp ? PVP_AUTO_MULT : 1)));
+        dmg = Math.max(1, Math.floor(dmg * (1 - enemyMitigation(w.enemy, c.level))));   // armoured archetypes turn blows
         w.enemy.hp = Math.max(0, w.enemy.hp - dmg);
         if (execThresh > 0 && w.enemy.hp > 0 && w.enemy.hp <= (w.enemy.maxHp || 0) * execThresh) { w.enemy.hp = 0; addLog("👁️ Executioner's Eye — slain!", "#ff5555"); } // instant kill on execute
         if (sp.leech > 0 || talentMods(c).leech > 0) { const h = Math.floor(dmg * (sp.leech + talentMods(c).leech) / 100); if (h > 0) w.hp = Math.min(maxHp, w.hp + h); }
@@ -3130,7 +3270,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           const playerDied = enemyCast(c, w, now);
           if (playerDied) { applyDefeat(); return; }
         }
-        w.enemy.nextCastAt = now + (w.enemy.castCd || ENEMY_CAST_CD); dirty = true;
+        w.enemy.nextCastAt = now + (w.enemy.castCd || ENEMY_CAST_CD) * archetypeOf(w.enemy).cast; dirty = true;
       }
 
       // enemy attacks (respect stun/slow + dodge + reduce buff)
@@ -3138,14 +3278,17 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       if (w.enemy.mirror) { /* mirror bot deals its damage via botStep */ }
       else if (slowMult <= 0) { if (w.enemyNextAt < now + 150) { w.enemyNextAt = now + 150; dirty = true; } }
       else {
-        const eInterval = ENEMY_BASE_INTERVAL / slowMult;
+        // Swing rhythm is the archetype's: a rogue-type flurries, a mage-type winds up.
+        const eArch = archetypeOf(w.enemy);
+        const eInterval = (ENEMY_BASE_INTERVAL * eArch.atk) / slowMult;
         const eff = effectiveStats(c); const mit = mitigation(eff.armor, w.enemy.level); const ab = activeBuffs(c);
         const dodgeChance = Math.max(c.race === "nightelf" ? 0.03 : 0, dodgePctOf(w.playerEffects));
         let g3 = 0;
         while (now >= w.enemyNextAt && g3++ < 6) {
           if (Math.random() < dodgeChance) { addLog("🌀 Dodged the attack!", "#9fd"); }
           else {
-            const rawDmg = enemyBaseDamage(w.enemy) * (enemyCanCast(w.enemy) ? enemyAutoMult(w.enemy.level) : 1) * enrageMult(w, now); // Hard Mode damage now lives in enemy stats; dungeon enrage still applies
+            const eCrit = eArch.crit > 0 && Math.random() < eArch.crit;   // only the archetypes that are meant to spike
+            const rawDmg = enemyBaseDamage(w.enemy) * (enemyCanCast(w.enemy) ? enemyAutoMult(w.enemy.level) : 1) * enrageMult(w, now) * (eCrit ? 1 + CRIT_BONUS : 1); // Hard Mode damage now lives in enemy stats; dungeon enrage still applies
             let eDmg = Math.max(1, Math.floor(rawDmg * (1 - mit)));
             if (ab.reducepct) eDmg = Math.max(1, Math.floor(eDmg * (1 - ab.reducepct.amount / 100)));
             eDmg = Math.max(1, Math.floor(eDmg * (1 - sp.vers / 200))); // Versatility reduces auto-attack (white) damage
@@ -3487,7 +3630,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     const items = [];
     for (let i = 0; i < n; i++) {
       const leg = run.trial && Math.random() < TRIAL_LEGENDARY_CHANCE;
-      items.push(generateItem(run.ilvl, rarityById(leg ? "legendary" : "epic"), pick(LOOT_SLOTS).id, c.cls));
+      items.push(generateItem(run.ilvl, rarityById(leg ? "legendary" : "epic"), pickLootSlot(), c.cls));
     }
     setGuildBid({ items, party: run.bidParty });
   };
@@ -4023,7 +4166,16 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     const ln = item.lines[lineIdx]; if (!ln) return;
     const cost = rerollCost(item.rerolls);
     if (c.gold < cost) { showNotif(`Need ${cost.toLocaleString()}g to reroll.`); return; }
-    const newStat = pick(TEMPER_CFG.reroll.pool);
+    // Reroll follows the SAME slot weighting drops use, so the shop cannot launder slot identity
+    // back out — rerolling a chest into pure crit damage would make the whole table meaningless.
+    // Off-stats stay reachable (~1 roll in 3), so an off-spec piece is a find, not an impossibility.
+    // Every stat already on the item is excluded, not just this line's: that guarantees a paid
+    // reroll changes something AND stops it landing on a stat another line already carries, which
+    // would silently sum into one larger line rather than reading as a second one. Drops have
+    // de-duplicated since slot identity shipped; this brings the shop in line with them.
+    // Four lines is the maximum and there are eight secondaries, so at least four remain.
+    const taken = (item.lines || []).map((l) => l.stat);
+    const newStat = pickSlotSecondary(item.slotId, taken) || pickSlotSecondary(item.slotId, [ln.stat]) || pick(TEMPER_CFG.reroll.pool);
     ln.stat = newStat;
     ln.base = rollRerollValue(item.ilvl, item.rarity, newStat);
     item.rerolls += 1;
@@ -4406,7 +4558,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
         const equipped = char.equipment[slot] || null;
         const merged = (it) => { if (!it) return {}; const m = { ...it.stats }; if (it.enchant) for (const k in it.enchant) m[k] = (m[k] || 0) + it.enchant[k]; return m; };
         const em = merged(equipped), bm = merged(bag);
-        const keys = ["str", "agi", "int", "sta", "armor", "leech", "resil", "vers", "cdr", "csd"];
+        const keys = ["str", "agi", "int", "sta", "armor", "leech", "resil", "vers", "cdr", "csd", "crit", "haste"];
         const wAvg = (it) => (it && it.wdmg ? (it.wdmg.min + it.wdmg.max) / 2 : 0);
         const wDelta = Math.round(wAvg(bag) - wAvg(equipped));
         const statLines = (it) => { const m = merged(it); return keys.filter((k) => (m[k] || 0) > 0).map((k) => `+${m[k]} ${STAT_LABEL[k]}`); };
@@ -4965,7 +5117,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                 const showLvl = hard ? (hz ? hz.enemyLvl : lvl + 5) : lvl; // Hard zones run enemies at a fixed elevated level
                 const eStats = enemyStatBlock(showLvl, repCls.id, hard ? { rank: "champion", tier: "hard" } : {}); // Hard: Champion rank on the hard difficulty tier
                 const showHp = hard ? Math.round(enemyRepHp(showLvl) * ENEMY_RANKS.champion.hp * diffTier("hard").hp * 8) : enemyRepHp(showLvl); // Champion rank × hard tier × zone weighting
-                const prefersMagic = repCls.main === "int";
+                const prefersMagic = enemyPrefersMagic(repCls.id, showLvl);   // the rule makeEnemy uses
                 const eSkills = (SKILLS[repCls.id] || []).filter((s) => s.unlockLevel <= showLvl && ((s.mult && s.mult > 0) || s.dotMult || s.slowPct) && isMagicSkill(s) === prefersMagic);
                 const statMeta = [["str", "💪", "Str"], ["agi", "🏹", "Agi"], ["int", "🧠", "Int"], ["sta", "❤️", "Sta"]];
                 return (
@@ -7450,7 +7602,7 @@ function LootBidModal({ items, party, char, commitChar, showNotif, onClose, net,
             </div>
             {(() => {
               const merged = { ...(item.stats || {}) }; if (item.enchant) for (const k in item.enchant) merged[k] = (merged[k] || 0) + item.enchant[k];
-              const mainKeys = ["str", "agi", "int", "sta"], secKeys = ["ap", "sp", "leech", "resil", "vers", "cdr", "csd"];
+              const mainKeys = ["str", "agi", "int", "sta"], secKeys = ["ap", "sp", "leech", "resil", "vers", "cdr", "csd", "crit", "haste"];
               const socks = socketsOf(item);
               const bare = mainKeys.concat(secKeys).every((k) => !(merged[k] > 0)) && !item.wdmg && !(merged.armor > 0) && !item.relicDesc;
               return (
@@ -7976,7 +8128,7 @@ function MultiplayerHub({ char, commitChar, showNotif, onExit, onStartRated }) {
         let w = { ...E.w, enemy: { ...E.w.enemy }, playerEffects: (E.w.playerEffects || []).filter((e) => e.expires > now), enemyEffects: (E.w.enemyEffects || []).filter((e) => e.expires > now) };
         let log = E.log; const pushLog = (t) => { log = [...log, t].slice(-9); };
         // player auto-attacks (identical math to the solo loop)
-        const pSpeed = Math.max(0.1, 1 + agiAtkSpeed(c) + talentMods(c).atkSpeed) * hasteMultOf(w.playerEffects) * playerSpeedMultOf(w.playerEffects);
+        const pSpeed = Math.max(0.1, 1 + agiAtkSpeed(c) + talentMods(c).atkSpeed + hasteOf(c)) * hasteMultOf(w.playerEffects) * playerSpeedMultOf(w.playerEffects);
         const pInterval = PLAYER_BASE_INTERVAL / pSpeed;
         const critStackPer = gemAutoCritStack(c), execThresh = gemAutoExec(c);
         let g = 0;
@@ -8042,8 +8194,8 @@ function MultiplayerHub({ char, commitChar, showNotif, onExit, onStartRated }) {
     if (encRef.current && encRef.current._done) return; if (encRef.current) encRef.current._done = true;
     if (!win) { setPhase("done"); setRewardMsg("The party wiped — no loot this time. Regroup and try again."); return; }
     const floor = content.kind === "raid" ? "epic" : (content.ilvl >= 60 ? "epic" : "rare");
-    const drops = [generateItem(content.ilvl, rarityById(floor), pick(LOOT_SLOTS).id, char.cls)];
-    if (content.kind === "raid") drops.push(generateItem(content.ilvl, rarityById("epic"), pick(LOOT_SLOTS).id, char.cls));
+    const drops = [generateItem(content.ilvl, rarityById(floor), pickLootSlot(), char.cls)];
+    if (content.kind === "raid") drops.push(generateItem(content.ilvl, rarityById("epic"), pickLootSlot(), char.cls));
     openBid(drops, 0);
   };
 

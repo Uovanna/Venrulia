@@ -3,6 +3,13 @@
 import { createAuction, placeBid, passLot, tick, currentLot, lotView, BID_SECONDS, MIN_RAISE } from "./loot.mjs";
 import { rollGuildLoot } from "./combat.mjs";
 
+// grantRewards bails out before its "nobody was paid" warning when no Supabase client can be
+// built, so the payout check below quietly depended on whoever ran it having real credentials
+// exported. Point it at an address that goes nowhere: the assertion is about the warning, and
+// the run never gets far enough to open a connection.
+process.env.SUPABASE_URL ||= "http://127.0.0.1:1/never-dialled";
+process.env.SUPABASE_SERVICE_ROLE ||= "test-only-not-a-key";
+
 let fail = 0; const ok = (c, m) => { console.log((c ? "  ✓ " : "  ✗ ") + m); if (!c) fail++; };
 
 const items = rollGuildLoot({ ilvl: 66, count: 1, clsIds: ["rogue"], seed: 7 });

@@ -83,5 +83,30 @@ if (stale.length) {
   console.log("   fix: npm run sync-core   (edit game-core/ — it is the canonical side)");
 } else console.log(`✓ server/ copies match the core (${SYNCED.join(", ")})`);
 
+// --- 5) App.jsx keeps its OWN secondary-stat table under a different name --------------------
+// Check 4 is name-based, so it only catches a local copy that reuses the core's name. It missed
+// makeArtifact's `const SIZE = { sta: 1.0, leech: 0.5, ... }` — a stale duplicate of SEC_SIZE that
+// left artifacts unable to roll crit or haste at all, with stamina lines 21% under everything
+// else. This catches the shape instead of the name.
+//
+// A genuine stat BAG lists the main stats too ({ str: 0, agi: 0, int: 0, sta: 0, armor: 0, ... });
+// a secondary table does not. That is the tell used to separate them.
+const SECONDARIES = core.SECONDARY_POOL;
+const MAINS = ["str", "agi", "int", "armor"];
+const suspects = [];
+for (const m of app.matchAll(/\{[^{}]{10,400}\}/g)) {
+  const body = m[0];
+  const secs = SECONDARIES.filter((k) => new RegExp(`[{,\\s]${k}\\s*:`).test(body));
+  if (secs.length < 4) continue;
+  if (MAINS.some((k) => new RegExp(`[{,\\s]${k}\\s*:`).test(body))) continue; // a full stat bag, fine
+  suspects.push({ line: app.slice(0, m.index).split("\n").length, secs: secs.length, body: body.replace(/\s+/g, " ").slice(0, 70) });
+}
+if (suspects.length) {
+  failures++;
+  console.log("✗ App.jsx defines its own secondary-stat table (the core owns these):");
+  for (const s of suspects) console.log(`   App.jsx:${s.line}  ${s.secs} secondaries — ${s.body}…`);
+  console.log("   fix: import SEC_SIZE / SEC_CAP / SEC_RATE from the core instead of restating them.");
+} else console.log("✓ App.jsx keeps no private secondary-stat table");
+
 console.log(failures ? "\n❌ client/core boundary audit FAILED" : "\n✅ client/core boundary is clean");
 process.exit(failures ? 1 : 0);

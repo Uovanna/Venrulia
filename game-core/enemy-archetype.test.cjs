@@ -97,14 +97,13 @@ js += `
   // castable skills down to the 2 physical ones. It never used 19 of its own abilities, while being
   // the most armoured and longest-lived thing in the zone.
   {
-    const usableFor = (cls) => {
-      const castable = (core.SKILLS[cls] || []).filter((s) => s.unlockLevel <= 60 && ((s.mult && s.mult > 0) || s.dotMult || s.slowPct));
-      const magicCount = castable.filter(core.isMagicSkill).length;
-      const prefersMagic = magicCount * 2 > castable.length;
-      const typed = castable.filter((s) => core.isMagicSkill(s) === prefersMagic);
-      const lopsided = typed.length * 4 >= castable.length * 3;
-      return { all: castable.length, usable: ((lopsided && typed.length) ? typed : castable).length, prefersMagic };
-    };
+    // Use the core's own helper rather than restating the rule — makeEnemy and the Bestiary both
+    // call it, and a copy here would be a third definition free to drift from either.
+    const usableFor = (cls) => ({
+      all: core.enemyCastable(cls, 60).length,
+      usable: core.enemyUsableSkills(cls, 60).length,
+      prefersMagic: core.enemyPrefersMagic(cls, 60),
+    });
     const pal = usableFor("paladin");
     ok(pal.prefersMagic, "a paladin-type is read as a caster, which is what 19 of its 21 skills are");
     ok(pal.usable >= pal.all * 0.7, "it can now draw on " + pal.usable + " of its " + pal.all + " skills (it had 2)");
@@ -114,6 +113,14 @@ js += `
     }
     ok(!usableFor("warrior").prefersMagic && usableFor("mage").prefersMagic,
        "…and the rule still reads a warrior as physical and a mage as magical");
+    // The declaration itself now matches the kit, so the two can no longer disagree.
+    ok(CLASSES.find((c) => c.id === "paladin").main === "int",
+       "paladin declares Intellect, matching both its kit and where its damage measurably comes from");
+    for (const cls of IDS) {
+      const declared = CLASSES.find((c) => c.id === cls).main === "int";
+      ok(declared === usableFor(cls).prefersMagic,
+         cls + ": the declared main stat and its kit agree about whether it is a caster");
+    }
   }
 
   // --- armor is real, and only where it should be -------------------------------------------------

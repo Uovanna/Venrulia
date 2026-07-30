@@ -14,7 +14,10 @@ const CLASSES = [
   // 1047 dps against a warrior's 1213 and a mage's 931, so it is mid-pack, not starved. Removing
   // Finesse would put it at 1247 — top of the roster — and widen the spread from x1.30 to x1.34.
   { id: "rogue", name: "Rogue", icon: "🗡️", color: "#FFF569", desc: "Swift assassin striking from shadows", main: "agi", stats: { str: 5, agi: 12, int: 3, sta: 6 }, passive: "+3% crit · Finesse: −16% raw damage, +39% Agility scaling", dmgMod: -0.16 },
-  { id: "paladin", name: "Paladin", icon: "🛡️", color: "#F58CBA", desc: "Holy warrior who heals and tanks", main: "str", stats: { str: 8, agi: 3, int: 7, sta: 9 }, passive: "+10% healing" },
+  // Declares Intellect: 19 of its 21 castable skills are magic, and measured at level 60 a
+  // paladin gains 7.8% dps from 30 Intellect against 4.7% from Strength. It read "str" for a long
+  // time, which filtered its enemy skill pool down to 2 abilities and mispriced its gear.
+  { id: "paladin", name: "Paladin", icon: "🛡️", color: "#F58CBA", desc: "Holy warrior who heals and tanks", main: "int", stats: { str: 8, agi: 3, int: 7, sta: 9 }, passive: "+10% healing" },
   { id: "hunter", name: "Hunter", icon: "🏹", color: "#ABD473", desc: "Ranged master with a loyal beast", main: "agi", stats: { str: 4, agi: 10, int: 5, sta: 7 }, passive: "+15% ranged dmg" },
   { id: "warlock", name: "Warlock", icon: "👁️", color: "#9482C9", desc: "Dark caster commanding demons", main: "int", stats: { str: 3, agi: 3, int: 11, sta: 6 }, passive: "+20% DoT dmg" },
 ];
@@ -880,6 +883,25 @@ const critChanceFor = (char) => {
   return Math.min(1, Math.max(0, c <= CRIT_SOFT_CAP ? c : CRIT_SOFT_CAP + (c - CRIT_SOFT_CAP) * 0.25));
 };
 const mitigation = (armor, attackerLevel) => clamp((armor * 5) / (armor * 5 + 45 + attackerLevel * 15), 0, 0.75);
+// Which damage type a creature favours, and the pool it draws from. Decided by the MAJORITY of the
+// class's own kit rather than by its declared main stat: deriving it from the declaration broke
+// hybrids, filtering a paladin's 21 castable skills down to the 2 physical ones.
+//
+// Lives here rather than in the client because two places need the same answer — makeEnemy, which
+// picks what a creature actually casts, and the Bestiary, which tells the player what to expect.
+// They had separate copies of the rule and would have disagreed about paladins.
+const enemyCastable = (clsId, level) =>
+  (SKILLS[clsId] || []).filter((s) => s.unlockLevel <= (level || 1) && ((s.mult && s.mult > 0) || s.dotMult || s.slowPct));
+const enemyPrefersMagic = (clsId, level) => {
+  const pool = enemyCastable(clsId, level);
+  return pool.filter(isMagicSkill).length * 2 > pool.length;
+};
+// A kit close to evenly split keeps both halves rather than throwing one away.
+const enemyUsableSkills = (clsId, level) => {
+  const pool = enemyCastable(clsId, level);
+  const typed = pool.filter((s) => isMagicSkill(s) === enemyPrefersMagic(clsId, level));
+  return (typed.length && typed.length * 4 >= pool.length * 3) ? typed : pool;
+};
 const enemyDamageForLevel = (level) => Math.floor(level * 2 + 6);
 const LEECH_MULT = 0.67;
 // ---------- SECONDARY CONVERSION ----------
@@ -2216,6 +2238,9 @@ export {
   zoneDropScale,
   physScalingStat,
   STAT_DMG_RATE,
+  enemyCastable,
+  enemyPrefersMagic,
+  enemyUsableSkills,
   refundStrayScalingPoints,
   CRIT_ROGUE_BONUS,
   CRIT_BASE,

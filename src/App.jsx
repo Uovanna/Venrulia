@@ -175,6 +175,8 @@ import {
   pickLootSlot,
   zoneDropScale,
   physScalingStat,
+  enemyPrefersMagic,
+  enemyUsableSkills,
   gdkpBotCeiling,
   // These used to be defined a SECOND time in App.jsx. Nothing forced the two copies to agree,
   // so the client and the authoritative server could silently run different rules — which is
@@ -2706,20 +2708,8 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     const arch = ENEMY_ARCHETYPE[cls] || NEUTRAL_ARCHETYPE;
     const baseHp = Math.floor((level * 26 + 50) * R.hp * T.hp * hpMult * arch.hp + Math.random() * 20); // rank + difficulty + archetype drive health
     const stats = enemyStatBlock(level, cls, { rank, tier });
-    const primaryOff = stats.int >= stats.str && stats.int >= stats.agi ? "int" : (stats.str >= stats.agi ? "str" : "agi");
-    const castable = (SKILLS[cls] || []).filter((s) => s.unlockLevel <= level && ((s.mult && s.mult > 0) || s.dotMult || s.slowPct));
-    // Which damage type this creature favours is decided by its own KIT, not by the class's
-    // declared main stat. Deriving it from the stat block broke hybrids: paladin declares "str", so
-    // it read as physical and its 21 castable skills were filtered down to the 2 physical ones — a
-    // paladin-type never used 19 of its own abilities, while also being the most armoured and
-    // longest-lived thing in the zone. The same declaration is wrong in the gear system too, where
-    // a paladin's damage measurably comes from Intellect.
-    const magicCount = castable.filter(isMagicSkill).length;
-    const prefersMagic = magicCount * 2 > castable.length;   // majority of its own kit
-    const typed = castable.filter((s) => isMagicSkill(s) === prefersMagic);
-    // A kit that is close to evenly split keeps both halves rather than throwing one away.
-    const lopsided = typed.length * 4 >= castable.length * 3;
-    const usable = (lopsided && typed.length) ? typed : castable;
+    // Shared with the Bestiary — one definition of what a creature fights with.
+    const usable = enemyUsableSkills(cls, level);
     const ccPool = usable.filter((s) => s.slowPct);
     const skillCount = R.skills; // Champion 2, Boss 3, Lord 4 (+CC) — from the rank table
     const chosen = [];
@@ -2727,7 +2717,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     const rest = usable.filter((s) => !chosen.includes(s));
     for (let i = rest.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [rest[i], rest[j]] = [rest[j], rest[i]]; }
     for (const s of rest) { if (chosen.length >= skillCount) break; chosen.push(s); }
-    return { ...stats, primaryOff, name: nm, iconKey: nm, isBoss, isChampion: champion || mimic || lord, isLord: lord, isMimic: mimic, dungeonId: dungeon, level, icon: mimic ? "🧰" : isBoss ? "💀" : lord ? "👑" : champion ? "⚔️" : "👹", hp: baseHp, maxHp: baseHp, cls, skills: chosen, nextCastAt: 0 };
+    return { ...stats, name: nm, iconKey: nm, isBoss, isChampion: champion || mimic || lord, isLord: lord, isMimic: mimic, dungeonId: dungeon, level, icon: mimic ? "🧰" : isBoss ? "💀" : lord ? "👑" : champion ? "⚔️" : "👹", hp: baseHp, maxHp: baseHp, cls, skills: chosen, nextCastAt: 0 };
   };
 
   // ---------- award loot (auto-equip or to bag) ----------
@@ -5127,7 +5117,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                 const showLvl = hard ? (hz ? hz.enemyLvl : lvl + 5) : lvl; // Hard zones run enemies at a fixed elevated level
                 const eStats = enemyStatBlock(showLvl, repCls.id, hard ? { rank: "champion", tier: "hard" } : {}); // Hard: Champion rank on the hard difficulty tier
                 const showHp = hard ? Math.round(enemyRepHp(showLvl) * ENEMY_RANKS.champion.hp * diffTier("hard").hp * 8) : enemyRepHp(showLvl); // Champion rank × hard tier × zone weighting
-                const prefersMagic = repCls.main === "int";
+                const prefersMagic = enemyPrefersMagic(repCls.id, showLvl);   // the rule makeEnemy uses
                 const eSkills = (SKILLS[repCls.id] || []).filter((s) => s.unlockLevel <= showLvl && ((s.mult && s.mult > 0) || s.dotMult || s.slowPct) && isMagicSkill(s) === prefersMagic);
                 const statMeta = [["str", "💪", "Str"], ["agi", "🏹", "Agi"], ["int", "🧠", "Int"], ["sta", "❤️", "Sta"]];
                 return (

@@ -1243,7 +1243,14 @@ const botTier = (rating) => {
 const buildBotChar = (cls, spec, level, ilvl) => {
   const bc = createCharacter("BotRef", cls, "human");
   bc.level = level || 60;
-  if (spec) bc.spec = spec;
+  if (spec) {
+    bc.spec = spec;
+    // Say outright that a bot runs its spec's kit. createCharacter seeds selectedSkills with a
+    // single basic skill, and normalizeChar rightly treats whatever is there as a deliberate
+    // choice — so without this a bot spent slot 1 on that starter skill and lost its fifth
+    // signature ability, which for a tank is Shield Wall and for a healer is Aegis of Light.
+    bc.selectedSkills = [...specSkillNames(spec)];
+  }
   const eq = { ...emptyEquipment() };
   for (const s of LOOT_SLOTS) eq[s.id] = generateItem(Math.max(1, ilvl || 60), rarityById("epic"), s.id, cls);
   bc.equipment = eq;
@@ -1755,7 +1762,15 @@ const normalizeChar = (c) => ({
     if (!spec) { const old60 = c.talents && c.talents[60]; if (old60 && specById(migrateSpec(old60)) && specClassOf(migrateSpec(old60)) === c.cls) spec = migrateSpec(old60); }
     const sig = spec ? specSkillNames(spec) : [];
     const base = (c.selectedSkills || c.unlockedSkills || []).filter((n) => !ALL_SPEC_SKILL_NAMES.has(n) || sig.includes(n)); // drop signature skills from other specs
-    return padSelectedSkills({ cls: c.cls, level: c.level || 1, spec }, [...sig, ...base]);
+    // The player's own bar comes FIRST; signature skills only fill what is left. This ran the other
+    // way round and re-applied on EVERY load, so padSelectedSkills truncated to the slot count and
+    // evicted real choices: a level-60 warrior with five non-signature skills kept two of them after
+    // a single save-and-reload, silently and permanently.
+    //
+    // Signature skills are still granted where that is the point — switchSpecCore puts them first
+    // when you actively choose a spec, and the UI says so. applyLoadout already used this ordering
+    // for restoring a saved template; normalizeChar was the one place that did not.
+    return padSelectedSkills({ cls: c.cls, level: c.level || 1, spec }, [...base, ...sig]);
   })(),
   equipment: (() => { const eq = { ...emptyEquipment(), ...(c.equipment || {}) }; for (const k in eq) eq[k] = migrateItem(eq[k]); return eq; })(),
   inventory: (c.inventory || []).map(migrateItem),

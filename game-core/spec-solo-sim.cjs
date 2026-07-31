@@ -168,13 +168,13 @@ js += `
   console.log("\\n=== 3. WHERE THE DAMAGE GAP ACTUALLY COMES FROM ===");
   console.log("Each non-DPS spec against its own class's DPS spec, split into the three causes.\\n");
   // Absolute numbers, not shares of a gap. Shares are misleading here: the "best bar" is an
-  // OPTIMAL bar while the DPS reference runs its own signatures, so the two effects can add up to
+  // OPTIMAL bar while the DPS reference runs its default bar, so the two effects can add up to
   // more than the gap between them and a percentage split would read as over 100%.
   console.log(pad("spec", 12) + rp("own bar", 10) + rp("+best bar", 16) + rp("+no penalty", 16)
     + rp("dps ref", 10) + rp("vs ref", 9));
   for (const row of barRows) {
     if (!row.dpsSpec) continue;
-    const own = results[row.spec + "|its own signatures"].ch.dps;
+    const own = results[row.spec + "|its default bar"].ch.dps;
     const best = results[row.spec + "|best damage skills"].ch.dps;
     const ref = results[row.dpsSpec].ch.dps;
     // What the best bar WOULD do without the spec's flat damage penalty. dmgPct is a clean
@@ -193,7 +193,7 @@ js += `
   console.log("\\n=== 4. DOES FIXING THE BAR ALONE MAKE THEM VIABLE? ===");
   for (const row of barRows) {
     if (!row.dpsSpec) continue;
-    const a = results[row.spec + "|its own signatures"], b = results[row.spec + "|best damage skills"];
+    const a = results[row.spec + "|its default bar"], b = results[row.spec + "|best damage skills"];
     console.log("  " + pad(row.spec, 12) + " default bar: " + (a.f.clears ? "clears" : "dies")
       + "   best bar: " + (b.f.clears ? "CLEARS" : "dies")
       + "   (kill " + a.f.secs.toFixed(0) + "s -> " + b.f.secs.toFixed(0) + "s)");
@@ -220,6 +220,38 @@ js += `
   console.log("    support spec is simply the first place that shows. That is a class problem.");
   console.log("  - Tanks are not failing at all. w_prot and p_prot clear on their own signatures; they");
   console.log("    are just slow (35s a kill against a Berserker's 16s), so they farm at half rate.");
+
+  // ---------- every DPS spec against the same content -------------------------------------------
+  console.log("\\n=== 6. EVERY DPS SPEC IN SOLO HARD MODE (entry bracket) ===");
+  console.log("Same gear seeds, same default-bar rule, so the only variable is the spec.\\n");
+  console.log(pad("spec", 12) + pad("class", 9) + rp("dps", 7) + rp("hp", 7) + rp("kill", 9)
+    + rp("survive", 10) + rp("margin", 9) + rp("verdict", 9) + "   modifiers");
+  const CLS_OF = { w: "warrior", m: "mage", r: "rogue", p: "paladin", h: "hunter", l: "warlock" };
+  const dpsIds = Object.keys(core.SPEC_SKILLS)
+    .filter((id) => CLS_OF[id.split("_")[0]] && specById(id) && specRole(id) === "dps");
+  const allRows = dpsIds.map((id) => {
+    const cls = CLS_OF[id.split("_")[0]];
+    const bar = core.normalizeChar({ ...core.createCharacter("T", cls, "human"), level: 60, spec: id, selectedSkills: [] }).selectedSkills;
+    const ch = profile(cls, id, HZ.reqIlvl, bar);
+    const f = zoneFight(HZ, ch);
+    return { id, cls, ch, f, mods: JSON.stringify((specById(id) || {}).m || {}) };
+  }).sort((a, b) => b.ch.dps - a.ch.dps);
+  for (const r of allRows) {
+    console.log(pad(r.id, 12) + pad(r.cls, 9) + rp(g(r.ch.dps), 7) + rp(g(r.ch.hp), 7)
+      + rp(r.f.secs.toFixed(1) + "s", 9)
+      + rp(r.f.live > 1e4 ? "sustains" : r.f.live.toFixed(1) + "s", 10)
+      + rp(r.f.live > 1e4 ? "huge" : "x" + (r.f.live / r.f.secs).toFixed(2), 9)
+      + rp(r.f.clears ? "CLEARS" : "DIES", 9) + "   " + r.mods);
+  }
+  const byCls = {};
+  for (const r of allRows) (byCls[r.cls] = byCls[r.cls] || []).push(r);
+  console.log("\\n  class averages (dps / how many of its specs clear):");
+  Object.entries(byCls).map(([c, v]) => [c, v.reduce((a, x) => a + x.ch.dps, 0) / v.length, v.filter((x) => x.f.clears).length, v.length])
+    .sort((a, b) => b[1] - a[1])
+    .forEach(([c, d, cl, n]) => console.log("    " + pad(c, 10) + rp(g(d), 6) + "   " + cl + "/" + n + " clear"));
+  const dying = allRows.filter((r) => !r.f.clears);
+  console.log("\\n  specs that CANNOT clear the entry bracket solo: "
+    + (dying.length ? dying.map((r) => r.id).join(", ") : "none"));
   console.log("");
 })();`;
 const runf = path.join(dir, 'spec.cjs'); fs.writeFileSync(runf, js);

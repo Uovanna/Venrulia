@@ -16,6 +16,22 @@
  *   3. THE SPEC.    Non-DPS specs carry a flat dmgPct penalty: -15% for tanks and support, -20%
  *                   for the healer.
  *
+ * OPEN POSITIONS — measured, deliberately NOT changed. Recorded so the numbers survive:
+ *
+ *   m_wild (Arcanist) pays +3s on EVERY skill cooldown for a 30% double-cast. Even with Wild Magic
+ *   now credited by offlinePlayerDps it is the weakest mage spec at 1,453 dps. Sweeping the
+ *   constant: at +1.5s it measures 1,613, ahead of m_sword's 1,587. The upside is fine; the
+ *   downside is overpriced by roughly a factor of two.
+ *
+ *   w_champion pays -25% attack speed for +15% cooldown reduction and is the WEAKEST spec in the
+ *   game at 1,426 dps, against w_berserk's 1,945 in the same class. Softening the penalty to -12%
+ *   only reaches 1,500, so the cooldown reduction is not carrying its half of the trade. This is
+ *   not a second one-sided bug — cdrFracFor was checked and does apply spec cdr — it is tuning.
+ *
+ *   m_trick trades -15% magic damage for +2s of crowd control. The damage cost is measured; the
+ *   survival benefit is NOT, because the fight model below has no crowd control in it. Its 1,554
+ *   is a lower bound, not a verdict.
+ *
  * This drives the real offlinePlayerDps / effectiveStats / enemy tables out of src/App.jsx and the
  * core, so the numbers describe the shipped game.
  *

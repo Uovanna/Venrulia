@@ -499,11 +499,19 @@ const TALENT_TIERS = [
 const TALENT_L60 = {
   warrior: [
     { id: "w_berserk",  name: "Berserker",   icon: "😤", desc: "+10% attack speed per empty ability slot (bypasses the cap).", f: "berserk" },
+    // MEASURED, NOT YET CHANGED: the weakest spec in the game at 1,426 dps against w_berserk's
+    // 1,945 in the same class. Softening the penalty to -12% only reaches 1,500, so the cooldown
+    // reduction is not carrying its half of the trade — autos are too large a share of output for
+    // -25% attack speed to be bought back this way. cdrFracFor was checked and DOES apply spec cdr,
+    // so this is tuning, not a dropped modifier. See game-core/spec-solo-sim.cjs, OPEN POSITIONS.
     { id: "w_champion", name: "Juggernaut",  icon: "🏅", desc: "+15% cooldown reduction, but −25% attack speed.", m: { cdr: 0.15, atkSpeed: -0.25 } },
     { id: "w_antimage", name: "Spellbreaker", icon: "🚫", desc: "−15% magic damage taken & −20% magic crowd control. Taking magic damage grants +5% physical damage (stacks 5×).", f: "spellbreaker" },
     { id: "w_prot",     name: "Protection",  icon: "🛡️", role: "tank", desc: "Group Tank — high threat & −20% damage taken. Your damage −15%.", m: { dr: 0.20, dmgPct: -0.15 } },
   ],
   mage: [
+    // MEASURED, NOT YET CHANGED: the +3s is overpriced by roughly a factor of two. Even with Wild
+    // Magic credited this is the weakest mage spec at 1,453 dps; at skillCd 1.5 it measures 1,613,
+    // ahead of m_sword. See the OPEN POSITIONS note in game-core/spec-solo-sim.cjs.
     { id: "m_wild",   name: "Arcanist",    icon: "🎲", desc: "30% chance to double-cast magic skills. +3s skill cooldown.", f: "wildmagic", m: { skillCd: 3 } },
     { id: "m_trick",  name: "Frostweaver", icon: "🃏", desc: "Crowd control lasts 2s longer. Magic damage −15%.", m: { magicPct: -0.15 }, ccDur: 2 },
     { id: "m_sword",  name: "Spellblade",  icon: "🗡️", desc: "Auto-attacks scale from Intellect and you weave skills freely. +10% attack speed.", f: "intAuto", m: { atkSpeed: 0.10 } },

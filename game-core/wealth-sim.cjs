@@ -21,7 +21,9 @@ js = js.replace(/import\.meta\.env/g, '({})');
 js += `
 ;(function(){
   const core = require("${path.join(__dirname, 'combat.mjs').replace(/\\/g, '/')}");
-  const { createCharacter, generateItem, rarityById, LOOT_SLOTS, normalizeChar, maxHpFor } = core;
+  // App.jsx IMPORTS these from the core, so they are not bare locals in the transpiled module.
+  const { createCharacter, generateItem, rarityById, LOOT_SLOTS, normalizeChar, maxHpFor,
+          effectiveStats, secondaryPcts, mitigation } = core;
   const rngm = require("${path.join(__dirname, 'rng.mjs').replace(/\\/g, '/')}");
   const pad = (s, n) => String(s).padEnd(n), rp = (s, n) => String(s).padStart(n);
   const g = (n) => Math.round(n).toLocaleString();
@@ -93,6 +95,172 @@ js += `
   console.log(pad("level 60, farming", 22) + rp(endgame.hours.toFixed(1), 8) + rp(g(endgame.kills), 10)
     + rp(g(endgame.gold), 12) + rp(g(goldPerHour), 12)
     + (deaths ? "   (" + deaths + "/" + runs.length + " runs ended in death)" : ""));
+
+  // ---------------------------------------------------------------------------------------------
+  console.log("\\n=== 1b. INCOME AT EACH HARD-MODE BRACKET ===");
+  console.log("simulateOffline only knows the normal ZONES, so hard mode cannot be driven through it.");
+  console.log("This reconstructs the live hard-zone loop from the shipped tables: makeHardEnemy builds");
+  console.log("a CHAMPION at hpMult 8 (or a Lord at hpMult 10, 10% of spawns) on the 'hard' difficulty");
+  console.log("tier, and resolveDeath pays it out. Enemy health, armor and the reward formula are the");
+  console.log("real ones; only the tick-by-tick rotation is replaced by offlinePlayerDps.\\n");
+
+  // resolveDeath and makeHardEnemy live INSIDE the React component and cannot be called from here.
+  // Mirrored below, with the source line each rule comes from, so a drift is at least findable.
+  const HARD_T = diffTier("hard");
+  const hardZoneEnemy = (hz, isLord, name) => {
+    const rank = isLord ? "lord" : "champion";
+    const R = ENEMY_RANKS[rank];
+    const hpMult = isLord ? 10 : 8;                         // makeHardEnemy
+    const cls = dispositionFor(name);
+    const arch = ENEMY_ARCHETYPE[cls] || NEUTRAL_ARCHETYPE;
+    const st = enemyStatBlock(hz.enemyLvl, cls, { rank, tier: "hard" });
+    // + Math.random()*20 of spawn jitter, dropped: it is 0.05% of a 30,000-hp champion.
+    const hp = Math.floor((hz.enemyLvl * 26 + 50) * R.hp * HARD_T.hp * hpMult * arch.hp);
+    return { ...st, level: hz.enemyLvl, cls, hp, maxHp: hp, isChampion: true, isLord, isBoss: false, arch };
+  };
+
+  // A level-60 with a spec, a full set at the bracket's ilvl, and its rotation switched on.
+  const geared = (ilvl, seed) => rngm.withRng(rngm.makeRng(seed), () => {
+    const c = core.buildBotChar("warrior", "w_berserk", 60, ilvl);
+    c.spec = "w_berserk"; c.gold = 0; c.race = "human";
+    c.autoSkillsOwned = {}; c.autoSkills = {};
+    for (const n of (c.selectedSkills || [])) { c.autoSkillsOwned[n] = true; c.autoSkills[n] = true; }
+    c.hp = maxHpFor(c);
+    return c;
+  });
+
+  // A champion casts 2 of its class's skills, a Lord 4, drawn at random from the pool — so the
+  // expected damage of a cast is the pool average, not any one skill. mult and dotMult both land on
+  // the player; hits multiplies a nuke.
+  const avgCastMult = (cls, level) => {
+    const pool = core.enemyUsableSkills(cls, level);
+    const hitters = pool.filter((s) => (s.mult && s.mult > 0) || s.dotMult);
+    if (!hitters.length) return 0;
+    return hitters.reduce((a, s) => a + (s.mult || 0) * (s.hits || 1) + (s.dotMult || 0), 0) / hitters.length;
+  };
+
+  console.log(pad("hard zone", 24) + rp("ilvl", 6) + rp("enemy lvl", 11) + rp("enemy hp", 11)
+    + rp("player dps", 12) + rp("sec/kill", 10) + rp("kills/h", 9) + rp("gold/h", 11)
+    + rp("your hp", 9) + rp("incoming", 10) + rp("leech", 8) + rp("you live", 10));
+
+  const hardRows = [];
+  for (const hz of HARD_ZONES) {
+    const c = geared(hz.reqIlvl, hz.enemyLvl * 7);
+    const eff = effectiveStats(c);
+    const sp = secondaryPcts(eff);
+    const dps = core.offlinePlayerDps(c);
+    const bz = ZONES.find((z) => z.id === hz.base);
+    const names = (bz && bz.enemies) || ["Bandit"];
+
+    // Average over the creature names the zone can actually spawn — dispositionFor hashes the NAME,
+    // so archetype health and armor are not uniform across a zone.
+    let ehpSum = 0, dmgSum = 0, n = 0;
+    for (const nm of names) {
+      for (const isLord of [false, true]) {
+        const w = isLord ? 0.1 : 0.9;                       // makeHardEnemy: 10% Lord
+        const e = hardZoneEnemy(hz, isLord, nm);
+        // Player damage is reduced by the enemy's archetype armor (App.jsx:3161).
+        const eff_hp = e.hp / (1 - enemyMitigation(e, c.level));
+        // Enemy output: autos on an archetype-scaled swing timer, plus casts at ENEMY_SKILL_SCALE.
+        const raw = enemyBaseDamage(e);
+        const autoDps = raw * (enemyCanCast(e) ? enemyAutoMult(e.level) : 1)
+          / ((ENEMY_BASE_INTERVAL * e.arch.atk) / 1000);
+        // App.jsx:3273 — nextCastAt = now + ENEMY_CAST_CD * arch.cast
+        const castDps = raw * ENEMY_SKILL_SCALE * avgCastMult(e.cls, e.level)
+          / ((ENEMY_CAST_CD * e.arch.cast) / 1000);
+        ehpSum += eff_hp * w; dmgSum += (autoDps + castDps) * w; n += w;
+      }
+    }
+    const ehp = ehpSum / n, eDpsRaw = dmgSum / n;
+    const mit = mitigation(eff.armor, hz.enemyLvl);
+    const incoming = eDpsRaw * (1 - mit) * (1 - sp.vers / 200);
+    const secs = ehp / dps;
+    const killsPerHour = 3600 / secs;
+
+    // resolveDeath, for a hard-zone champion at max level (App.jsx:2814-2821).
+    // No rewardMult penalty in hard mode, and gold is DOUBLED at max level.
+    const tb = core.townBonuses(c);
+    let goldBase = Math.floor(60 * 1 + 2.5 + 1);            // rand*4+1 averaged
+    goldBase = Math.floor(goldBase * 1.1);                  // human
+    goldBase = Math.floor(goldBase * 0.25 * (1 + tb.gold)) * 2;
+    // Drops: 10% per kill in a hard ZONE, x1.6 for a Lord. Vendored at value x 0.6 x 0.25.
+    const dropRate = 0.10 * (0.9 + 0.1 * 1.6) * (1 + tb.drop);
+    const it = rngm.withRng(rngm.makeRng(hz.dropIlvl), () =>
+      generateItem(hz.dropIlvl, rarityById("epic"), "chest", c.cls));
+    const dropGold = dropRate * Math.max(1, Math.floor(it.value * 0.6 * 0.25));
+    const goldPerKill = goldBase + dropGold;
+    const gph = killsPerHour * goldPerKill;
+
+    // Health carries between kills in a hard zone with NO heal (App.jsx:2936 keeps hp: b.hp), so
+    // leech is the only sustain. If it does not cover incoming, the farm is not actually runnable.
+    const leech = dps * (sp.leech / 100);
+    const net = incoming - leech;
+    const hp = maxHpFor(c);
+    // Health carries between kills with no heal, so "how many kills before you die" is the honest
+    // measure — not whether you survive a single one.
+    const killsAlive = net <= 0 ? Infinity : (hp / net) / secs;
+    const live = killsAlive === Infinity ? "always" : killsAlive.toFixed(1) + " kills";
+
+    hardRows.push({ hz, ilvl: hz.reqIlvl, dps, secs, killsPerHour, goldPerKill, gph,
+                    anchor: ahBaseValue(it), vend: Math.max(1, Math.floor(it.value * 0.6 * 0.25)),
+                    ehp, incoming, leech, killsAlive, hp });
+    console.log(pad(hz.name, 24) + rp(hz.reqIlvl, 6) + rp(hz.enemyLvl, 11) + rp(g(ehp), 11)
+      + rp(g(dps), 12) + rp(secs.toFixed(1), 10) + rp(g(killsPerHour), 9) + rp(g(gph), 11)
+      + rp(g(hp), 9) + rp(g(incoming), 10) + rp(g(leech), 8) + rp(live, 10));
+  }
+
+  const first = hardRows[0], last = hardRows[hardRows.length - 1];
+  console.log("\\n  Gold per kill is the SAME in every bracket (" + g(first.goldPerKill)
+    + "g). resolveDeath prices a kill off the PLAYER's level, which is");
+  console.log("  pinned at 60 — not off the zone or the enemy. Only kill speed and drop value move across 64-70,");
+  console.log("  and enemy health grows faster than gear does, so income across the climb goes "
+    + g(first.gph) + " -> " + g(last.gph) + " (x" + (last.gph / first.gph).toFixed(2) + ").");
+  console.log("  Kill goals: " + first.hz.killGoal + " -> " + last.hz.killGoal + " kills, i.e. "
+    + (first.hz.killGoal / first.killsPerHour).toFixed(1) + "h -> "
+    + (last.hz.killGoal / last.killsPerHour).toFixed(1) + "h to clear a zone.");
+
+  // -------- is that income actually reachable? ------------------------------------------------
+  // The gold/hour above assumes the kills COMPLETE. Health carries between kills in a hard zone
+  // with no heal (App.jsx:2936 keeps hp: b.hp), so this has to be checked, not assumed.
+  console.log("\\n  BUT: none of that income is reachable solo. A hard-zone champion needs "
+    + first.secs.toFixed(0) + "-" + last.secs.toFixed(0) + " seconds to kill and");
+  console.log("  puts out " + g(first.incoming) + "-" + g(last.incoming) + " damage per second against a "
+    + g(first.hp) + "-" + g(last.hp) + " health pool — it kills the player in "
+    + Math.min(...hardRows.map((r) => r.hp / r.incoming)).toFixed(1) + "-"
+    + Math.max(...hardRows.map((r) => r.hp / r.incoming)).toFixed(1) + " seconds.");
+  console.log("  Best case (maxed Sanctum + both health talents ~ " + g(first.hp * 1.4 * 1.27)
+    + " hp, top-tier auto-potion ~" + g(tierHeal(6) / (POTION_CD / 1000)) + " hp/s) still dies first.");
+
+  // -------- where the money ACTUALLY comes from -------------------------------------------------
+  console.log("\\n=== 1c. THE THREE INCOME CHANNELS AT LEVEL 60, SIDE BY SIDE ===");
+  console.log("The same kill pays three completely different amounts depending on how it happens.\\n");
+  // resolveDeath cuts normal-mode rewards by 95% at max level (App.jsx:2819) to push players into
+  // Hard Mode. simulateOffline has no such line — it pays the pre-cap rate forever.
+  const liveNormalPerKill = Math.floor(Math.floor(Math.floor(60 + 3.5) * 1.1) * 0.25) * 0.05;
+  const offlinePerKill = endgame.gold / Math.max(1, endgame.kills);
+  const offlineKph = endgame.kills / Math.max(0.01, endgame.hours);
+  console.log(pad("channel", 34) + rp("kills/h", 10) + rp("gold/kill", 12) + rp("gold/h", 12) + rp("vs offline", 12));
+  const chans = [
+    ["offline farm, normal zone", offlineKph, offlinePerKill, goldPerHour],
+    // Same enemies as the offline farm, so the same kill rate — only the payout differs.
+    ["live farm, normal zone (max level)", offlineKph, liveNormalPerKill, offlineKph * liveNormalPerKill],
+    ["live farm, hard zone (ilvl 64)", first.killsPerHour, first.goldPerKill, first.gph],
+    ["live farm, hard zone (ilvl 69)", last.killsPerHour, last.goldPerKill, last.gph],
+  ];
+  for (const [label, kph, gpk, gph2] of chans) {
+    console.log(pad(label, 34) + rp(g(kph), 10) + rp(gpk.toFixed(1), 12) + rp(g(gph2), 12)
+      + rp("x" + (gph2 / goldPerHour).toFixed(3), 12));
+  }
+  console.log("\\n  Two structural gaps show up here, and together they are why gold feels weightless:");
+  console.log("  1. resolveDeath cuts normal-mode gold by 95% at max level (App.jsx:2819) to push players");
+  console.log("     into Hard Mode. simulateOffline never got that line, so PARKING OFFLINE pays "
+    + (goldPerHour / Math.max(1, offlineKph * liveNormalPerKill)).toFixed(0) + "x what");
+  console.log("     playing the same zone live pays, and " + (goldPerHour / last.gph).toFixed(0)
+    + "x what the endgame it is meant to gate pays.");
+  console.log("  2. Offline auto-sells every drop (App.jsx:1743). That is " + g(offlinePerKill - 17)
+    + " of the " + offlinePerKill.toFixed(0) + " gold a kill,");
+  console.log("     so the dominant income source in the game is vendoring loot the player never sees.");
+  console.log("\\n  A player's wealth is therefore set by hours PARKED, not by hours played or by gear.");
 
   console.log("\\n=== 2. WHAT AN ITEM IS WORTH ===");
   console.log("ahBaseValue = ilvl x rarity.valueMult (the AH price anchor).");

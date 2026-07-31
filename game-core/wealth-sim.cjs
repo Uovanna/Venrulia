@@ -23,7 +23,7 @@ js += `
   const core = require("${path.join(__dirname, 'combat.mjs').replace(/\\/g, '/')}");
   // App.jsx IMPORTS these from the core, so they are not bare locals in the transpiled module.
   const { createCharacter, generateItem, rarityById, LOOT_SLOTS, normalizeChar, maxHpFor,
-          effectiveStats, secondaryPcts, mitigation, tierForLevel } = core;
+          effectiveStats, secondaryPcts, mitigation, tierForLevel, itemPowerActive } = core;
   const rngm = require("${path.join(__dirname, 'rng.mjs').replace(/\\/g, '/')}");
   const pad = (s, n) => String(s).padEnd(n), rp = (s, n) => String(s).padStart(n);
   const g = (n) => Math.round(n).toLocaleString();
@@ -332,6 +332,107 @@ js += `
   }
   console.log("\\n  A level-70 epic carries about " + pts70 + " stat points, so those targets imply roughly");
   console.log("  " + g(goldPerHour * 0.5 / pts70) + " to " + g(goldPerHour * 4 / pts70) + " gold per stat point, against today's ~25.");
+
+  // =============================================================================================
+  console.log("\\n=== 7. PROPOSED: PRICE THE POWER, NOT THE ITEM LEVEL ===");
+  console.log("Today ahBaseValue = ilvl x rarity.valueMult. It cannot tell a well-rolled piece from a");
+  console.log("badly-rolled one of the same ilvl, and it is flat across the whole hard-mode climb.");
+  console.log("The proposal prices an item by the power it carries, on a PROGRESSIVE curve, so that");
+  console.log("a best-in-slot piece is worth many times an ordinary one rather than a few percent more.\\n");
+
+  // Weighted points, class-neutral. Main stats count fully because every item's mains suit SOME
+  // buyer; secondaries carry the weights already measured for itemScore, so a price tracks the same
+  // notion of power the upgrade arrow does. Power (ap/sp) counts only while it is live.
+  const AH_W = { str: 1, agi: 1, int: 1, sta: 0.75, ap: 0.7, sp: 0.7, dmg: 0.7,
+                 csd: 1.05, vers: 0.7, crit: 0.55, cdr: 0.45, armor: 0.45, leech: 0.45,
+                 haste: 0.2, resil: 0.25 };
+  const ahPoints = (item) => {
+    const s = item.stats || {}, e = (item.enchant && item.enchant.stats) || {};
+    let pts = 0;
+    for (const k of Object.keys(AH_W)) {
+      if ((k === "ap" || k === "sp") && !itemPowerActive(item)) continue;
+      pts += ((s[k] || 0) + (e[k] || 0)) * AH_W[k];
+    }
+    // A socket is real power the buyer can fill; an enchant is already counted in its stats.
+    return pts * (1 + 0.08 * (Array.isArray(item.sockets) ? item.sockets.length : 0));
+  };
+
+  // Calibrated so a best-in-slot epic costs about TARGET_HOURS of endgame income. The exponent is
+  // what makes the curve progressive: at 1.8, doubling an item's power raises its price 3.5x.
+  const AH_EXP = 1.8, TARGET_HOURS = 2;
+  const bis = rngm.withRng(rngm.makeRng(777), () => generateItem(70, rarityById("epic"), "chest", "warrior"));
+  const AH_BASE = (goldPerHour * TARGET_HOURS) / Math.pow(ahPoints(bis), AH_EXP);
+  const proposed = (item) => Math.max(1, Math.round(AH_BASE * Math.pow(ahPoints(item), AH_EXP)));
+
+  console.log("  price = " + AH_BASE.toFixed(2) + " x (weighted stat points ^ " + AH_EXP + ")");
+  console.log("  calibrated so an ilvl-70 epic = " + TARGET_HOURS + "h of endgame income ("
+    + g(goldPerHour) + " g/h)\\n");
+  // One roll per bracket is noise — the whole point of the model is that two items of the same
+  // ilvl differ, so a single sample can put a lucky 66 above an unlucky 68. Average 400 rolls per
+  // bracket for the curve, and report the spread, because that spread IS the market.
+  console.log(pad("ilvl", 6) + pad("rarity", 11) + rp("raw", 6) + rp("wtd", 6) + rp("today", 9)
+    + rp("proposed", 11) + rp("hours", 8) + rp("worst-best", 18) + rp("vendor", 9) + rp("AH/vend", 9));
+  const CASES = [[30, "uncommon"], [45, "rare"], [60, "rare"], [63, "epic"], [64, "epic"], [65, "epic"],
+                 [66, "epic"], [67, "epic"], [68, "epic"], [69, "epic"], [70, "epic"],
+                 [70, "legendary"], [71, "legendary"]];
+  const priced = [];
+  for (const [ilvl, rar] of CASES) {
+    const N = 400;
+    const items = rngm.withRng(rngm.makeRng(ilvl * 31 + rar.length), () =>
+      Array.from({ length: N }, () => generateItem(ilvl, rarityById(rar), "chest", "warrior")));
+    const prices = items.map(proposed).sort((a, b) => a - b);
+    const pr = prices.reduce((a, b) => a + b, 0) / N;
+    const now = items.reduce((a, it) => a + ahBaseValue(it), 0) / N;
+    const vend = items.reduce((a, it) => a + Math.max(1, Math.floor(it.value * 0.6 * 0.25)), 0) / N;
+    const pts = items.reduce((a, it) => a + ahPoints(it), 0) / N;
+    // Raw, unweighted stat points too: if the weighted and raw curves disagree about how much an
+    // item gains across the climb, that is the weighting talking, not the items.
+    const raw = items.reduce((a, it) => a + SCORED.reduce((s, k) => s + (it.stats[k] || 0), 0), 0) / N;
+    priced.push({ ilvl, rar, pts, raw, now, pr, vend, lo: prices[0], hi: prices[N - 1] });
+    console.log(pad(ilvl, 6) + pad(rar, 11) + rp(raw.toFixed(0), 6) + rp(pts.toFixed(0), 6)
+      + rp(g(now), 9) + rp(g(pr), 11) + rp((pr / goldPerHour).toFixed(2) + "h", 8)
+      + rp(g(prices[0]) + "-" + g(prices[N - 1]), 18) + rp(g(vend), 9)
+      + rp("x" + Math.round(pr / vend), 9));
+  }
+
+  const e63 = priced.find((r) => r.ilvl === 63), e70 = priced.find((r) => r.ilvl === 70 && r.rar === "epic");
+  const leg = priced.find((r) => r.rar === "legendary" && r.ilvl === 70);
+  console.log("\\n  What this buys you:");
+  console.log("  - Vendoring a best-in-slot piece throws away x" + Math.round(e70.pr / e70.vend)
+    + " its worth, so listing becomes a real decision. Vendor prices are untouched.");
+  console.log("  - A legendary costs " + g(leg.pr) + " (" + (leg.pr / goldPerHour).toFixed(1)
+    + "h) rather than " + g(leg.now) + ", so the top of the market is an aspiration.");
+  console.log("  - Two items of the SAME ilvl differ by how well they rolled: an ilvl-70 epic ranges");
+  console.log("    " + g(e70.lo) + " to " + g(e70.hi) + " (x" + (e70.hi / e70.lo).toFixed(2)
+    + "). That spread IS the market, and it is impossible under ilvl x rarity,");
+  console.log("    which prices every ilvl-70 epic at exactly " + g(e70.now) + ".");
+
+  console.log("\\n  What it does NOT fix, and this is the bigger finding:");
+  console.log("  - Across the whole hard-mode climb, ilvl 63 -> 70, an item gains only "
+    + e63.raw.toFixed(0) + " -> " + e70.raw.toFixed(0) + " raw stat points");
+  console.log("    (x" + (e70.raw / e63.raw).toFixed(2) + "), and " + e63.pts.toFixed(0) + " -> "
+    + e70.pts.toFixed(0) + " weighted (x" + (e70.pts / e63.pts).toFixed(2)
+    + "). Raw and weighted agree, so this is the items,");
+  console.log("    not the weighting. Pricing on power therefore moves ilvl 63 -> 70 only x"
+    + (e70.pr / e63.pr).toFixed(2) + ", against x" + (e70.now / e63.now).toFixed(2) + " today.");
+  console.log("  - That is CORRECT pricing of an incorrect item curve. The grind behind those seven");
+  console.log("    ilvls is " + hardRows[0].hz.killGoal + " -> " + hardRows[hardRows.length - 1].hz.killGoal
+    + " kills a zone, and it buys about " + ((e70.raw / e63.raw - 1) * 100).toFixed(0) + "% more power.");
+  console.log("  - No pricing formula can make that climb feel valuable. If the ilvl 64-70 arc is");
+  console.log("    meant to matter, generateItem has to make ilvl matter — the price will follow.");
+
+  console.log("\\n  Two things to decide before this ships:");
+  console.log("  1. POSTING FEE. It is 25% of base, so an ilvl-70 listing costs " + g(e70.pr * 0.25)
+    + "g to post — " + (e70.pr * 0.25 / goldPerHour * 60).toFixed(0) + " minutes, consumed even if");
+  console.log("     it never sells. At these prices that is punitive; 5-8% is the same sink in gold terms.");
+  const t5 = [1,2,3,4,5].reduce((a,r)=>a+(TEMPER_CFG.cost[r]||0),0);
+  const t10 = Object.values(TEMPER_CFG.cost).reduce((a,b)=>a+b,0);
+  console.log("  2. THE EXISTING SINKS moved when income did. A +5 temper is now "
+    + (t5 / goldPerHour).toFixed(0) + "h and a +10 is " + (t10 / goldPerHour).toFixed(0) + "h");
+  console.log("     (they were " + (t5 / 67508).toFixed(0) + "h and " + (t10 / 67508).toFixed(0)
+    + "h before the parity fix). Tempering is now the dominant gold sink");
+  console.log("     by a wide margin, and an item at " + g(e70.pr) + " is still only "
+    + (e70.pr / t5 * 100).toFixed(0) + "% of a +5 temper.");
   console.log("");
 })();`;
 const run = path.join(dir, 'wealth.cjs'); fs.writeFileSync(run, js);

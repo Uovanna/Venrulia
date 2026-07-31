@@ -23,7 +23,7 @@ js += `
   const core = require("${path.join(__dirname, 'combat.mjs').replace(/\\/g, '/')}");
   // App.jsx IMPORTS these from the core, so they are not bare locals in the transpiled module.
   const { createCharacter, generateItem, rarityById, LOOT_SLOTS, normalizeChar, maxHpFor,
-          effectiveStats, secondaryPcts, mitigation } = core;
+          effectiveStats, secondaryPcts, mitigation, tierForLevel } = core;
   const rngm = require("${path.join(__dirname, 'rng.mjs').replace(/\\/g, '/')}");
   const pad = (s, n) => String(s).padEnd(n), rp = (s, n) => String(s).padStart(n);
   const g = (n) => Math.round(n).toLocaleString();
@@ -32,9 +32,12 @@ js += `
 
   // Play a character forward by repeatedly running the real offline loop, which is the same reward
   // maths the live loop uses. Stops at a target level or after a wall-clock budget.
-  const playTo = (cls, targetLevel, maxHours, gearIlvl) => {
+  const playTo = (cls, targetLevel, maxHours, gearIlvl, rotation) => {
     let c = createCharacter("Sim", cls, "human");
     c.gold = 150;                       // starting purse, as createCharacter gives
+    // A real leveller has potions and the auto-potion upgrade, and runs their abilities. Benching
+    // without them measures a character nobody plays.
+    c.upgrades = { ...(c.upgrades || {}), autoPotion: true };
     let hours = 0;
     while (c.level < targetLevel && hours < maxHours) {
       if (gearIlvl) { // keep gear roughly current so kill speed is representative
@@ -42,6 +45,12 @@ js += `
         for (const s of LOOT_SLOTS) eq[s.id] = generateItem(Math.min(gearIlvl, Math.max(1, c.level)), rarityById("uncommon"), s.id, cls);
         c.equipment = eq; c.hp = maxHpFor(c);
       }
+      // Keep the potion stock topped up and the rotation switched on, at the tier the level allows.
+      c.consumables = { ...(c.consumables || {}), [conKey("heal", tierForLevel(c.level))]: 500 };
+      c.autoSkillsOwned = {}; c.autoSkills = {};
+      // Auto-skills are a PURCHASED upgrade, so a leveller may have none or all of them. That is a
+      // 30x swing in kill speed, which is why both bounds are reported rather than one.
+      if (rotation) for (const n of (c.selectedSkills || [])) { c.autoSkillsOwned[n] = true; c.autoSkills[n] = true; }
       // simulateOffline returns null unless the character is parked in a zone it qualifies for.
       c.offlineZoneId = getZoneForLevel(c.level).id;
       const before = c.level;
@@ -56,15 +65,18 @@ js += `
   console.log("\\n=== 1. WHAT A PLAYER IS WORTH ===");
   console.log("Gold is (level x (boss?5:1) + 3) x 0.25 per kill, plus looted gear auto-sold at 15% of");
   console.log("its value. Simulated forward through the real offline loop.\\n");
-  console.log(pad("milestone", 22) + rp("hours", 8) + rp("kills", 10) + rp("gold", 12) + rp("gold/hour", 12));
+  console.log(pad("milestone", 34) + rp("hours", 8) + rp("kills", 10) + rp("gold", 12) + rp("gold/hour", 12));
 
   const rows = [];
-  for (const [label, lvl, cap] of [["level 30", 30, 400], ["level 60 (hard mode)", 60, 2000]]) {
-    const r = rngm.withRng(rngm.makeRng(7), () => playTo("warrior", lvl, cap, 60));
-    const c = r.char;
-    rows.push({ label, gold: c.gold, kills: c.kills, hours: r.hours, level: c.level });
-    console.log(pad(label, 22) + rp(r.hours, 8) + rp(g(c.kills), 10) + rp(g(c.gold), 12)
-      + rp(g(c.gold / Math.max(1, r.hours)), 12));
+  for (const [label, lvl, cap] of [["level 30", 30, 4000], ["level 60 (hard mode)", 60, 8000]]) {
+    for (const rotation of [true, false]) {
+      const r = rngm.withRng(rngm.makeRng(7), () => playTo("warrior", lvl, cap, 60, rotation));
+      const c = r.char;
+      const tag = label + (rotation ? ", auto-skills" : ", autos only");
+      if (rotation) rows.push({ label, gold: c.gold, kills: c.kills, hours: r.hours, level: c.level });
+      console.log(pad(tag, 34) + rp(r.hours, 8) + rp(g(c.kills), 10) + rp(g(c.gold), 12)
+        + rp(g(c.gold / Math.max(1, r.hours)), 12) + (c.level < lvl ? "   (stalled at " + c.level + ")" : ""));
+    }
   }
 
   // Endgame: a level-60 character keeps earning at a flat rate, so measure gold per hour directly
@@ -72,19 +84,25 @@ js += `
   // A real level-60: a spec, a full epic set, and its rotation switched on. A bare createCharacter
   // at level 60 has no spec and no auto-skills, kills far too slowly to out-heal the 2%-per-kill
   // regen, and dies within six minutes — which then extrapolated to a fictional 25,000 gold/hour.
+  // A player who parks offline has the things a live player has: the auto-potion upgrade and a
+  // stock of potions. Benching without them measures a character nobody plays — and now that
+  // offline no longer under-reports enemy damage, it is the difference between farming and dying.
   const armedSixty = (seed) => rngm.withRng(rngm.makeRng(seed), () => {
     const c = core.buildBotChar("warrior", "w_berserk", 60, 63);
     c.spec = "w_berserk"; c.gold = 0;
     c.autoSkillsOwned = {}; c.autoSkills = {};
     for (const n of (c.selectedSkills || [])) { c.autoSkillsOwned[n] = true; c.autoSkills[n] = true; }
     c.offlineZoneId = getZoneForLevel(60).id;
+    c.upgrades = { ...(c.upgrades || {}), autoPotion: true };
+    c.consumables = { ...(c.consumables || {}), [conKey("heal", 6)]: 5000 };
     c.hp = maxHpFor(c);
     return c;
   });
   const runs = [1, 2, 3, 4, 5].map((sd) => {
     const c = armedSixty(sd * 13);
     const r = simulateOffline(c, 10 * HOUR);
-    return r ? { gold: r.goldGained, kills: r.kills, secs: r.secondsSimulated, died: r.died } : null;
+    return r ? { gold: r.goldGained, kills: r.kills, secs: r.secondsSimulated, died: r.died,
+                 pots: r.potionsDrunk || 0 } : null;
   }).filter(Boolean);
   const totalSecs = runs.reduce((a, r) => a + r.secs, 0);
   const totalGold = runs.reduce((a, r) => a + r.gold, 0);
@@ -92,7 +110,7 @@ js += `
   const deaths = runs.filter((r) => r.died).length;
   const endgame = { gold: totalGold, kills: totalKills, hours: totalSecs / 3600, deaths, runs: runs.length };
   const goldPerHour = endgame.gold / Math.max(0.01, endgame.hours);
-  console.log(pad("level 60, farming", 22) + rp(endgame.hours.toFixed(1), 8) + rp(g(endgame.kills), 10)
+  console.log(pad("level 60, farming (endgame)", 34) + rp(endgame.hours.toFixed(1), 8) + rp(g(endgame.kills), 10)
     + rp(g(endgame.gold), 12) + rp(g(goldPerHour), 12)
     + (deaths ? "   (" + deaths + "/" + runs.length + " runs ended in death)" : ""));
 
@@ -129,16 +147,6 @@ js += `
     return c;
   });
 
-  // A champion casts 2 of its class's skills, a Lord 4, drawn at random from the pool — so the
-  // expected damage of a cast is the pool average, not any one skill. mult and dotMult both land on
-  // the player; hits multiplies a nuke.
-  const avgCastMult = (cls, level) => {
-    const pool = core.enemyUsableSkills(cls, level);
-    const hitters = pool.filter((s) => (s.mult && s.mult > 0) || s.dotMult);
-    if (!hitters.length) return 0;
-    return hitters.reduce((a, s) => a + (s.mult || 0) * (s.hits || 1) + (s.dotMult || 0), 0) / hitters.length;
-  };
-
   console.log(pad("hard zone", 24) + rp("ilvl", 6) + rp("enemy lvl", 11) + rp("enemy hp", 11)
     + rp("player dps", 12) + rp("sec/kill", 10) + rp("kills/h", 9) + rp("gold/h", 11)
     + rp("your hp", 9) + rp("incoming", 10) + rp("leech", 8) + rp("you live", 10));
@@ -161,14 +169,8 @@ js += `
         const e = hardZoneEnemy(hz, isLord, nm);
         // Player damage is reduced by the enemy's archetype armor (App.jsx:3161).
         const eff_hp = e.hp / (1 - enemyMitigation(e, c.level));
-        // Enemy output: autos on an archetype-scaled swing timer, plus casts at ENEMY_SKILL_SCALE.
-        const raw = enemyBaseDamage(e);
-        const autoDps = raw * (enemyCanCast(e) ? enemyAutoMult(e.level) : 1)
-          / ((ENEMY_BASE_INTERVAL * e.arch.atk) / 1000);
-        // App.jsx:3273 — nextCastAt = now + ENEMY_CAST_CD * arch.cast
-        const castDps = raw * ENEMY_SKILL_SCALE * avgCastMult(e.cls, e.level)
-          / ((ENEMY_CAST_CD * e.arch.cast) / 1000);
-        ehpSum += eff_hp * w; dmgSum += (autoDps + castDps) * w; n += w;
+        // enemyDpsOf is the live tick's own arithmetic, shared rather than restated here.
+        ehpSum += eff_hp * w; dmgSum += enemyDpsOf(e) * w; n += w;
       }
     }
     const ehp = ehpSum / n, eDpsRaw = dmgSum / n;
@@ -232,35 +234,31 @@ js += `
     + " hp, top-tier auto-potion ~" + g(tierHeal(6) / (POTION_CD / 1000)) + " hp/s) still dies first.");
 
   // -------- where the money ACTUALLY comes from -------------------------------------------------
-  console.log("\\n=== 1c. THE THREE INCOME CHANNELS AT LEVEL 60, SIDE BY SIDE ===");
-  console.log("The same kill pays three completely different amounts depending on how it happens.\\n");
-  // resolveDeath cuts normal-mode rewards by 95% at max level (App.jsx:2819) to push players into
-  // Hard Mode. simulateOffline has no such line — it pays the pre-cap rate forever.
-  const liveNormalPerKill = Math.floor(Math.floor(Math.floor(60 + 3.5) * 1.1) * 0.25) * 0.05;
+  console.log("\\n=== 1c. THE INCOME CHANNELS AT LEVEL 60, SIDE BY SIDE ===");
+  console.log("resolveDeath and simulateOffline now agree: normal-mode gold is cut 95% at max level in");
+  console.log("both, enemies hit for the same amount in both, and a parked player drinks the potions a");
+  console.log("live one drinks. What is left is the intended shape of the economy.\\n");
   const offlinePerKill = endgame.gold / Math.max(1, endgame.kills);
   const offlineKph = endgame.kills / Math.max(0.01, endgame.hours);
+  // Base gold after the max-level cut. The rest of a kill's value is the drop, which a live player
+  // vendors by hand and an offline one has auto-sold — the same gold either way.
+  const basePerKill = Math.floor(Math.floor(Math.floor(60 + 3.5) * 1.1) * 0.25) * 0.05;
   console.log(pad("channel", 34) + rp("kills/h", 10) + rp("gold/kill", 12) + rp("gold/h", 12) + rp("vs offline", 12));
   const chans = [
-    ["offline farm, normal zone", offlineKph, offlinePerKill, goldPerHour],
-    // Same enemies as the offline farm, so the same kill rate — only the payout differs.
-    ["live farm, normal zone (max level)", offlineKph, liveNormalPerKill, offlineKph * liveNormalPerKill],
-    ["live farm, hard zone (ilvl 64)", first.killsPerHour, first.goldPerKill, first.gph],
-    ["live farm, hard zone (ilvl 69)", last.killsPerHour, last.goldPerKill, last.gph],
+    ["normal zone (offline or live)", offlineKph, offlinePerKill, goldPerHour],
+    ["hard zone, ilvl 64", first.killsPerHour, first.goldPerKill, first.gph],
+    ["hard zone, ilvl 69", last.killsPerHour, last.goldPerKill, last.gph],
   ];
   for (const [label, kph, gpk, gph2] of chans) {
     console.log(pad(label, 34) + rp(g(kph), 10) + rp(gpk.toFixed(1), 12) + rp(g(gph2), 12)
-      + rp("x" + (gph2 / goldPerHour).toFixed(3), 12));
+      + rp("x" + (gph2 / goldPerHour).toFixed(2), 12));
   }
-  console.log("\\n  Two structural gaps show up here, and together they are why gold feels weightless:");
-  console.log("  1. resolveDeath cuts normal-mode gold by 95% at max level (App.jsx:2819) to push players");
-  console.log("     into Hard Mode. simulateOffline never got that line, so PARKING OFFLINE pays "
-    + (goldPerHour / Math.max(1, offlineKph * liveNormalPerKill)).toFixed(0) + "x what");
-  console.log("     playing the same zone live pays, and " + (goldPerHour / last.gph).toFixed(0)
-    + "x what the endgame it is meant to gate pays.");
-  console.log("  2. Offline auto-sells every drop (App.jsx:1743). That is " + g(offlinePerKill - 17)
-    + " of the " + offlinePerKill.toFixed(0) + " gold a kill,");
-  console.log("     so the dominant income source in the game is vendoring loot the player never sees.");
-  console.log("\\n  A player's wealth is therefore set by hours PARKED, not by hours played or by gear.");
+  console.log("\\n  Of a normal-zone kill's " + offlinePerKill.toFixed(1) + " gold, only "
+    + basePerKill.toFixed(2) + " is the kill itself — the rest is the DROP, vendored.");
+  console.log("  So endgame gold is really loot-vendor income, and the vendor is what an auction");
+  console.log("  house price has to beat. That is the number the pricing model below is built on.");
+  console.log("\\n  Endgame income now sits at " + g(goldPerHour) + " gold/hour (it was "
+    + g(67508) + " before the parity fix, a x" + (67508 / goldPerHour).toFixed(1) + " reduction).");
 
   console.log("\\n=== 2. WHAT AN ITEM IS WORTH ===");
   console.log("ahBaseValue = ilvl x rarity.valueMult (the AH price anchor).");

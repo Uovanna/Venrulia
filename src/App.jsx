@@ -1090,6 +1090,11 @@ const tierHeal = (t) => Math.floor(referenceHp(tierMidLevel(t)) * 0.5);
 const tierScrollAmount = (t) => Math.max(3, Math.round(tierMidLevel(t) * 0.7)); // scroll stat points by tier
 // consumables are stored per-tier so a crafted/bought potion keeps its tier forever (no auto-upgrade)
 const conKey = (id, tier) => `${id}@${tier}`;
+// Module scope on purpose: the live combat tick and the offline simulator both need to read the
+// player's potion stock, and a second copy inside the component is how the two drift apart.
+const conCount = (c, id, tier) => ((c && c.consumables) || {})[conKey(id, tier)] || 0;
+const conTotal = (c, id) => { let s = 0; for (let t = 0; t <= 6; t++) s += conCount(c, id, t); return s; };
+const bestTier = (c, id) => { for (let t = 6; t >= 0; t--) if (conCount(c, id, t) > 0) return t; return -1; };
 
 const potionHeal = (level) => tierHeal(tierForLevel(level));         // HP restored (static within a tier)
 const scrollAmount = (level) => Math.max(3, Math.round(tierMidLevel(tierForLevel(level)) * 0.7)); // stat points (static within a tier)
@@ -1476,6 +1481,27 @@ const enemyStatBlock = (level, cls, { rank = "normal", tier = "normal" } = {}) =
   return st;
 };
 const enemyDamageStat = (enemy) => Math.max(enemy.str || 0, enemy.int || 0, enemy.agi || 0);
+// A creature casts `rank.skills` abilities drawn at random from its class pool, so the expected
+// damage of any one cast is the pool average — not any single skill. Shared so the offline
+// simulator and the wealth model cannot drift apart from what makeEnemy actually hands out.
+const avgEnemySkillMult = (cls, level) => {
+  const hitters = enemyUsableSkills(cls, level).filter((s) => (s.mult && s.mult > 0) || s.dotMult);
+  if (!hitters.length) return 0;
+  return hitters.reduce((a, s) => a + (s.mult || 0) * (s.hits || 1) + (s.dotMult || 0), 0) / hitters.length;
+};
+// Total damage per second an enemy puts out: autos on the archetype's swing timer, plus casts at
+// ENEMY_SKILL_SCALE on the archetype's cast timer. This is the live tick's own arithmetic
+// (App.jsx enemyCast + the auto-attack branch), collected in one place so a simulation of a fight
+// and the fight itself agree.
+const enemyDpsOf = (enemy) => {
+  const a = archetypeOf(enemy);
+  const raw = enemyBaseDamage(enemy);
+  const autos = raw * (enemyCanCast(enemy) ? enemyAutoMult(enemy.level) : 1)
+    / ((ENEMY_BASE_INTERVAL * a.atk) / 1000);
+  const casts = raw * ENEMY_SKILL_SCALE * avgEnemySkillMult(enemy.cls, enemy.level)
+    / ((ENEMY_CAST_CD * a.cast) / 1000);
+  return autos + casts;
+};
 // full pre-mitigation base damage for an enemy (used by both auto-attacks and skill casts)
 const enemyBaseDamage = (enemy) => (enemy.str != null ? enemyDamageStat(enemy) * DMG_PER_STAT : enemyDamageForLevel(enemy.level) * rankOf(enemy).off) * instanceDmgMult(enemy) * archetypeDmgMult(archetypeOf(enemy));
 
@@ -1693,6 +1719,31 @@ const LocalNotify = {
 // Average sustained DPS for offline auto-combat: auto-attacks + ONLY purchased & enabled auto-skills.
 
 
+// What a representative fight in a zone looks like. The live loop builds a creature per kill and
+// hashes its NAME to a disposition, which then drives health, armor and how often it swings or
+// casts. Offline has no per-kill creature, so it averages the zone's roster — that is what "a
+// typical fight here" means. Before this, offline fought a creature that existed nowhere in the
+// game: no archetype health, no armor, and a damage curve 27% below the live one.
+const zoneEnemyProfile = (zone, level) => {
+  const names = (zone && zone.enemies && zone.enemies.length) ? zone.enemies : [null];
+  const atRank = (rank) => {
+    let hp = 0, mit = 0, dps = 0;
+    for (const nm of names) {
+      const cls = nm ? dispositionFor(nm) : CLASSES[0].id;
+      const st = enemyStatBlock(level, cls, { rank });
+      const e = { ...st, level, cls, isBoss: rank === "boss" };
+      hp += (ENEMY_ARCHETYPE[cls] || NEUTRAL_ARCHETYPE).hp;
+      mit += enemyMitigation(e, level);
+      dps += enemyDpsOf(e);
+    }
+    return { hp: hp / names.length, mit: mit / names.length, dps: dps / names.length };
+  };
+  const normal = atRank("normal"), boss = atRank("boss");
+  // NOTE: the live loop also spawns a Mimic (champion rank) on 5% of encounters. Offline does not
+  // model it, so offline stays a shade easier than live by that much.
+  return { hpMult: normal.hp, mit: normal.mit, dps: (isBoss) => (isBoss ? boss.dps : normal.dps) };
+};
+
 // Simulate up to `elapsedMs` (capped at 12h) of auto-combat in the character's chosen offline zone.
 // Returns null if nothing to do. Mirrors the live zone reward formulas. Loot is auto-sold for gold.
 const simulateOffline = (char, elapsedMs) => {
@@ -1710,22 +1761,50 @@ const simulateOffline = (char, elapsedMs) => {
   const dps = offlinePlayerDps(c);
   const leechPct = sp.leech / 100;
   const lowLvlMult = c.level < 5 ? 0.8 : 1;
-  const eDmg = (boss) => Math.max(1, Math.floor(enemyDamageForLevel(enemyLevel) * (boss ? 1.4 : 1) * enemyAutoMult(enemyLevel) * (1 - mit) * (1 - sp.vers / 200) * lowLvlMult));
-  const normalHp = enemyLevel * 26 + 50 + 10;
-  const bossHp = (enemyLevel * 26 + 50) * 2.2 + 10;
+  // Enemy output now comes from the same stat block and cadence the live tick uses, not the legacy
+  // per-level curve — the two were a flat 27% apart at every level, which made offline a measurably
+  // easier game than the one being played. Casts count too; offline used to model autos only.
+  const prof = zoneEnemyProfile(zone, enemyLevel);
+  const eDps = (boss) => Math.max(1, prof.dps(boss) * (1 - mit) * (1 - sp.vers / 200) * lowLvlMult);
+  const normalHp = (enemyLevel * 26 + 50) * prof.hpMult + 10;
+  const bossHp = (enemyLevel * 26 + 50) * 2.2 * prof.hpMult + 10;
 
   let hp = Math.min(maxHp0, char.hp || maxHp0);
   let timeUsed = 0, kills = 0, xpGained = 0, goldGained = 0, died = false, killCount = c.kills || 0, guard = 0;
+  // Potions are spent from the real stock, so an offline stint can run the player dry the way a
+  // live one does. Copy the map first — `c` is a shallow clone of the caller's character.
+  const autoPot = !!(c.upgrades && c.upgrades.autoPotion);
+  let potionsDrunk = 0, lastPotionAt = -POTION_CD / 1000;   // first sip allowed immediately
+  c.consumables = { ...(c.consumables || {}) };
 
   while (timeUsed < secs && guard++ < 500000) {
     const isBoss = killCount > 0 && (killCount + 1) % 10 === 0;
     const ehp = isBoss ? bossHp : normalHp;
-    const ktime = ehp / dps;
+    // Armoured archetypes turn player blows offline exactly as they do live (see the player-damage
+    // branch of the combat tick), so an armoured creature genuinely takes longer to kill.
+    const ktime = ehp / Math.max(1, dps * (1 - prof.mit));
     if (timeUsed + ktime > secs) break; // out of time, no death
-    const hits = Math.floor((ktime * 1000) / ENEMY_BASE_INTERVAL);
-    const incoming = hits * eDmg(isBoss);
+    const incoming = Math.floor(ktime * eDps(isBoss));
     const leechHeal = leechPct > 0 ? Math.floor(leechPct * ehp) : 0;
-    const hpAfter = hp - incoming + leechHeal;
+    let hpAfter = hp - incoming + leechHeal;
+    // Auto-potion, exactly as the live tick runs it: while below 30% health, drink the best potion
+    // owned, at most once every POTION_CD. Offline ignored this entirely, which mattered far more
+    // once offline stopped under-reporting enemy damage — a player who survives live on potions was
+    // dying offline for want of a mechanic they had already bought.
+    // The cooldown runs on wall-clock, not per fight: at ~1.6s a kill, a per-kill budget would
+    // round every sip away and the upgrade would do nothing.
+    if (autoPot && hpAfter < maxHp0 * 0.3) {
+      let at = Math.max(lastPotionAt + POTION_CD / 1000, timeUsed);
+      while (hpAfter < maxHp0 * 0.3 && at <= timeUsed + ktime) {
+        const t = bestTier(c, "heal");
+        if (t < 0) break;
+        const key = conKey("heal", t);
+        c.consumables = { ...c.consumables, [key]: c.consumables[key] - 1 };
+        if (c.consumables[key] <= 0) delete c.consumables[key];
+        hpAfter = Math.min(maxHp0, hpAfter + tierHeal(t));
+        potionsDrunk++; lastPotionAt = at; at += POTION_CD / 1000;
+      }
+    }
     if (hpAfter <= 0) { died = true; break; } // defeated mid-fight
     hp = Math.min(maxHp0, hpAfter + Math.floor(maxHp0 * 0.02)); // survived → 2% heal on kill
     timeUsed += ktime; killCount++; kills++;
@@ -1739,6 +1818,12 @@ const simulateOffline = (char, elapsedMs) => {
     let gold = Math.floor(c.level * (isBoss ? 5 : 1) + 3);
     if (c.race === "human") gold = Math.floor(gold * 1.1);
     gold = Math.max(0, Math.floor(gold * 0.25 * rewardMult * (1 + _tb.gold) * auraGoldMult(c)));
+    // At max level normal-mode rewards drop 95% — the endgame is meant to live in Hard Mode.
+    // resolveDeath has always done this; simulateOffline never got the line, so a parked character
+    // earned the pre-cap rate forever. That one omission made parking the most profitable activity
+    // in the game by a factor of 33, and it is why item prices read as worthless next to a purse.
+    // Loot is deliberately NOT cut here, matching resolveDeath, which cuts XP and gold only.
+    if (c.level >= MAX_LEVEL) { xpEarned = Math.floor(xpEarned * 0.05); gold = Math.floor(gold * 0.05); }
     for (const it of rollLoot({ level: enemyLevel, isBoss, dungeonId: null, guaranteed: false, clsId: c.cls, dropMult: rewardMult * (1 + _tb.drop) })) {
       gold += Math.max(1, Math.floor(it.value * 0.6 * 0.25)); // offline loot auto-sold
     }
@@ -1759,7 +1844,7 @@ const simulateOffline = (char, elapsedMs) => {
   c.hp = maxHpFor(c); // revive ready for play
   if (died) c.offlineZoneId = null; // defeat pauses offline combat until re-enabled
   c.lastActive = Date.now();
-  return { char: c, kills, xpGained, goldGained, leveledTo: c.level, died, secondsSimulated: Math.floor(timeUsed) };
+  return { char: c, kills, xpGained, goldGained, leveledTo: c.level, died, potionsDrunk, secondsSimulated: Math.floor(timeUsed) };
 };
 
 // Predict how long (ms) until the character would die in offline combat, or null if they
@@ -3844,9 +3929,8 @@ function GameScreen({ character: initChar, onSave, onBack }) {
   };
 
   // ---------- consumables (stored per-tier; a potion keeps its tier forever) ----------
-  const conCount = (c, id, tier) => c.consumables[conKey(id, tier)] || 0;
-  const conTotal = (c, id) => { let s = 0; for (let t = 0; t <= 6; t++) s += conCount(c, id, t); return s; };
-  const bestTier = (c, id) => { for (let t = 6; t >= 0; t--) if (conCount(c, id, t) > 0) return t; return -1; };
+  // conCount/conTotal/bestTier now live at module scope so the offline simulator can drink from the
+  // same stock the live tick does — see above ItemCard.
   const buyConsumable = (def) => {
     const c = charRef.current;
     const qty = Math.max(1, Math.min(999, Math.floor(vendorQty) || 1));

@@ -3056,13 +3056,24 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     const isDungeon = b.mode === "dungeon";
     const isHard = b.mode === "hard";
     if (isHard) {
-      // Hard Mode drops: fixed high ilvl; infrequent in zones, common in dungeons/raid
-      const rate = (b.hardKind === "zone" ? 0.10 : 0.6) * (enemy.isBoss || enemy.isLord ? 1.6 : 1) * (1 + townBonuses(nc).drop);
-      if (Math.random() < rate && !(guildRunRef.current && (enemy.isBoss || enemy.hardBoss))) { // Guild boss gear is awarded through the GDKP bid, not auto-looted
-        const rar = b.dropIlvl >= 70 ? rollRarityForDungeon("stratholme") : rollRarityForZone(60);
-        nc = grantLoot(nc, [generateItem(b.dropIlvl, rar, pickLootSlot(), nc.cls)]);
+      // Hard Mode drops now follow the same rule as a normal dungeon: a RUN pays gold and XP
+      // through its waves and hands over its gear at the boss. Hard trash are all Lords, so the old
+      // 0.6 x 1.6 rate meant almost every kill dropped — a hard raid was worth roughly nine pieces
+      // a clear and the boss was just the last of them.
+      //
+      // Hard ZONES keep their own rate. They are an endless kill-goal farm with no boss to hand
+      // anything over at, so the run rule has nothing to attach to.
+      const isHardRun = b.hardKind && b.hardKind !== "zone";
+      const hardRar = () => (b.dropIlvl >= 70 ? rollRarityForDungeon("stratholme") : rollRarityForZone(60));
+      const guildBoss = guildRunRef.current && (enemy.isBoss || enemy.hardBoss);
+      if (!isHardRun) {
+        const rate = 0.10 * (enemy.isBoss || enemy.isLord ? 1.6 : 1) * (1 + townBonuses(nc).drop);
+        if (Math.random() < rate && !guildBoss) nc = grantLoot(nc, [generateItem(b.dropIlvl, hardRar(), pickLootSlot(), nc.cls)]);
+        nc = grantGem(nc, rollGem({ level: enemy.level, isBoss: enemy.isBoss || enemy.isLord, dungeonId: "stratholme", dropMult: 1 + townBonuses(nc).drop }));
+      } else if (enemy.hardBoss && !guildBoss) { // Guild boss gear is awarded through the GDKP bid, not auto-looted
+        nc = grantLoot(nc, Array.from({ length: DUNGEON_BOSS_DROPS }, () => generateItem(b.dropIlvl, hardRar(), pickLootSlot(), nc.cls)));
+        nc = grantGem(nc, rollGem({ level: enemy.level, isBoss: true, dungeonId: "stratholme", dropMult: 1 + townBonuses(nc).drop }));
       }
-      nc = grantGem(nc, rollGem({ level: enemy.level, isBoss: enemy.isBoss || enemy.isLord, dungeonId: "stratholme", dropMult: 1 + townBonuses(nc).drop }));
       // progression tracking
       if (b.hardKind === "zone") {
         const hz = hardZoneById(b.hardId);

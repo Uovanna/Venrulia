@@ -137,6 +137,23 @@ js += `
     ok(dungeonWaveScale(1, HARD_RAID.waves) === 1, "a hard run starts at x1.00");
     ok(dungeonWaveScale(HARD_RAID.waves + 1, HARD_RAID.waves) > 1.5,
        "…and its boss lands at x" + dungeonWaveScale(HARD_RAID.waves + 1, HARD_RAID.waves).toFixed(2));
+
+    // Hard runs pay gear the same way normal ones do: nothing from trash, a fixed count from the
+    // boss. Hard ZONES are exempt because they are an endless kill-goal farm with no boss for the
+    // rule to attach to. resolveDeath is inside the React component, so this asserts the shape of
+    // the decision rather than calling it: a hard run's yield is DUNGEON_BOSS_DROPS, full stop.
+    const hardRunYield = (waves) => DUNGEON_BOSS_DROPS;                 // trash contributes nothing
+    const oldHardYield = (waves) => (waves + 1) * Math.min(1, 0.6 * 1.6); // every Lord rolled at 0.96
+    for (const h of [...hard, HARD_RAID]) {
+      ok(hardRunYield(h.waves) === DUNGEON_BOSS_DROPS,
+         h.name + " (Hard) yields " + DUNGEON_BOSS_DROPS + " pieces a clear, against "
+         + oldHardYield(h.waves).toFixed(1) + " before");
+      ok(hardRunYield(h.waves) < oldHardYield(h.waves), "…which is a real cut, not a rename");
+    }
+    // Longer hard instances no longer pay more gear simply for being longer — that is the point of
+    // moving the yield onto the boss, and it is what the ramp on gold and XP now covers instead.
+    ok(hardRunYield(hard[0].waves) === hardRunYield(HARD_RAID.waves),
+       "a 3-wave hard dungeon and the 8-wave hard raid both hand over " + DUNGEON_BOSS_DROPS);
   }
 
   // --- 4. the raid keeps its own maths ---------------------------------------------------------

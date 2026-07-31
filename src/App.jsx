@@ -431,11 +431,20 @@ const ZONES = [
 
 // ---------- DUNGEONS ----------
 const DUNGEONS = [
+  // `waves` counts TRASH only — the boss is an extra encounter on top, because resolveDeath treats
+  // wave > waves as the boss. So a run is waves + 1 fights. (Hard Mode uses the opposite
+  // convention: there the boss IS the final wave. The two disagree; see HARD_DUNGEON_WAVES.)
+  //
+  // One wave per step down the chain: 3, 4, 5, 6, 7, and the raid at 8. The Cursed City used to
+  // have 10 against The Ember Deeps' 5 — more than double the dungeon before it, and longer than
+  // the raid, which made it the one instance nobody wanted to run twice.
+  //
+  // `lootFloor` is dead data: nothing reads it. DUNGEON_RARITY is the real loot table.
   { id: "deadmines", name: "The Sunken Mine", minLevel: 15, icon: "⚓", color: "#7a5230", boss: "Bandit Lord Garrick", waves: 3, lootFloor: "uncommon", goldMult: 6, hpMult: 4 },
   { id: "scarlet", name: "The Crimson Abbey", minLevel: 30, icon: "⛪", color: "#a11", boss: "Champion Hadrok", waves: 4, lootFloor: "uncommon", goldMult: 8, hpMult: 4 },
-  { id: "uldaman", name: "The Forgotten Vault", minLevel: 40, icon: "🏛️", color: "#b8860b", boss: "Stoneguard Aurok", waves: 4, lootFloor: "rare", goldMult: 10, hpMult: 4 },
-  { id: "blackrock", name: "The Ember Deeps", minLevel: 50, icon: "🔥", color: "#cc4400", boss: "Emperor Vorgath", waves: 5, lootFloor: "rare", goldMult: 14, hpMult: 4 },
-  { id: "stratholme", name: "The Cursed City", minLevel: 56, icon: "💀", color: "#3a5a2a", boss: "Baron Morthane", waves: 10, lootFloor: "epic", goldMult: 18, hpMult: 4 },
+  { id: "uldaman", name: "The Forgotten Vault", minLevel: 40, icon: "🏛️", color: "#b8860b", boss: "Stoneguard Aurok", waves: 5, lootFloor: "rare", goldMult: 10, hpMult: 4 },
+  { id: "blackrock", name: "The Ember Deeps", minLevel: 50, icon: "🔥", color: "#cc4400", boss: "Emperor Vorgath", waves: 6, lootFloor: "rare", goldMult: 14, hpMult: 4 },
+  { id: "stratholme", name: "The Cursed City", minLevel: 56, icon: "💀", color: "#3a5a2a", boss: "Baron Morthane", waves: 7, lootFloor: "epic", goldMult: 18, hpMult: 4 },
 ];
 
 // ---------- RAIDS (endgame, ilvl-gated, 24h lockout) ----------
@@ -445,6 +454,27 @@ const RAIDS = [
     desc: "Descend into the fiery heart of the mountain to face Ignaroth the Flamelord." },
 ];
 const RAID_COOLDOWN = 24 * 3600000; // 24 hours
+
+// ---------- DUNGEON DIFFICULTY RAMP ----------
+// A run used to be flat: wave 1 and wave 5 were the same fight with a different number on the log
+// line, and every wave paid the same. One function decides how much harder a wave is than the
+// first, and BOTH the enemy and the payout key off it — so a wave that is 70% harder is also worth
+// 70% more, automatically, and the shape can be retuned in one place without the two drifting.
+//
+// Linear is the placeholder shape. Alternatives worth considering are written up in the reply that
+// introduced this; swapping any of them in means replacing the body of dungeonWaveScale alone.
+const DUNGEON_RAMP = {
+  perWave: 0.12,   // each wave past the first is 12% harder and pays 12% more
+  bossBonus: 0.0,  // the boss already carries its own hpMult and rank; no extra ramp on top
+};
+// How many pieces the final boss of an instance drops. This is now the ENTIRE gear yield of a run,
+// since trash pays gold and XP only, so it is a fixed count rather than a coin flip.
+const DUNGEON_BOSS_DROPS = 2;
+// `wave` is 1-based and the boss arrives at waves + 1.
+const dungeonWaveScale = (wave, waves) => {
+  const w = Math.max(1, Math.min(wave || 1, (waves || 1) + 1));
+  return 1 + DUNGEON_RAMP.perWave * (w - 1) + (w > (waves || 1) ? DUNGEON_RAMP.bossBonus : 0);
+};
 const instanceById = (id) => DUNGEONS.find((d) => d.id === id) || RAIDS.find((r) => r.id === id);
 
 // ---------- HARD MODE (endgame progression) ----------
@@ -989,11 +1019,22 @@ function rollGem({ level, isBoss, dungeonId, dropMult = 1 }) {
   return pick(pool);
 }
 
-// loot roll on enemy death → array of items (0-2)
-function rollLoot({ level, isBoss, dungeonId, guaranteed, clsId, dropMult = 1 }) {
+// loot roll on enemy death → array of items (0-2, or exactly `rolls` when one is given)
+//
+// `rolls` is the dungeon-boss path: the boss of an instance drops a FIXED number of items rather
+// than one guaranteed plus a coin flip. Trash no longer drops gear at all, so this is the entire
+// gear yield of a run and leaving it to a coin flip made two identical clears pay differently for
+// no reason the player could see. Each roll goes through the same DUNGEON_RARITY table — that
+// table is the loot filter.
+function rollLoot({ level, isBoss, dungeonId, guaranteed, clsId, dropMult = 1, rolls = 0 }) {
   const items = [];
   const inst = dungeonId ? instanceById(dungeonId) : null;
   const isRaid = !!inst?.raid;
+  if (rolls > 0) {
+    const ilvlOf = () => (isRaid ? 64 : Math.max(1, Math.min(63, Math.round(level + (Math.random() * 4 - 1)))));
+    for (let i = 0; i < rolls; i++) items.push(generateItem(ilvlOf(), rollRarityForDungeon(dungeonId), pickLootSlot(), clsId));
+    return items;
+  }
   // The normal-mode raid is the bridge to Hard Mode: it drops frequently so one clear yields
   // several pieces, and it is exempt from the zone scaling below for exactly that reason.
   const dropChance = guaranteed ? 1 : isRaid ? 0.85 : (isBoss ? 1 : 0.34) * DROP_RATE_MULT * dropMult * zoneDropScale(level);
@@ -2950,12 +2991,14 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       const over = Math.max(0, c.level - z.maxLevel);
       rewardMult = Math.pow(0.85, over); // ~15% less per level above the zone's cap
     }
+    // Deeper into a run is both harder and better paid, off the one shared ramp.
+    const waveScale = b.mode === "dungeon" ? dungeonWaveScale(b.wave, (instanceById(b.dungeonId) || {}).waves) : 1;
     let xpEarned = Math.floor((c.level * (enemy.isBoss ? 9 : 3) + 10) * rewardMult);
-    if (b.mode === "dungeon") xpEarned *= 3; // dungeons & raids grant triple XP
+    if (b.mode === "dungeon") xpEarned = Math.floor(xpEarned * 3 * waveScale); // dungeons & raids grant triple XP, ramped by wave
     const _tb = townBonuses(c);
     xpEarned = Math.floor(xpEarned * (1 + _tb.xp) * auraXpMult(c)); // War College + Town Hall
     let goldBase = Math.floor(c.level * (enemy.isBoss ? 5 : 1) + Math.random() * 4 + 1);
-    if (b.mode === "dungeon") goldBase = Math.floor(goldBase * (instanceById(b.dungeonId)?.goldMult || 4) / 3);
+    if (b.mode === "dungeon") goldBase = Math.floor(goldBase * (instanceById(b.dungeonId)?.goldMult || 4) / 3 * waveScale);
     if (c.race === "human") goldBase = Math.floor(goldBase * 1.1);
     goldBase = Math.max(0, Math.floor(goldBase * 0.25 * rewardMult * (1 + _tb.gold) * auraGoldMult(c))); // mob gold reduced by 75%, then zone penalty, then Vault + Town Hall
     // At max level, normal-mode combat rewards drop 95% — the endgame lives in Hard Mode (quest & gathering income unaffected)
@@ -3018,8 +3061,18 @@ function GameScreen({ character: initChar, onSave, onBack }) {
         if (hd?.completeCount && bk >= hd.completeCount && !nc.hardDungeonDone?.[b.hardId]) { nc = { ...nc, hardDungeonDone: { ...(nc.hardDungeonDone || {}), [b.hardId]: true } }; addLog(`🏆 ${hd.name} (Hard) cleared!`, "#FFD700"); showNotif(`🏆 ${hd.name} complete!`); }
         if (b.hardKind === "raid" && bk >= HARD_BOSS_REQ && !nc.hardDungeonDone?.[b.hardId]) { nc = { ...nc, hardDungeonDone: { ...(nc.hardDungeonDone || {}), [b.hardId]: true } }; addLog("🔥 The Molten Heart falls — HELL MODE awaits!", "#ff4500"); showNotif("🔥 Hard Mode raid cleared!"); }
       }
+    } else if (isDungeon && !enemy.isBoss && !(instanceById(b.dungeonId) || {}).raid) {
+      // Dungeon TRASH pays gold and XP only. Gear used to trickle out of every wave at 34%, which
+      // made the boss just another roll rather than the reason to be here, and meant a player who
+      // died on the last wave had still had most of the run's value. The ramp above is what makes
+      // pushing deeper worth it now.
+      //
+      // The RAID is deliberately exempt. rollLoot calls it the bridge to Hard Mode — it drops on
+      // 85% of kills so one clear yields the several ilvl-64 pieces a player needs to reach the
+      // average that gates Hard Mode. Cutting it to two would close the only route out of normal
+      // mode, the same reason zoneDropScale exempts it.
     } else {
-      if (!(guildRunRef.current && enemy.isBoss)) nc = grantLoot(nc, rollLoot({ level: enemy.level, isBoss: enemy.isBoss, dungeonId: isDungeon ? b.dungeonId : null, guaranteed: isDungeon && enemy.isBoss, clsId: nc.cls, dropMult: rewardMult * (1 + townBonuses(nc).drop) })); // Guild boss gear comes through the GDKP bid
+      if (!(guildRunRef.current && enemy.isBoss)) nc = grantLoot(nc, rollLoot({ level: enemy.level, isBoss: enemy.isBoss, dungeonId: isDungeon ? b.dungeonId : null, guaranteed: isDungeon && enemy.isBoss, clsId: nc.cls, dropMult: rewardMult * (1 + townBonuses(nc).drop), rolls: isDungeon && enemy.isBoss && !(instanceById(b.dungeonId) || {}).raid ? DUNGEON_BOSS_DROPS : 0 })); // Guild boss gear comes through the GDKP bid; the raid keeps its own drop maths
       nc = grantGem(nc, rollGem({ level: enemy.level, isBoss: enemy.isBoss, dungeonId: isDungeon ? b.dungeonId : null, dropMult: rewardMult * (1 + townBonuses(nc).drop) }));
     }
 
@@ -3102,7 +3155,11 @@ function GameScreen({ character: initChar, onSave, onBack }) {
         const dn = instanceById(b.dungeonId);
         const isBossWave = nextWave > dn.waves;
         const enemyLvl = dn.minLevel + 2 + Math.floor(Math.random() * 4) + (isBossWave ? 3 : 0);
-        const e = makeEnemy(enemyLvl, isBossWave ? { isBoss: true, dungeon: dn.id, name: `💀 ${dn.boss}`, hpMult: dn.hpMult || 1 } : { dungeon: dn.id, champion: true, hpMult: (dn.raid ? 1.3 : 1.1) * (dn.hpMult || 1) });
+        // The same ramp the rewards use, so a wave that pays 70% more is 70% harder.
+        const ramp = dungeonWaveScale(nextWave, dn.waves);
+        const e = makeEnemy(enemyLvl, isBossWave
+          ? { isBoss: true, dungeon: dn.id, name: `💀 ${dn.boss}`, hpMult: (dn.hpMult || 1) * ramp }
+          : { dungeon: dn.id, champion: true, hpMult: (dn.raid ? 1.3 : 1.1) * (dn.hpMult || 1) * ramp });
         addLog(isBossWave ? `⚔️ Final boss: ${dn.boss}!` : `⚔️ Wave ${nextWave}/${dn.waves}`, "#C79C6E");
         nb = { ...b, wave: nextWave, enemy: e, hp: b.hp, enemyEffects: [], enemyNextAt: Date.now() + ENEMY_BASE_INTERVAL, playerNextAt: Date.now() + 600 };
       }
@@ -3583,7 +3640,9 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     commitChar(nc);
     setLastDungeon(dn.id);
     const enemyLvl = dn.minLevel + 2 + Math.floor(Math.random() * 4);
-    const e = makeEnemy(enemyLvl, { dungeon: dn.id, champion: true, hpMult: 1.1 * (dn.hpMult || 1) });
+    // Through the ramp even at wave 1, where it is x1.00 — so the first fight cannot drift away
+    // from the rest of the run if the ramp's shape is retuned.
+    const e = makeEnemy(enemyLvl, { dungeon: dn.id, champion: true, hpMult: (dn.raid ? 1.3 : 1.1) * (dn.hpMult || 1) * dungeonWaveScale(1, dn.waves) });
     const t = Date.now();
     commitBattle({ mode: "dungeon", dungeonId: dn.id, wave: 1, runStart: t, drPlayer: {}, drEnemy: {}, hp: curHp(nc), enemy: e, res: 0, resQ: [], shardTicks: 0, cooldowns: {}, playerEffects: [], enemyEffects: [], playerNextAt: t + PLAYER_BASE_INTERVAL, enemyNextAt: t + ENEMY_BASE_INTERVAL });
     setTab("combat");

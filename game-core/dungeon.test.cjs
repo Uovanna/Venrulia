@@ -116,6 +116,29 @@ js += `
     ok(Array.isArray(open), "the open-world path is untouched by the rolls argument");
   }
 
+  // --- 3b. Hard Mode runs the SAME curve and the SAME convention -------------------------------
+  // Hard Mode used a flat 4 waves for every dungeon and 6 for the raid, and it treated the LAST
+  // wave as the boss — so its wave count meant "trash only" in normal mode and "fights including
+  // the boss" here, the same field counting two different things in two places.
+  {
+    const hard = HARD_DUNGEONS.slice();
+    const norm = DUNGEONS.slice().sort((a, b) => a.minLevel - b.minLevel);
+    ok(hard.length === norm.length, "there is a hard dungeon for every normal one");
+    for (let i = 0; i < hard.length; i++) {
+      ok(hard[i].waves === norm[i].waves,
+         hard[i].name + " (Hard) has " + hard[i].waves + " waves, matching its normal-mode counterpart");
+    }
+    ok(hard[0].waves === 3, "the hard chain starts at 3");
+    for (let i = 1; i < hard.length; i++) ok(hard[i].waves === hard[i - 1].waves + 1, "…and steps by one at " + hard[i].name);
+    ok(HARD_RAID.waves === hard[hard.length - 1].waves + 1, "the hard raid continues it at " + HARD_RAID.waves);
+    // No instance may be left without a wave count now that the flat constant is gone.
+    for (const h of [...hard, HARD_RAID]) ok(typeof h.waves === "number" && h.waves > 0, h.name + " declares its own wave count");
+    // Same ramp function, so a hard run builds the same way a normal one does.
+    ok(dungeonWaveScale(1, HARD_RAID.waves) === 1, "a hard run starts at x1.00");
+    ok(dungeonWaveScale(HARD_RAID.waves + 1, HARD_RAID.waves) > 1.5,
+       "…and its boss lands at x" + dungeonWaveScale(HARD_RAID.waves + 1, HARD_RAID.waves).toFixed(2));
+  }
+
   // --- 4. the raid keeps its own maths ---------------------------------------------------------
   // rollLoot calls the raid the bridge to Hard Mode: it drops on 85% of kills so one clear yields
   // the several ilvl-64 pieces needed to reach the average that gates Hard Mode. Cutting it to two

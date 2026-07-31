@@ -433,7 +433,7 @@ const ZONES = [
 const DUNGEONS = [
   // `waves` counts TRASH only — the boss is an extra encounter on top, because resolveDeath treats
   // wave > waves as the boss. So a run is waves + 1 fights. (Hard Mode uses the opposite
-  // convention: there the boss IS the final wave. The two disagree; see HARD_DUNGEON_WAVES.)
+  // convention as Hard Mode, which used to treat the last wave as the boss and now does not.)
   //
   // One wave per step down the chain: 3, 4, 5, 6, 7, and the raid at 8. The Cursed City used to
   // have 10 against The Ember Deeps' 5 — more than double the dungeon before it, and longer than
@@ -461,19 +461,24 @@ const RAID_COOLDOWN = 24 * 3600000; // 24 hours
 // first, and BOTH the enemy and the payout key off it — so a wave that is 70% harder is also worth
 // 70% more, automatically, and the shape can be retuned in one place without the two drifting.
 //
-// Linear is the placeholder shape. Alternatives worth considering are written up in the reply that
-// introduced this; swapping any of them in means replacing the body of dungeonWaveScale alone.
+// ACCELERATING, not linear. Early waves are close to free and the last two bite, so a run feels
+// like it is closing in on something rather than repeating itself. The exponent is what makes a
+// SHORT dungeon stay gentle without needing its own rule: the same curve that ends a 7-wave run at
+// x1.85 only reaches x1.23 by the end of a 3-wave one, because the ramp compounds with depth
+// rather than with a flat per-wave step.
 const DUNGEON_RAMP = {
-  perWave: 0.12,   // each wave past the first is 12% harder and pays 12% more
+  perWave: 0.04,   // scale on the accelerating term
+  curve: 1.6,      // >1 back-loads the difficulty; 1.0 would be plain linear
   bossBonus: 0.0,  // the boss already carries its own hpMult and rank; no extra ramp on top
 };
 // How many pieces the final boss of an instance drops. This is now the ENTIRE gear yield of a run,
 // since trash pays gold and XP only, so it is a fixed count rather than a coin flip.
 const DUNGEON_BOSS_DROPS = 2;
-// `wave` is 1-based and the boss arrives at waves + 1.
+// `wave` is 1-based and the boss arrives at waves + 1, in BOTH normal and Hard Mode.
 const dungeonWaveScale = (wave, waves) => {
   const w = Math.max(1, Math.min(wave || 1, (waves || 1) + 1));
-  return 1 + DUNGEON_RAMP.perWave * (w - 1) + (w > (waves || 1) ? DUNGEON_RAMP.bossBonus : 0);
+  return 1 + DUNGEON_RAMP.perWave * Math.pow(w - 1, DUNGEON_RAMP.curve)
+           + (w > (waves || 1) ? DUNGEON_RAMP.bossBonus : 0);
 };
 const instanceById = (id) => DUNGEONS.find((d) => d.id === id) || RAIDS.find((r) => r.id === id);
 
@@ -488,14 +493,18 @@ const HARD_ZONES = [
   { id: "hz_ember",  base: "searing",       name: "Emberwaste Canyon",   icon: "🌋", reqIlvl: 68, dropIlvl: 69, killGoal: 3750, prev: "hz_tangle",enemyLvl: 70 },
   { id: "hz_blight", base: "plaguelands",   name: "The Blighted Marches",icon: "☠️", reqIlvl: 69, dropIlvl: 70, killGoal: 5000, prev: "hz_ember", enemyLvl: 72 },
 ];
+// `waves` mirrors the normal-mode chain exactly: 3, 4, 5, 6, 7, and the raid at 8, counting TRASH
+// only with the boss as an extra fight on top. Hard Mode used a flat 4 for every dungeon and 6 for
+// the raid, so its five instances were the same length as each other and a different length from
+// their normal-mode counterparts.
 const HARD_DUNGEONS = [
-  { id: "hd_deadmines",  base: "deadmines",  name: "The Sunken Mine",     icon: "⚓", boss: "Bandit Lord Garrick", dropIlvl: 65, reqIlvl: 65, prevBoss: null, prevZone: null, enemyLvl: 63 },
-  { id: "hd_scarlet",    base: "scarlet",    name: "The Crimson Abbey",   icon: "⛪", boss: "Champion Hadrok",     dropIlvl: 66, prevBoss: "Bandit Lord Garrick", prevZone: "hz_green", enemyLvl: 65 },
-  { id: "hd_uldaman",    base: "uldaman",    name: "The Forgotten Vault", icon: "🏛️", boss: "Stoneguard Aurok",    dropIlvl: 67, prevBoss: "Champion Hadrok", prevZone: "hz_brack", enemyLvl: 66 },
-  { id: "hd_blackrock",  base: "blackrock",  name: "The Ember Deeps",     icon: "🔥", boss: "Emperor Vorgath",     dropIlvl: 68, prevBoss: "Stoneguard Aurok", prevZone: "hz_gloom", enemyLvl: 67 },
-  { id: "hd_stratholme", base: "stratholme", name: "The Cursed City",     icon: "💀", boss: "Baron Morthane",      dropIlvl: 69, prevBoss: "Emperor Vorgath", prevZone: "hz_tangle", enemyLvl: 68, completeCount: 10 },
+  { id: "hd_deadmines",  base: "deadmines",  name: "The Sunken Mine",     icon: "⚓", boss: "Bandit Lord Garrick", dropIlvl: 65, reqIlvl: 65, prevBoss: null, prevZone: null, enemyLvl: 63, waves: 3 },
+  { id: "hd_scarlet",    base: "scarlet",    name: "The Crimson Abbey",   icon: "⛪", boss: "Champion Hadrok",     dropIlvl: 66, prevBoss: "Bandit Lord Garrick", prevZone: "hz_green", enemyLvl: 65, waves: 4 },
+  { id: "hd_uldaman",    base: "uldaman",    name: "The Forgotten Vault", icon: "🏛️", boss: "Stoneguard Aurok",    dropIlvl: 67, prevBoss: "Champion Hadrok", prevZone: "hz_brack", enemyLvl: 66, waves: 5 },
+  { id: "hd_blackrock",  base: "blackrock",  name: "The Ember Deeps",     icon: "🔥", boss: "Emperor Vorgath",     dropIlvl: 68, prevBoss: "Stoneguard Aurok", prevZone: "hz_gloom", enemyLvl: 67, waves: 6 },
+  { id: "hd_stratholme", base: "stratholme", name: "The Cursed City",     icon: "💀", boss: "Baron Morthane",      dropIlvl: 69, prevBoss: "Emperor Vorgath", prevZone: "hz_tangle", enemyLvl: 68, completeCount: 10, waves: 7 },
 ];
-const HARD_RAID = { id: "hr_moltencore", base: "moltencore", name: "The Molten Heart", icon: "🌋", boss: "Ignaroth the Flamelord", dropIlvl: 71, enemyLvl: 72 };
+const HARD_RAID = { id: "hr_moltencore", base: "moltencore", name: "The Molten Heart", icon: "🌋", boss: "Ignaroth the Flamelord", dropIlvl: 71, enemyLvl: 72, waves: 8 };
 const HARD_BOSS_REQ = 10; // boss kills to unlock the next hard dungeon
 const hardZoneById = (id) => HARD_ZONES.find((z) => z.id === id);
 const hardDungeonById = (id) => HARD_DUNGEONS.find((d) => d.id === id);
@@ -2991,14 +3000,21 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       const over = Math.max(0, c.level - z.maxLevel);
       rewardMult = Math.pow(0.85, over); // ~15% less per level above the zone's cap
     }
-    // Deeper into a run is both harder and better paid, off the one shared ramp.
-    const waveScale = b.mode === "dungeon" ? dungeonWaveScale(b.wave, (instanceById(b.dungeonId) || {}).waves) : 1;
+    // Deeper into a run is both harder and better paid, off the one shared ramp. Hard Mode dungeons
+    // and the hard raid ride it too; hard ZONES are endless farm with no wave, so they sit at x1.00.
+    const waveScale = b.mode === "dungeon"
+      ? dungeonWaveScale(b.wave, (instanceById(b.dungeonId) || {}).waves)
+      : (b.mode === "hard" && b.hardKind && b.hardKind !== "zone")
+        ? dungeonWaveScale(b.wave, b.waves)
+        : 1;
     let xpEarned = Math.floor((c.level * (enemy.isBoss ? 9 : 3) + 10) * rewardMult);
     if (b.mode === "dungeon") xpEarned = Math.floor(xpEarned * 3 * waveScale); // dungeons & raids grant triple XP, ramped by wave
+    else if (waveScale !== 1) xpEarned = Math.floor(xpEarned * waveScale);      // Hard Mode dungeons & raid ride the same ramp
     const _tb = townBonuses(c);
     xpEarned = Math.floor(xpEarned * (1 + _tb.xp) * auraXpMult(c)); // War College + Town Hall
     let goldBase = Math.floor(c.level * (enemy.isBoss ? 5 : 1) + Math.random() * 4 + 1);
     if (b.mode === "dungeon") goldBase = Math.floor(goldBase * (instanceById(b.dungeonId)?.goldMult || 4) / 3 * waveScale);
+    else if (waveScale !== 1) goldBase = Math.floor(goldBase * waveScale);     // Hard Mode dungeons & raid
     if (c.race === "human") goldBase = Math.floor(goldBase * 1.1);
     goldBase = Math.max(0, Math.floor(goldBase * 0.25 * rewardMult * (1 + _tb.gold) * auraGoldMult(c))); // mob gold reduced by 75%, then zone penalty, then Vault + Town Hall
     // At max level, normal-mode combat rewards drop 95% — the endgame lives in Hard Mode (quest & gathering income unaffected)
@@ -3137,8 +3153,11 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           nb = null;
         } else {
           const nextWave = b.wave + 1;
-          const isBossWave = nextWave >= b.waves;
-          const e = makeHardEnemy(inst, b.hardKind, isBossWave);
+          // waves + 1, matching normal mode. Hard Mode used to treat the LAST wave as the boss,
+          // so `waves` meant "fights including the boss" here and "trash only" there — the same
+          // field counting two different things in two places.
+          const isBossWave = nextWave > b.waves;
+          const e = makeHardEnemy(inst, b.hardKind, isBossWave, nextWave);
           addLog(isBossWave ? `⚔️ Final boss: ${inst.boss}!` : `🔥 Wave ${nextWave}/${b.waves}`, "#ff4500");
           nb = { ...b, wave: nextWave, enemy: e, hp: b.hp, enemyEffects: [], enemyNextAt: Date.now() + ENEMY_BASE_INTERVAL, playerNextAt: Date.now() + 600 };
         }
@@ -3665,8 +3684,11 @@ function GameScreen({ character: initChar, onSave, onBack }) {
   };
   // Hard Mode enemies: power comes from the "hard" row of DIFFICULTY_TIERS; these hpMults are the
   // per-content-type health weighting on top of it (zone < dungeon trash < dungeon boss < raid boss).
-  const makeHardEnemy = (inst, kind, bossWave) => {
+  // `wave` drives the same accelerating ramp normal-mode dungeons use, so a Hard Mode run builds
+  // the same way. Zones are endless farm and have no wave, so they sit at x1.00.
+  const makeHardEnemy = (inst, kind, bossWave, wave) => {
     const T = "hard";
+    const ramp = kind === "zone" ? 1 : dungeonWaveScale(wave || 1, hardWaveCount(inst));
     if (kind === "zone") {
       const bz = ZONES.find((z) => z.id === inst.base);
       const isLord = Math.random() < 0.1; // Lords appear at the same ~10% rate champions do in normal zones
@@ -3678,17 +3700,18 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     }
     // dungeons & raid: Lord-tier waves; the final wave is the named boss (tracked for the 10-kill unlock)
     if (bossWave) {
-      const e = makeEnemy(inst.enemyLvl, { lord: true, name: `👑 ${inst.boss}`, hpMult: kind === "raid" ? 24 : 14, tier: T });
+      const e = makeEnemy(inst.enemyLvl, { lord: true, name: `👑 ${inst.boss}`, hpMult: (kind === "raid" ? 24 : 14) * ramp, tier: T });
       e.hardBoss = inst.boss;
       return e;
     }
     const bz = ZONES.find((z) => z.id === inst.base);
-    const e = makeEnemy(inst.enemyLvl, { lord: true, hpMult: kind === "raid" ? 16 : 10, tier: T }); // Lord trash
+    const e = makeEnemy(inst.enemyLvl, { lord: true, hpMult: (kind === "raid" ? 16 : 10) * ramp, tier: T }); // Lord trash
     if (bz) e.name = `👑 ${pick(bz.enemies)}`;
     return e;
   };
-  const HARD_DUNGEON_WAVES = 4, HARD_RAID_WAVES = 6;
-  const hardWaveCount = (kind) => kind === "raid" ? HARD_RAID_WAVES : HARD_DUNGEON_WAVES;
+  // Per instance, off its own `waves`, exactly as normal mode does. This was a flat 4 for every
+  // hard dungeon and 6 for the raid, so the five hard instances were all the same length.
+  const hardWaveCount = (inst) => (inst && inst.waves) || 4;
   const startHard = (inst, kind, useTicket = false) => {
     const c = charRef.current;
     if (battleRef.current) { showNotif("Finish current fight first"); return; }
@@ -3712,8 +3735,9 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       nc = { ...c, raidCooldowns: { ...(c.raidCooldowns || {}), [inst.id]: Date.now() + RAID_COOLDOWN } };
     }
     commitChar(nc);
-    const waves = kind === "zone" ? 0 : hardWaveCount(kind);
-    const e = makeHardEnemy(inst, kind, kind !== "zone" && waves === 1);
+    const waves = kind === "zone" ? 0 : hardWaveCount(inst);
+    // The boss now arrives at waves + 1, so wave 1 is never the boss — same rule as normal mode.
+    const e = makeHardEnemy(inst, kind, false, 1);
     const t = Date.now();
     commitBattle({ mode: "hard", hardId: inst.id, hardKind: kind, dropIlvl: inst.dropIlvl, wave: 1, waves, runStart: t, drPlayer: {}, drEnemy: {}, hp: curHp(nc), enemy: e, res: 0, resQ: [], shardTicks: 0, cooldowns: {}, playerEffects: [], enemyEffects: [], playerNextAt: t + PLAYER_BASE_INTERVAL, enemyNextAt: t + ENEMY_BASE_INTERVAL });
     setTab("combat");
@@ -6495,7 +6519,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                           <div style={{ fontSize: 22 }}>{hd.icon}</div>
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ color: "#fff", fontWeight: 700, fontSize: 13 }}>{hd.name} {done && <span style={{ color: "#5fd35f", fontSize: 10 }}>✓</span>}</div>
-                            <div style={{ color: "#9a93b3", fontSize: 10.5 }}>Drops ilvl {hd.dropIlvl} · Boss: {hd.boss} · {hardWaveCount("dungeon")} waves</div>
+                            <div style={{ color: "#9a93b3", fontSize: 10.5 }}>Drops ilvl {hd.dropIlvl} · Boss: {hd.boss} · {hd.waves} waves</div>
                             <div style={{ color: "#8a83b8", fontSize: 10 }}>{hd.reqIlvl ? `Unlock: ilvl ${hd.reqIlvl}` : `Unlock: ${prevKills}/${HARD_BOSS_REQ} ${hd.prevBoss}`}{hd.prevZone ? <> · <span style={{ color: char.hardZoneDone?.[hd.prevZone] ? "#5fd35f" : "#ff8877" }}>{char.hardZoneDone?.[hd.prevZone] ? "✓" : "✗"} {hardZoneById(hd.prevZone)?.name}</span></> : null}{hd.completeCount ? ` · clear: ${bk}/${hd.completeCount}` : ` · ${hd.boss}: ${bk}`} · {runsLeft}/{DUNGEON_RUN_LIMIT} runs</div>
                           </div>
                         </div>
@@ -6513,7 +6537,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                     <div style={{ fontSize: 28 }}>{HARD_RAID.icon}</div>
                     <div style={{ flex: 1 }}>
                       <div style={{ color: "#fff", fontWeight: 700, fontSize: 14 }}>{HARD_RAID.name} {done && <span style={{ color: "#5fd35f", fontSize: 10 }}>✓</span>}</div>
-                      <div style={{ color: "#9a93b3", fontSize: 11 }}>Drops ilvl {HARD_RAID.dropIlvl} · Boss: {HARD_RAID.boss} · {hardWaveCount("raid")} waves</div>
+                      <div style={{ color: "#9a93b3", fontSize: 11 }}>Drops ilvl {HARD_RAID.dropIlvl} · Boss: {HARD_RAID.boss} · {HARD_RAID.waves} waves</div>
                       <div style={{ color: "#8a83b8", fontSize: 10 }}>Requires all Hard Mode complete · {bk}/{HARD_BOSS_REQ} kills{done ? " · unlocks HELL mode" : ""}{cd > 0 ? ` · ⏳ ${fmtClock(cd)}` : ""}</div>
                     </div>
                   </div>

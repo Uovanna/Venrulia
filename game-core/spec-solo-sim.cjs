@@ -61,21 +61,23 @@ js += `
 
   console.log("\\n=== 1. WHAT FILLS THE BAR ===");
   console.log("A level-60 character has " + CAP + " skill slots.\\n");
-  console.log(pad("spec", 12) + pad("role", 9) + rp("sigs", 6) + rp("free slots", 12)
-    + rp("dmg sigs", 10) + rp("sig dmg total", 15) + rp("best-5 total", 14) + rp("dmgPct", 9));
+  console.log(pad("spec", 12) + pad("role", 9) + rp("granted", 9) + rp("free slots", 12)
+    + rp("dmg on bar", 12) + rp("bar dmg total", 15) + rp("best-5 total", 14) + rp("dmgPct", 9));
   const barRows = [];
   for (const [spec, cls, dpsSpec] of [...NONDPS.map((x) => x), ["w_berserk", "warrior", null],
                                        ["p_just", "paladin", null], ["m_wild", "mage", null],
                                        ["h_range", "hunter", null]]) {
     const ch = { cls, level: 60, spec };
-    const sigs = specSkillNames(spec);
+    // What normalizeChar actually hands a fresh character: the granted signatures plus whatever
+    // padSelectedSkills fills the remaining slots with. The raw signature list is NOT the bar.
+    const sigs = core.normalizeChar({ ...core.createCharacter("T", cls, "human"), level: 60, spec, selectedSkills: [] }).selectedSkills;
     const sigDmg = sigs.reduce((a, n) => a + dmgOf(ch, n), 0);
     const best = bestDamageBar(cls, spec);
     const bestDmg = best.reduce((a, n) => a + dmgOf(ch, n), 0);
     const mods = (specById(spec) || {}).m || {};
     barRows.push({ spec, cls, dpsSpec, sigs, best, sigDmg, bestDmg, dmgPct: mods.dmgPct || 0 });
-    console.log(pad(spec, 12) + pad(specRole(spec), 9) + rp(sigs.length, 6)
-      + rp(Math.max(0, CAP - sigs.length), 12)
+    console.log(pad(spec, 12) + pad(specRole(spec), 9) + rp(core.specGrantedSkills(spec).length, 9)
+      + rp(Math.max(0, CAP - core.specGrantedSkills(spec).length), 12)
       + rp(sigs.filter((n) => dmgOf(ch, n) > 0).length, 10)
       + rp("x" + sigDmg.toFixed(2), 15) + rp("x" + bestDmg.toFixed(2), 14)
       + rp(mods.dmgPct ? (mods.dmgPct * 100).toFixed(0) + "%" : "-", 9));
@@ -132,17 +134,17 @@ js += `
   const HZ = HARD_ZONES[0];   // the entry bracket — if a spec cannot clear here it cannot start
   console.log("\\n=== 2. SOLO HARD MODE AT THE ENTRY BRACKET (" + HZ.name + ", ilvl " + HZ.reqIlvl + ") ===");
   console.log("Health talents + maxed town, as a player who has reached hard mode would have.\\n");
-  console.log(pad("spec", 12) + pad("bar", 22) + rp("dps", 8) + rp("hp", 8) + rp("dr", 6)
+  console.log(pad("spec", 12) + pad("bar", 24) + rp("dps", 8) + rp("hp", 8) + rp("dr", 6)
     + rp("kill", 9) + rp("survive", 10) + rp("margin", 9) + rp("verdict", 9));
 
   const results = {};
   for (const row of barRows) {
     if (!row.dpsSpec) continue;   // reference DPS specs handled below
-    for (const [label, bar] of [["its own signatures", row.sigs], ["best damage skills", row.best]]) {
+    for (const [label, bar] of [["its default bar", row.sigs], ["best damage skills", row.best]]) {
       const ch = profile(row.cls, row.spec, HZ.reqIlvl, bar);
       const f = zoneFight(HZ, ch);
       results[row.spec + "|" + label] = { ch, f };
-      console.log(pad(row.spec, 12) + pad(label, 22) + rp(g(ch.dps), 8) + rp(g(ch.hp), 8)
+      console.log(pad(row.spec, 12) + pad(label, 24) + rp(g(ch.dps), 8) + rp(g(ch.hp), 8)
         + rp((ch.dr * 100).toFixed(0) + "%", 6) + rp(f.secs.toFixed(1) + "s", 9)
         + rp(f.live > 1e4 ? "sustains" : f.live.toFixed(1) + "s", 10)
         + rp(f.live > 1e4 ? "huge" : "x" + (f.live / f.secs).toFixed(2), 9)
@@ -152,10 +154,10 @@ js += `
   // Reference: what the same class's DPS spec does, with its own bar.
   console.log("");
   for (const row of barRows.filter((r) => !r.dpsSpec)) {
-    const ch = profile(row.cls, row.spec, HZ.reqIlvl, row.sigs.length >= CAP ? row.sigs : row.best);
+    const ch = profile(row.cls, row.spec, HZ.reqIlvl, row.sigs);
     const f = zoneFight(HZ, ch);
     results[row.spec] = { ch, f };
-    console.log(pad(row.spec, 12) + pad("(dps reference)", 22) + rp(g(ch.dps), 8) + rp(g(ch.hp), 8)
+    console.log(pad(row.spec, 12) + pad("(dps ref, default bar)", 24) + rp(g(ch.dps), 8) + rp(g(ch.hp), 8)
       + rp((ch.dr * 100).toFixed(0) + "%", 6) + rp(f.secs.toFixed(1) + "s", 9)
       + rp(f.live > 1e4 ? "sustains" : f.live.toFixed(1) + "s", 10)
       + rp(f.live > 1e4 ? "huge" : "x" + (f.live / f.secs).toFixed(2), 9)
@@ -192,7 +194,7 @@ js += `
   for (const row of barRows) {
     if (!row.dpsSpec) continue;
     const a = results[row.spec + "|its own signatures"], b = results[row.spec + "|best damage skills"];
-    console.log("  " + pad(row.spec, 12) + " own bar: " + (a.f.clears ? "clears" : "dies")
+    console.log("  " + pad(row.spec, 12) + " default bar: " + (a.f.clears ? "clears" : "dies")
       + "   best bar: " + (b.f.clears ? "CLEARS" : "dies")
       + "   (kill " + a.f.secs.toFixed(0) + "s -> " + b.f.secs.toFixed(0) + "s)");
   }

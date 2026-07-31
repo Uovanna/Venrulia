@@ -161,6 +161,8 @@ import {
   buildBotChar,
   specClassOf,
   specSkillNames,
+  specGrantedSkills,
+  SPEC_AUTOGRANT,
   guildBossDef,
   HUNTER_WEAPONS,
   gambitCondMet,
@@ -1243,7 +1245,10 @@ const hasLoadout = (c, specId) => !!(c && c.specLoadouts && c.specLoadouts[specI
 // Pure spec swap: banks the outgoing template, restores the incoming one (or builds a default).
 // Returns { char, restored }. Kept at module scope so it is testable without React.
 const switchSpecCore = (c, specId) => {
-  const newSig = specSkillNames(specId);
+  // The GRANTED three, not the whole kit. Choosing Protection used to hand over five signature
+  // skills into a five-slot bar, which left no room for a damage skill and is what made the
+  // group-role specs so slow to kill anything. The other two remain in the pool to pick up.
+  const newSig = specGrantedSkills(specId);
   const banked = { ...(c.specLoadouts || {}) };
   if (c.spec && c.spec !== specId) banked[c.spec] = captureLoadout(c);
   let nc = { ...c, spec: specId, specLoadouts: banked };
@@ -2513,7 +2518,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       addLog(`${spec.icon} Specialized as ${spec.name}. Your saved template (skills, mods, gambits) was restored.`, "#f0b429");
     } else {
       showNotif(`${spec.icon} Specialization: ${spec.name}!`);
-      addLog(`${spec.icon} Specialized as ${spec.name}. Signature skills granted: ${specSkillNames(specId).join(", ")}.`, "#f0b429");
+      addLog(`${spec.icon} Specialized as ${spec.name}. Signature skills granted: ${specGrantedSkills(specId).join(", ")}.`, "#f0b429");
     }
   };
   const toggleSelectedSkill = (name) => {
@@ -5821,8 +5826,13 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                       </div>
                       <div style={{ color: "#b9b3d6", fontSize: 10.5, lineHeight: 1.45, marginBottom: 8 }}><b style={{ color: "#d8d0f0" }}>Passive:</b> {sp.desc}</div>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 9 }}>
-                        {specSkillNames(sp.id).map((n) => { const sk = (SKILLS[char.cls] || []).find((s) => s.name === n); return (
-                          <span key={n} style={{ background: "#12102a", border: `1px solid ${cls.color}33`, borderRadius: 6, padding: "3px 7px", fontSize: 9.5, color: "#c9c2e6" }}>{sk?.icon} {n}</span>
+                        {specSkillNames(sp.id).map((n, si) => { const sk = (SKILLS[char.cls] || []).find((s) => s.name === n);
+                          // Only the first SPEC_AUTOGRANT are put on the bar for you; the rest belong to
+                          // the spec and are yours to slot in. Showing all five as though they were all
+                          // granted is how a Protection warrior ended up with no room for a damage skill.
+                          const granted = si < SPEC_AUTOGRANT; return (
+                          <span key={n} title={granted ? "Granted to your bar when you specialize" : "Available to this spec — slot it in yourself"}
+                            style={{ background: "#12102a", border: `1px ${granted ? "solid" : "dashed"} ${cls.color}${granted ? "33" : "22"}`, borderRadius: 6, padding: "3px 7px", fontSize: 9.5, color: granted ? "#c9c2e6" : "#8a83b8" }}>{sk?.icon} {n}</span>
                         ); })}
                       </div>
                       {active ? (

@@ -992,7 +992,13 @@ const offlinePlayerDps = (char) => {
     const sbase = (isMagicSkill(sk) || talentFlag(char, "skillsInt")) ? magicBase : physBase; // magic → Int, physical → Str
     if (sk.detonate) { detonator = { sk, sbase }; continue; } // scored after the affliction pool is known
     const potf = 1 + tm.skillPot + skillModPotency(char, sk.name);
-    const instant = (sk.mult || 0) * (sk.hits || 1) * potf * critFactor; // instant hits can crit
+    // Wild Magic: a 30% chance to double-cast a magic skill, so ×1.30 in expectation. applySkillCore
+    // has always done this in live combat; this estimate did not, while it DID apply the Arcanist's
+    // +3s cooldown penalty — so the spec was charged for its downside and given none of its upside,
+    // in offline farming, in its multiplayer power rating, and in every group dps estimate.
+    // It doubles the instant hit only, not a damage-over-time component, so it is applied there.
+    const wildMagic = talentFlag(char, "wildmagic") && isMagicSkill(sk) ? 1.30 : 1;
+    const instant = (sk.mult || 0) * (sk.hits || 1) * potf * critFactor * wildMagic; // instant hits can crit
     const dot = (sk.dotMult || 0) * potf * hexStacked + (sk.snakeVenom ? sk.snakeVenom * 0.9 : 0); // Snake Trap: N venom stacks ≈ 0.9× base each
     const perCast = (instant + dot) * (talentFlag(char, "wildstrike") ? 0.55 : 1); // Wild Striker: 45% of skill casts miss
     const cd = Math.max(0.5, sk.cd * (1 - cdrFracFor(char)) * (hasSkillModEffect(char, sk.name, "ms_cdr") ? 0.75 : 1) + (tm.skillCd || 0) - gemFlatCd(char));
@@ -1249,6 +1255,9 @@ const buildBotChar = (cls, spec, level, ilvl) => {
     // single basic skill, and normalizeChar rightly treats whatever is there as a deliberate
     // choice — so without this a bot spent slot 1 on that starter skill and lost its fifth
     // signature ability, which for a tank is Shield Wall and for a healer is Aegis of Light.
+    // The FULL kit on purpose, not the granted three. A bot exists to play its role in group
+    // content, and a tank bot without its taunt or a healer without Aegis of Light would break
+    // encounters. Only a human's bar has to leave room for the skills they chose.
     bc.selectedSkills = [...specSkillNames(spec)];
   }
   const eq = { ...emptyEquipment() };
@@ -1301,12 +1310,31 @@ const SPEC_SKILLS = {
   l_hex:    ["Unstable Affliction", "Corruption Spread", "Soul Harvest", "Soul Detonation"],
   l_demon:  ["Summon Fiend", "Demonic Empowerment", "Soul Link"],
   // ---- Group-role specs (Phase 1) ----
+  // ORDER MATTERS for these five. Only the first SPEC_AUTOGRANT are handed to a player's empty
+  // bar, so the leading entries must be the ones that define the role and the trailing ones the
+  // situational cooldowns a player opts into. Bots still run the whole kit.
   w_prot:     ["Shield Slam", "Challenging Shout", "Thunder Clap", "Last Stand", "Shield Wall"],       // Warrior · Tank
   p_holy:     ["Holy Light", "Divine Radiance", "Beacon of Light", "Cleanse", "Aegis of Light"], // Paladin · Healer (Holy Smite available to swap in)
   p_prot:     ["Shield of the Righteous", "Hand of Authority", "Consecration", "Guardian's Bulwark", "Ardent Defender"], // Paladin · Tank
-  m_support:  ["Counterspell", "Temporal Surge", "Arcane Ward", "Arcane Barrage", "Dampen Magic"],   // Mage · Support
-  h_support:  ["Disrupting Shot", "Rallying Anthem", "Mending Volley", "Aimed Shot", "Warding Cry"], // Hunter · Support
+  // Arcane Barrage and Aimed Shot moved into the granted three: they are these specs' only real
+  // damage, and leaving them in the tail handed a support a bar that could barely hurt anything.
+  m_support:  ["Counterspell", "Arcane Barrage", "Temporal Surge", "Arcane Ward", "Dampen Magic"],   // Mage · Support
+  h_support:  ["Disrupting Shot", "Rallying Anthem", "Aimed Shot", "Mending Volley", "Warding Cry"], // Hunter · Support
 };
+// How many of a spec's signature skills are handed to an EMPTY bar.
+//
+// A level-60 character has 5 slots. Every DPS spec has 3 signatures, so it fills the last two with
+// class skills — a Berserker's default bar carries x10.20 of damage multiplier. Every group-role
+// spec has 5 signatures, which fill the bar exactly and leave nothing: a Protection warrior's
+// default bar carries x2.90, and a Holy paladin's x3.70. That was never a tuned number; it is a
+// slot count colliding with a signature count, and it cost those specs 21-86% of their damage.
+//
+// Granting three gives every spec in the game the same 3 + 2 shape. The other two signatures are
+// NOT removed — visibility comes from the skill's own `spec` field, so they stay in the player's
+// pool and can be picked back up at any time. Bots keep the whole kit, because a tank bot without
+// its taunt would break group content.
+const SPEC_AUTOGRANT = 3;
+const specGrantedSkills = (id) => specSkillNames(id).slice(0, SPEC_AUTOGRANT);
 const ALL_SPEC_SKILL_NAMES = new Set(Object.values(SPEC_SKILLS).flat());
 const migrateSpec = (id) => (id && SPEC_MIGRATIONS[id]) || id;
 const STARTER_WEAPON = {
@@ -1794,8 +1822,13 @@ const normalizeChar = (c) => ({
   selectedSkills: (() => {
     let spec = (migrateSpec(c.spec) && specById(migrateSpec(c.spec)) && specClassOf(migrateSpec(c.spec)) === c.cls) ? migrateSpec(c.spec) : null;
     if (!spec) { const old60 = c.talents && c.talents[60]; if (old60 && specById(migrateSpec(old60)) && specClassOf(migrateSpec(old60)) === c.cls) spec = migrateSpec(old60); }
-    const sig = spec ? specSkillNames(spec) : [];
-    const base = (c.selectedSkills || c.unlockedSkills || []).filter((n) => !ALL_SPEC_SKILL_NAMES.has(n) || sig.includes(n)); // drop signature skills from other specs
+    // GRANTED signatures, not the whole kit. A group-role spec has five and a bar has five, so
+    // handing over all of them left no room for a single damage skill. The other two stay in the
+    // player's pool — this decides what fills an EMPTY slot, not what they may carry.
+    const sig = spec ? specGrantedSkills(spec) : [];
+    // Keeping a skill the player already chose must still work, so the filter checks the FULL kit.
+    const kit = spec ? specSkillNames(spec) : [];
+    const base = (c.selectedSkills || c.unlockedSkills || []).filter((n) => !ALL_SPEC_SKILL_NAMES.has(n) || kit.includes(n)); // drop signature skills from other specs
     // The player's own bar comes FIRST; signature skills only fill what is left. This ran the other
     // way round and re-applied on EVERY load, so padSelectedSkills truncated to the slot count and
     // evicted real choices: a level-60 warrior with five non-signature skills kept two of them after
@@ -2333,6 +2366,8 @@ export {
   SPEC_MIGRATIONS,
   specClassOf,
   specSkillNames,
+  specGrantedSkills,
+  SPEC_AUTOGRANT,
   RARITIES,
   rarityById,
   GEAR_SLOTS,

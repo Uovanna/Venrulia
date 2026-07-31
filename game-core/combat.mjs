@@ -1469,6 +1469,16 @@ const endgameClimb = (ilvl) =>
 const gearStatBase = (ilvl, rarityIdx) =>
   (1 + ilvl * 0.05) * (RARITY_STAT_MULT[rarityIdx] || 1) * endgameClimb(ilvl);
 const baseArmorFor = (ilvl, rarityIdx, slotId) => (slotId === "weapon" ? 0 : Math.max(1, Math.round(gearStatBase(ilvl, rarityIdx) * (ARMOR_SLOT_WEIGHT[slotId] || 0.5) * ARMOR_BASE_MULT)));
+// What one secondary line is worth at a given ilvl/rarity. generateItem rolls lines with this and
+// the temper shop rerolls them to it — the shop used to carry its own copy of the formula, marked
+// "mirrors generateItem", and a copy marked as a copy is still a copy. When the endgame ilvl curve
+// landed, that copy did not move, so paying 100k-250k to reroll an ilvl-70 line would have handed
+// back a pre-curve value roughly 45% smaller.
+const secondaryNominal = (ilvl, rarityIdx, stat) => {
+  const perStat = Math.max(1, Math.round(gearStatBase(ilvl, rarityIdx)));
+  const secBase = Math.max(1, Math.round(perStat * 0.7));
+  return Math.max(1, Math.round(secBase * (SEC_SIZE[stat] || 0.5)));
+};
 const RARITY_STAT_MULT = [0.5, 0.8, 1.2, 1.8, 2.6, 3.8, 3.8];
 const ITEM_BASES = {
   head: ["Helm", "Coif", "Crown", "Hood", "Greathelm", "Circlet"],
@@ -1567,7 +1577,6 @@ function generateItem(ilvl, rarity, slotId, clsId) {
   // gearStatBase, not a second copy of it: this line used to restate the ilvl curve inline, so
   // armor and weapon damage moved with the curve and the stats on the item did not.
   const perStat = Math.max(1, Math.round(gearStatBase(ilvl, rarityIdx)));
-  const secBase = Math.max(1, Math.round(perStat * 0.7));
   const stats = { str: 0, agi: 0, int: 0, sta: 0, armor: 0, dmg: 0, leech: 0, resil: 0, vers: 0, cdr: 0, csd: 0, crit: 0, haste: 0, ap: 0, sp: 0 };
 
   // ----- MAIN stats (str/agi/int) -----
@@ -1599,7 +1608,7 @@ function generateItem(ilvl, rarity, slotId, clsId) {
     if (!k) break;
     chosen.push(k);
   }
-  chosen.forEach((k) => { stats[k] += Math.max(1, Math.round(secBase * (SEC_SIZE[k] || 0.5))); });
+  chosen.forEach((k) => { stats[k] += secondaryNominal(ilvl, rarityIdx, k); });
 
   // inherent Armor on all non-weapon gear; weapons instead carry a damage range
   if (!isWeapon) stats.armor += baseArmorFor(ilvl, rarityIdx, slotId);
@@ -2266,6 +2275,7 @@ export {
   RARITY_STAT_MULT,
   baseArmorFor,
   gearStatBase,
+  secondaryNominal,
   endgameClimb,
   ENDGAME_ILVL_FLOOR,
   ENDGAME_ILVL_GROWTH,

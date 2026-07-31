@@ -335,43 +335,25 @@ js += `
   console.log("  " + g(goldPerHour * 0.5 / pts70) + " to " + g(goldPerHour * 4 / pts70) + " gold per stat point, against today's ~25.");
 
   // =============================================================================================
-  console.log("\\n=== 7. PROPOSED: PRICE THE POWER, NOT THE ITEM LEVEL ===");
-  console.log("Today ahBaseValue = ilvl x rarity.valueMult. It cannot tell a well-rolled piece from a");
-  console.log("badly-rolled one of the same ilvl, and it is flat across the whole hard-mode climb.");
-  console.log("The proposal prices an item by the power it carries, on a PROGRESSIVE curve, so that");
-  console.log("a best-in-slot piece is worth many times an ordinary one rather than a few percent more.\\n");
+  console.log("\\n=== 7. WHAT THE SHELVES CHARGE ===");
+  console.log("ahBaseValue used to be ilvl x rarity.valueMult: it could not tell a well-rolled piece");
+  console.log("from a badly-rolled one of the same ilvl, and it was flat across the hard-mode climb.");
+  console.log("It now prices an item by the POWER it carries, on a progressive curve.\\n");
 
-  // Weighted points, class-neutral. Main stats count fully because every item's mains suit SOME
-  // buyer; secondaries carry the weights already measured for itemScore, so a price tracks the same
-  // notion of power the upgrade arrow does. Power (ap/sp) counts only while it is live.
-  const AH_W = { str: 1, agi: 1, int: 1, sta: 0.75, ap: 0.7, sp: 0.7, dmg: 0.7,
-                 csd: 1.05, vers: 0.7, crit: 0.55, cdr: 0.45, armor: 0.45, leech: 0.45,
-                 haste: 0.2, resil: 0.25 };
-  const ahPoints = (item) => {
-    const s = item.stats || {}, e = (item.enchant && item.enchant.stats) || {};
-    let pts = 0;
-    for (const k of Object.keys(AH_W)) {
-      if ((k === "ap" || k === "sp") && !itemPowerActive(item)) continue;
-      pts += ((s[k] || 0) + (e[k] || 0)) * AH_W[k];
-    }
-    // A socket is real power the buyer can fill; an enchant is already counted in its stats.
-    return pts * (1 + 0.08 * (Array.isArray(item.sockets) ? item.sockets.length : 0));
-  };
+  // The SHIPPED functions, not a re-derivation. An earlier version of this section carried its own
+  // copy of the weights and the curve, which is exactly the duplication that keeps biting: the
+  // model would have gone on reporting the old numbers after the real one changed.
+  const ahPoints = ahStatPoints;
+  const proposed = ahBaseValue;
 
-  // Calibrated so a best-in-slot epic costs about TARGET_HOURS of endgame income. The exponent is
-  // what makes the curve progressive: at 1.8, doubling an item's power raises its price 3.5x.
-  const AH_EXP = 1.8, TARGET_HOURS = 2;
-  const bis = rngm.withRng(rngm.makeRng(777), () => generateItem(70, rarityById("epic"), "chest", "warrior"));
-  const AH_BASE = (goldPerHour * TARGET_HOURS) / Math.pow(ahPoints(bis), AH_EXP);
-  const proposed = (item) => Math.max(1, Math.round(AH_BASE * Math.pow(ahPoints(item), AH_EXP)));
-
-  console.log("  price = " + AH_BASE.toFixed(2) + " x (weighted stat points ^ " + AH_EXP + ")");
-  console.log("  calibrated so an ilvl-70 epic = " + TARGET_HOURS + "h of endgame income ("
-    + g(goldPerHour) + " g/h)\\n");
+  console.log("  price = " + AH_PRICE.perPoint + " x (weighted stat points ^ " + AH_PRICE.exponent + ")");
+  console.log("  calibrated so an ilvl-70 epic costs about 2h of endgame income (" + g(goldPerHour) + " g/h)");
+  console.log("  posting deposit " + (AH_ECON.postFeePct * 100).toFixed(0) + "% (was 25%), sale tax "
+    + (AH_ECON.saleTaxPct * 100).toFixed(0) + "%, vendor untouched\\n");
   // One roll per bracket is noise — the whole point of the model is that two items of the same
   // ilvl differ, so a single sample can put a lucky 66 above an unlucky 68. Average 400 rolls per
   // bracket for the curve, and report the spread, because that spread IS the market.
-  console.log(pad("ilvl", 6) + pad("rarity", 11) + rp("raw", 6) + rp("wtd", 6) + rp("today", 9)
+  console.log(pad("ilvl", 6) + pad("rarity", 11) + rp("raw", 6) + rp("wtd", 6) + rp("was", 9)
     + rp("proposed", 11) + rp("hours", 8) + rp("worst-best", 18) + rp("vendor", 9) + rp("AH/vend", 9));
   const CASES = [[30, "uncommon"], [45, "rare"], [60, "rare"], [63, "epic"], [64, "epic"], [65, "epic"],
                  [66, "epic"], [67, "epic"], [68, "epic"], [69, "epic"], [70, "epic"],
@@ -383,7 +365,9 @@ js += `
       Array.from({ length: N }, () => generateItem(ilvl, rarityById(rar), "chest", "warrior")));
     const prices = items.map(proposed).sort((a, b) => a - b);
     const pr = prices.reduce((a, b) => a + b, 0) / N;
-    const now = items.reduce((a, it) => a + ahBaseValue(it), 0) / N;
+    // The OLD anchor, stated explicitly: ahBaseValue no longer computes it, so it has to be
+    // restated here to have anything to compare against.
+    const now = items.reduce((a, it) => a + Math.max(1, Math.round((it.ilvl || 1) * rarityById(it.rarity).valueMult)), 0) / N;
     const vend = items.reduce((a, it) => a + Math.max(1, Math.floor(it.value * 0.6 * 0.25)), 0) / N;
     const pts = items.reduce((a, it) => a + ahPoints(it), 0) / N;
     // Raw, unweighted stat points too: if the weighted and raw curves disagree about how much an
@@ -402,7 +386,7 @@ js += `
   console.log("  - Vendoring a best-in-slot piece throws away x" + Math.round(e70.pr / e70.vend)
     + " its worth, so listing becomes a real decision. Vendor prices are untouched.");
   console.log("  - A legendary costs " + g(leg.pr) + " (" + (leg.pr / goldPerHour).toFixed(1)
-    + "h) rather than " + g(leg.now) + ", so the top of the market is an aspiration.");
+    + "h) where the old anchor charged " + g(leg.now) + ", so the top of the market is an aspiration.");
   console.log("  - Two items of the SAME ilvl differ by how well they rolled: an ilvl-70 epic ranges");
   console.log("    " + g(e70.lo) + " to " + g(e70.hi) + " (x" + (e70.hi / e70.lo).toFixed(2)
     + "). That spread IS the market, and it is impossible under ilvl x rarity,");
@@ -415,23 +399,25 @@ js += `
   console.log("    It used to be x1.06, and a LINEAR ilvl curve could never have exceeded x1.11 at any slope.");
   console.log("  - Pricing on power turns that into x" + (e70.pr / e63.pr).toFixed(2)
     + " on the shelf (" + g(e63.pr) + " -> " + g(e70.pr) + "), against x"
-    + (e70.now / e63.now).toFixed(2) + " today.");
+    + (e70.now / e63.now).toFixed(2) + " under the old anchor.");
   console.log("    Each hard bracket is now a visible step in what your gear is worth, which is what the");
   console.log("    " + hardRows[0].hz.killGoal + " -> " + hardRows[hardRows.length - 1].hz.killGoal
     + " kills a zone are supposed to be buying.");
 
-  console.log("\\n  Two things to decide before this ships:");
-  console.log("  1. POSTING FEE. It is 25% of base, so an ilvl-70 listing costs " + g(e70.pr * 0.25)
-    + "g to post — " + (e70.pr * 0.25 / goldPerHour * 60).toFixed(0) + " minutes, consumed even if");
-  console.log("     it never sells. At these prices that is punitive; 5-8% is the same sink in gold terms.");
+  console.log("\\n  The two open questions from the draft, now settled:");
+  console.log("  1. POSTING FEE cut from 25% to " + (AH_ECON.postFeePct * 100).toFixed(0)
+    + "%. A top listing now costs " + g(e70.pr * AH_ECON.postFeePct) + "g to post ("
+    + (e70.pr * AH_ECON.postFeePct / goldPerHour * 60).toFixed(0) + " min),");
+  console.log("     against " + g(e70.pr * 0.25) + "g (" + (e70.pr * 0.25 / goldPerHour * 60).toFixed(0)
+    + " min) at the old rate — consumed whether or not it sells.");
   const t5 = [1,2,3,4,5].reduce((a,r)=>a+(TEMPER_CFG.cost[r]||0),0);
   const t10 = Object.values(TEMPER_CFG.cost).reduce((a,b)=>a+b,0);
-  console.log("  2. THE EXISTING SINKS moved when income did. A +5 temper is now "
-    + (t5 / goldPerHour).toFixed(0) + "h and a +10 is " + (t10 / goldPerHour).toFixed(0) + "h");
-  console.log("     (they were " + (t5 / 67508).toFixed(0) + "h and " + (t10 / 67508).toFixed(0)
-    + "h before the parity fix). Tempering is now the dominant gold sink");
-  console.log("     by a wide margin, and an item at " + g(e70.pr) + " is still only "
-    + (e70.pr / t5 * 100).toFixed(0) + "% of a +5 temper.");
+  console.log("  2. TEMPER COSTS left alone. At " + g(goldPerHour) + " g/h a +5 is "
+    + (t5 / goldPerHour).toFixed(0) + "h and a +10 is " + (t10 / goldPerHour).toFixed(0) + "h.");
+  console.log("     For an idle game where the income is earned parked, that is a long-term goal");
+  console.log("     rather than a wall, and moving a live economy's biggest sink was not asked for.");
+  console.log("     Tempering an item you own and buying a better one are now genuinely different");
+  console.log("     decisions: a best-in-slot piece is " + (e70.pr / t5 * 100).toFixed(0) + "% of a +5 temper.");
   console.log("");
 })();`;
 const run = path.join(dir, 'wealth.cjs'); fs.writeFileSync(run, js);

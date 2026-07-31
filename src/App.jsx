@@ -155,6 +155,7 @@ import {
   emptyProfessions,
   emptySockets,
   gearStatBase,
+  secondaryNominal,
   TRINITY_FILL,
   botTier,
   buildBotChar,
@@ -921,12 +922,12 @@ const TEMPER_CFG = {
 // secondary meant remembering to update the temper shop too or it would silently ignore it.
 const SECONDARY_KEYS = SECONDARY_POOL;
 const isTemperable = (it) => !!it && !it.relicId && it.slotId !== "relic"; // relics excluded; all rarities + artifacts allowed
-// nominal secondary rating for a stat at a given ilvl/rarity (mirrors generateItem's formula)
+// What one secondary line is worth at a given ilvl/rarity. This used to restate generateItem's
+// formula under a comment saying it mirrored it — and a copy labelled as a copy is still a copy.
+// It missed the endgame ilvl curve entirely, so a 100k-250k reroll on an ilvl-70 line would have
+// handed back a pre-curve value about 45% smaller. One definition, in the core, for both.
 function secNominal(ilvl, rarityId, stat) {
-  const rIdx = RARITIES.findIndex((r) => r.id === rarityId);
-  const perStat = Math.max(1, Math.round((1 + (ilvl || 1) * 0.05) * (RARITY_STAT_MULT[rIdx] || 1)));
-  const secBase = Math.max(1, Math.round(perStat * 0.7));
-  return Math.max(1, Math.round(secBase * (SEC_SIZE[stat] || 0.5)));
+  return secondaryNominal(ilvl || 1, RARITIES.findIndex((r) => r.id === rarityId), stat);
 }
 const rerollRange = (ilvl, rarityId, stat) => { const n = secNominal(ilvl, rarityId, stat); return [Math.max(1, Math.round(n * (1 - TEMPER_CFG.reroll.jitter))), Math.max(1, Math.round(n * (1 + TEMPER_CFG.reroll.jitter)))]; };
 const rollRerollValue = (ilvl, rarityId, stat) => { const [lo, hi] = rerollRange(ilvl, rarityId, stat); return lo + Math.floor(Math.random() * (hi - lo + 1)); };
@@ -1607,7 +1608,11 @@ const STAT_LABEL = { str: "Str", agi: "Agi", int: "Int", sta: "Sta", armor: "Arm
 // One tunable block (single-row tuning). Balance = edit here, nothing else.
 const AH_ECON = {
   unlockLevel: 15,          // AH node & Mail gate
-  postFeePct: 0.25,         // deposit charged to post; CONSUMED (never refunded)
+  // Deposit charged to post; CONSUMED (never refunded). Was 0.25, set when a best-in-slot item
+  // anchored at 1,540g and the deposit was therefore ~385g. Now that a price tracks an item's
+  // power, 25% of a top listing would be over 6,000g — half an hour of endgame income, burned even
+  // if nobody buys. 0.06 keeps a real cost to spamming the shelves without making listing a gamble.
+  postFeePct: 0.06,
   saleTaxPct: 0.15,         // cut removed from every sale (gold sink)
   bandPct: 0.75,            // legal price band: base ± this fraction
   stackSize: 50,            // materials & drops post in stacks of exactly this
@@ -1623,14 +1628,56 @@ const AH_ECON = {
   marketRarityW: { poor: 8, common: 34, uncommon: 34, rare: 18, epic: 6 }, // NO legendary/artifact stock
   // phantom demand curve is sellChancePerHour() below
 };
+// ---------- WHAT AN ITEM IS WORTH ON THE SHELF ----------
+// This was `ilvl x rarity.valueMult`, which had two problems. It could not tell a well-rolled piece
+// from a badly-rolled one of the same ilvl — every ilvl-70 epic was worth exactly 1,540g, so there
+// was nothing for a market to be a market ABOUT. And it was flat: measured against real farming
+// income, a best-in-slot item was 0.15 hours of play while a +5 temper was 31 hours, so listing
+// anything was a rounding error rather than a decision.
+//
+// Price now follows the POWER an item carries, on a progressive curve. Vendor prices are
+// deliberately untouched: the gap between what a vendor pays and what a buyer pays is the whole
+// reason to walk to the auction house, and widening it is the point.
+const AH_PRICE = {
+  perPoint: 7.4,   // gold at one weighted stat point; calibrated below
+  exponent: 1.8,   // progressive — doubling an item's power raises its price ~3.5x
+};
+// Calibration: perPoint is set so a best-in-slot epic (ilvl 70, ~94 weighted points) lands at about
+// two hours of measured endgame income (~13,300 g/h) => ~25,000g. Re-measure with
+// game-core/wealth-sim.cjs whenever income moves; game-core/ah-price.test.cjs fails if it drifts.
+//
+// Weighted, not raw: a point of crit damage and a point of haste are not the same purchase, and
+// statWeight already knows the difference because it was measured through the combat code. Main
+// stats count at full weight regardless of class — every item's mains suit SOME buyer, and a
+// shelf price cannot depend on who is looking at it.
+const AH_MAIN_WEIGHT = 1;
+const AH_SCORED = ["str", "agi", "int", "sta", "armor", "leech", "resil", "vers", "cdr", "csd",
+                   "crit", "haste", "ap", "sp", "dmg"];
+function ahStatPoints(item) {
+  if (!item) return 0;
+  const s = item.stats || {}, e = (item.enchant && item.enchant.stats) || {};
+  let pts = 0;
+  for (const k of AH_SCORED) {
+    // Power is dormant on dual-main-stat gear, and a buyer cannot spend what the item will not give.
+    if ((k === "ap" || k === "sp") && !itemPowerActive(item)) continue;
+    const amount = (s[k] || 0) + (e[k] || 0);
+    if (!amount) continue;
+    pts += amount * (MAIN_KEYS.includes(k) ? AH_MAIN_WEIGHT : statWeight("warrior", k));
+  }
+  // A weapon's damage range is its whole point and lives outside stats{}.
+  if (item.wdmg) pts += ((item.wdmg.min + item.wdmg.max) / 2) * statWeight("warrior", "dmg");
+  return pts;
+}
 // Deterministic value anchor — NO jitter, so the seller's band and backend pricing agree.
 function ahBaseValue(item) {
   if (!item) return 1;
-  const r = rarityById(item.rarity);
-  let v = Math.max(1, Math.round((item.ilvl || 1) * r.valueMult));
+  const pts = ahStatPoints(item);
+  // A relic or anything else with no scorable stats still needs a price rather than a zero.
+  if (!(pts > 0)) return Math.max(1, Math.round((item.ilvl || 1) * rarityById(item.rarity).valueMult));
+  let v = Math.max(1, Math.round(AH_PRICE.perPoint * Math.pow(pts, AH_PRICE.exponent)));
   const sockets = Array.isArray(item.sockets) ? item.sockets.length : 0;
-  if (sockets) v = Math.round(v * (1 + 0.08 * sockets));   // socket premium
-  if (item.enchant) v = Math.round(v * 1.10);              // enchant premium
+  if (sockets) v = Math.round(v * (1 + 0.08 * sockets));   // socket premium: power the buyer can add
+  if (item.enchant) v = Math.round(v * 1.10);              // enchant premium, on top of its stats
   return Math.max(1, v);
 }
 const ahBand = (base) => [Math.max(1, Math.ceil(base * (1 - AH_ECON.bandPct))), Math.floor(base * (1 + AH_ECON.bandPct))];

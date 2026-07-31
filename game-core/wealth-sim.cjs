@@ -214,9 +214,10 @@ js += `
   const first = hardRows[0], last = hardRows[hardRows.length - 1];
   console.log("\\n  Gold per kill is the SAME in every bracket (" + g(first.goldPerKill)
     + "g). resolveDeath prices a kill off the PLAYER's level, which is");
-  console.log("  pinned at 60 — not off the zone or the enemy. Only kill speed and drop value move across 64-70,");
-  console.log("  and enemy health grows faster than gear does, so income across the climb goes "
-    + g(first.gph) + " -> " + g(last.gph) + " (x" + (last.gph / first.gph).toFixed(2) + ").");
+  console.log("  pinned at 60 — not off the zone or the enemy. Only kill speed and drop value move across 64-70.");
+  console.log("  With the endgame ilvl curve compounding, gear now keeps pace with enemy health, so income");
+  console.log("  holds across the climb: " + g(first.gph) + " -> " + g(last.gph) + " (x"
+    + (last.gph / first.gph).toFixed(2) + "). Before the curve change it FELL, x0.70.");
   console.log("  Kill goals: " + first.hz.killGoal + " -> " + last.hz.killGoal + " kills, i.e. "
     + (first.hz.killGoal / first.killsPerHour).toFixed(1) + "h -> "
     + (last.hz.killGoal / last.killsPerHour).toFixed(1) + "h to clear a zone.");
@@ -224,14 +225,14 @@ js += `
   // -------- is that income actually reachable? ------------------------------------------------
   // The gold/hour above assumes the kills COMPLETE. Health carries between kills in a hard zone
   // with no heal (App.jsx:2936 keeps hp: b.hp), so this has to be checked, not assumed.
-  console.log("\\n  BUT: none of that income is reachable solo. A hard-zone champion needs "
-    + first.secs.toFixed(0) + "-" + last.secs.toFixed(0) + " seconds to kill and");
-  console.log("  puts out " + g(first.incoming) + "-" + g(last.incoming) + " damage per second against a "
-    + g(first.hp) + "-" + g(last.hp) + " health pool — it kills the player in "
-    + Math.min(...hardRows.map((r) => r.hp / r.incoming)).toFixed(1) + "-"
-    + Math.max(...hardRows.map((r) => r.hp / r.incoming)).toFixed(1) + " seconds.");
-  console.log("  Best case (maxed Sanctum + both health talents ~ " + g(first.hp * 1.4 * 1.27)
-    + " hp, top-tier auto-potion ~" + g(tierHeal(6) / (POTION_CD / 1000)) + " hp/s) still dies first.");
+  console.log("\\n  Reachability: the 'you live' column above is a BARE character — no potions. A hard-zone");
+  console.log("  champion takes " + first.secs.toFixed(0) + "-" + last.secs.toFixed(0)
+    + "s to kill and deals " + g(last.incoming) + "-" + g(first.incoming) + " dps into a "
+    + g(first.hp) + "-" + g(last.hp) + " pool, so bare");
+  console.log("  it dies in every bracket. With the auto-potion a real player carries ("
+    + g(tierHeal(6) / (POTION_CD / 1000)) + " hp/s), the later");
+  console.log("  brackets do clear — see game-core/ilvl-curve-sim.cjs, which models potion sustain and");
+  console.log("  reports per-bracket verdicts. The entry brackets (ilvl 64-65) still do not.");
 
   // -------- where the money ACTUALLY comes from -------------------------------------------------
   console.log("\\n=== 1c. THE INCOME CHANNELS AT LEVEL 60, SIDE BY SIDE ===");
@@ -407,19 +408,17 @@ js += `
     + "). That spread IS the market, and it is impossible under ilvl x rarity,");
   console.log("    which prices every ilvl-70 epic at exactly " + g(e70.now) + ".");
 
-  console.log("\\n  What it does NOT fix, and this is the bigger finding:");
-  console.log("  - Across the whole hard-mode climb, ilvl 63 -> 70, an item gains only "
-    + e63.raw.toFixed(0) + " -> " + e70.raw.toFixed(0) + " raw stat points");
-  console.log("    (x" + (e70.raw / e63.raw).toFixed(2) + "), and " + e63.pts.toFixed(0) + " -> "
-    + e70.pts.toFixed(0) + " weighted (x" + (e70.pts / e63.pts).toFixed(2)
-    + "). Raw and weighted agree, so this is the items,");
-  console.log("    not the weighting. Pricing on power therefore moves ilvl 63 -> 70 only x"
-    + (e70.pr / e63.pr).toFixed(2) + ", against x" + (e70.now / e63.now).toFixed(2) + " today.");
-  console.log("  - That is CORRECT pricing of an incorrect item curve. The grind behind those seven");
-  console.log("    ilvls is " + hardRows[0].hz.killGoal + " -> " + hardRows[hardRows.length - 1].hz.killGoal
-    + " kills a zone, and it buys about " + ((e70.raw / e63.raw - 1) * 100).toFixed(0) + "% more power.");
-  console.log("  - No pricing formula can make that climb feel valuable. If the ilvl 64-70 arc is");
-  console.log("    meant to matter, generateItem has to make ilvl matter — the price will follow.");
+  console.log("\\n  The climb gradient, now that the ilvl curve compounds:");
+  console.log("  - Across ilvl 63 -> 70 an item gains " + e63.raw.toFixed(0) + " -> " + e70.raw.toFixed(0)
+    + " raw stat points (x" + (e70.raw / e63.raw).toFixed(2) + "), and " + e63.pts.toFixed(0)
+    + " -> " + e70.pts.toFixed(0) + " weighted (x" + (e70.pts / e63.pts).toFixed(2) + ").");
+  console.log("    It used to be x1.06, and a LINEAR ilvl curve could never have exceeded x1.11 at any slope.");
+  console.log("  - Pricing on power turns that into x" + (e70.pr / e63.pr).toFixed(2)
+    + " on the shelf (" + g(e63.pr) + " -> " + g(e70.pr) + "), against x"
+    + (e70.now / e63.now).toFixed(2) + " today.");
+  console.log("    Each hard bracket is now a visible step in what your gear is worth, which is what the");
+  console.log("    " + hardRows[0].hz.killGoal + " -> " + hardRows[hardRows.length - 1].hz.killGoal
+    + " kills a zone are supposed to be buying.");
 
   console.log("\\n  Two things to decide before this ships:");
   console.log("  1. POSTING FEE. It is 25% of base, so an ilvl-70 listing costs " + g(e70.pr * 0.25)

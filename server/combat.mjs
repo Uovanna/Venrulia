@@ -1444,7 +1444,30 @@ const pickSlotSecondary = (slotId, exclude = []) => {
   while (r >= w[i] && i < w.length - 1) { r -= w[i]; i++; }
   return avail[i];
 };
-const gearStatBase = (ilvl, rarityIdx) => (1 + ilvl * 0.05) * (RARITY_STAT_MULT[rarityIdx] || 1);
+// ---------- THE ILVL POWER CURVE ----------
+// Item power was linear in ilvl: (1 + ilvl * 0.05). That form has a hard ceiling nobody can tune
+// around — across ilvl 63 to 70 the ratio is 4.50/4.15 = x1.08, and as the slope goes to infinity
+// it only approaches 70/63 = x1.11. So NO linear curve can make the hard-mode climb worth more
+// than 11%, however steep it is. Measured: an item gained 54 -> 58 raw stat points across the
+// whole ilvl 63-70 arc, an arc that costs 1,250 -> 5,000 kills per zone.
+//
+// The fix is a geometric term that only exists above the levelling cap, so ilvl 1-60 is bit-for-bit
+// unchanged and the climb compounds instead of creeping.
+// 1.08 is measured, not chosen by taste. Swept in game-core/ilvl-curve-sim.cjs against the content
+// the climb actually gates — a hard zone champion, with the auto-potion a real player carries:
+//
+//   1.00 (today)  every bracket kills the player.            Hard mode is unplayable solo.
+//   1.06          only the last bracket clears.              The climb still buys almost nothing.
+//   1.08          dies at ilvl 64-65, clears 66-69.          An arc: hard at the gate, soloable once out-geared.
+//   1.10          clears from the entry bracket onward.      No challenge left anywhere.
+//
+// 1.08 is the only rate that produces a progression arc rather than a wall or a walkover.
+const ENDGAME_ILVL_FLOOR = 60;    // levelling gear is untouched
+const ENDGAME_ILVL_GROWTH = 1.08; // compounding power per ilvl above the floor
+const endgameClimb = (ilvl) =>
+  Math.pow(ENDGAME_ILVL_GROWTH, Math.max(0, Math.floor(ilvl || 1) - ENDGAME_ILVL_FLOOR));
+const gearStatBase = (ilvl, rarityIdx) =>
+  (1 + ilvl * 0.05) * (RARITY_STAT_MULT[rarityIdx] || 1) * endgameClimb(ilvl);
 const baseArmorFor = (ilvl, rarityIdx, slotId) => (slotId === "weapon" ? 0 : Math.max(1, Math.round(gearStatBase(ilvl, rarityIdx) * (ARMOR_SLOT_WEIGHT[slotId] || 0.5) * ARMOR_BASE_MULT)));
 const RARITY_STAT_MULT = [0.5, 0.8, 1.2, 1.8, 2.6, 3.8, 3.8];
 const ITEM_BASES = {
@@ -1541,7 +1564,9 @@ function generateItem(ilvl, rarity, slotId, clsId) {
   const rarityIdx = RARITIES.findIndex((r) => r.id === rarity.id);
   // Dramatically squished values: small numbers, gentle rarity curve. World-zone gear gives
   // modest boosts; notable upgrades come from the higher rarities dropped by dungeons & raids.
-  const perStat = Math.max(1, Math.round((1 + ilvl * 0.05) * (RARITY_STAT_MULT[rarityIdx] || 1)));
+  // gearStatBase, not a second copy of it: this line used to restate the ilvl curve inline, so
+  // armor and weapon damage moved with the curve and the stats on the item did not.
+  const perStat = Math.max(1, Math.round(gearStatBase(ilvl, rarityIdx)));
   const secBase = Math.max(1, Math.round(perStat * 0.7));
   const stats = { str: 0, agi: 0, int: 0, sta: 0, armor: 0, dmg: 0, leech: 0, resil: 0, vers: 0, cdr: 0, csd: 0, crit: 0, haste: 0, ap: 0, sp: 0 };
 
@@ -2241,6 +2266,9 @@ export {
   RARITY_STAT_MULT,
   baseArmorFor,
   gearStatBase,
+  endgameClimb,
+  ENDGAME_ILVL_FLOOR,
+  ENDGAME_ILVL_GROWTH,
   ARMOR_SLOT_WEIGHT,
   SLOT_SECONDARY,
   SECONDARY_POOL,

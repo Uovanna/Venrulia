@@ -31,12 +31,21 @@ const imported = new Set([...impBlock.matchAll(/^\s{2}(\w+),$/gm)].map((m) => m[
 for (const n of ["rng", "makeRng", "withRng", "pick", "rngPick", "rngInt", "makeClock"]) imported.add(n);
 const localDef = new Set([...app.matchAll(/^(?:const|let|var|function|class)\s+(\w+)/gm)].map((m) => m[1]));
 
+// Naming a core symbol in PROSE is not referencing it. A comment that says "the lever is
+// SEC_CAP.csd in the core, not this weight" is documentation, and failing the audit on it teaches
+// people to stop reading the audit. Strip comments before looking for references.
+// `//` inside a string (http://…) is left alone, so a real reference later on that line still counts.
+const stripComments = (src) => src
+  .replace(/\/\*[\s\S]*?\*\//g, " ")
+  .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+const appCode = stripComments(app);
+
 let failures = 0;
 
 // --- 1) referenced but resolved by neither import nor local definition -------------------
 const unresolved = Object.keys(core).filter((n) =>
   !imported.has(n) && !localDef.has(n) &&
-  new RegExp(`(?<![\\w.$])${n}\\s*[(,).;\\[\\]]`).test(app));
+  new RegExp(`(?<![\\w.$])${n}\\s*[(,).;\\[\\]]`).test(appCode));
 if (unresolved.length) { failures++; console.log("✗ referenced but never imported:", unresolved.join(", ")); }
 else console.log("✓ every core symbol App.jsx references is imported or locally defined");
 

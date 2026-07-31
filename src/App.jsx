@@ -288,7 +288,13 @@ const statWeight = (clsId, stat) => {
   // and since it only ever appears on single-main-stat gear its absence made every focused piece
   // read 10.3% worse than a dual piece it actually matches or beats in combat.
   if (stat === "ap" || stat === "sp" || stat === "dmg") return 0.7;
-  if (stat === "csd") return 1.05;    // measured 1.03 — the largest error in the old table
+  // Crit damage is the one weight that does NOT hold still across the endgame, because its value is
+  // proportional to crit chance and crit chance keeps climbing with gear. Re-measured against the
+  // endgame ilvl curve: 1.0 at ilvl 60, 1.3 at 63, 1.6 at 66, 2.2 at 70. Priced at the entry
+  // bracket, so it is honest where players enter hard mode and conservative above it — a single
+  // number cannot be right across a x2.2 range. If crit damage starts dominating endgame gear, the
+  // lever is SEC_CAP.csd / SEC_RATE.csd in the core, not this weight.
+  if (stat === "csd") return 1.3;     // measured 1.28 at ilvl 63
   if (stat === "vers") return 0.7;    // measured 0.68
   if (stat === "crit") return 0.55;   // measured 0.53
   if (stat === "cdr") return 0.45;    // measured 0.43

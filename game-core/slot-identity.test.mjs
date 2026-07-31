@@ -1,6 +1,6 @@
 // Slot identity: which secondaries a slot leans toward, shared by drops and the reroll shop.
 import { SLOT_SECONDARY, SECONDARY_POOL, secondaryWeight, pickSlotSecondary, LOOT_SLOTS,
-         generateItem, rarityById, SEC_SIZE, buildBotChar, maxHpFor } from "./combat.mjs";
+         generateItem, rarityById, SEC_SIZE, buildBotChar, maxHpFor, endgameClimb, ENDGAME_ILVL_FLOOR } from "./combat.mjs";
 import { withRng, makeRng } from "./rng.mjs";
 
 let fail = 0;
@@ -125,13 +125,27 @@ const dist = (slot, exclude = [], n = 60000) => {
 // Stamina went from "biased on all ten slots" to "favoured on four", which on its own cut a full
 // set's effective health by ~5%. SEC_SIZE.sta compensates. If someone retunes the table without
 // re-measuring, this is the check that says so.
+// This check used to measure an ilvl-63 set, which put it astride two unrelated properties: how
+// slot identity distributes stamina, and how much power an endgame ilvl is worth. When the ilvl
+// curve gained its endgame climb term the check failed, reporting a "stealth nerf" that was
+// actually a deliberate, documented buff. Measure the two separately.
 {
   ok(SEC_SIZE.sta > 1, `a stamina line rolls ${SEC_SIZE.sta}x an ordinary one, offsetting how much rarer stamina now is`);
-  let hp = 0; const n = 300;
-  for (let i = 0; i < n; i++) withRng(makeRng(1000 + i), () => { hp += maxHpFor(buildBotChar("warrior", "w_berserk", 60, 63)); });
-  const avg = hp / n, WAS = 2332;   // measured on the commit before slot identity reached drops
-  ok(Math.abs(avg / WAS - 1) < 0.02,
-     `a full epic set is worth ${Math.round(avg)} hp, within 2% of the ${WAS} it was worth before slot identity`);
+  const setHp = (ilvl) => {
+    let hp = 0; const n = 300;
+    for (let i = 0; i < n; i++) withRng(makeRng(1000 + i), () => { hp += maxHpFor(buildBotChar("warrior", "w_berserk", 60, ilvl)); });
+    return hp / n;
+  };
+  // At the levelling cap the endgame climb term is exactly 1, so this isolates slot identity.
+  const avg60 = setHp(ENDGAME_ILVL_FLOOR), WAS = 2263;   // measured with the climb term at 1.000
+  ok(Math.abs(avg60 / WAS - 1) < 0.02,
+     `a full ilvl-${ENDGAME_ILVL_FLOOR} epic set is worth ${Math.round(avg60)} hp, within 2% of the ${WAS} slot identity left it at`);
+  // And above the cap, the ONLY thing that may have moved it is the climb term — if a secondary
+  // retune hides behind the curve, this catches it.
+  const avg63 = setHp(63);
+  const fromStats = (avg63 - avg60) / Math.max(1, avg60 - 1380);   // 1380 = level*22 + 60, stat-free
+  ok(Math.abs(fromStats / (endgameClimb(63) - 1) - 1) < 0.12,
+     `an ilvl-63 set's extra health (${Math.round(avg63)} vs ${Math.round(avg60)}) is the climb term x${endgameClimb(63).toFixed(2)} and nothing else`);
 }
 
 console.log(fail ? `\n❌ ${fail} slot-identity check(s) failed` : "\n✅ slot identity: two favoured per slot, off-stats reachable, drops and reroll share the table");

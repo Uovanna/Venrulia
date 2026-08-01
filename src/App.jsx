@@ -1415,8 +1415,67 @@ const PREMIUM_ITEMS = [
   { id: "gemCascade", kind: "gem", gem: "g_cascade", name: "Cascade Diamond", icon: "🔻", cost: 1200, desc: "Artifact gem: +10% cooldown reduction per skill on cooldown — ignores the CDR cap." },
   { id: "artifactWeapon",  kind: "artifact", slot: "weapon",  name: "Artifact Weapon",   icon: "⚔️", cost: 1500, desc: "Deep-red relic. Re-forges as you level (ilvl 40 → 60), 3 sockets." },
   { id: "artifactOffhand", kind: "artifact", slot: "offhand", name: "Artifact Off-hand", icon: "🛡️", cost: 1500, desc: "Deep-red relic. Re-forges as you level (ilvl 40 → 60), 3 sockets." },
+  { id: "bankSlots", kind: "bank", slots: 25, name: "Bank Expansion (+25 slots)", icon: "🏦", cost: 100, desc: "Permanently adds 25 slots to your bank. Buy as many as you like." },
 ];
 const VEN_TO_GOLD = 1000; // 1 Ven → 1,000 gold (100 Ven = 100,000 gold)
+
+// ---------- BANK CAPACITY ----------
+// The bank held a hard 120 and every grant site ended in `.slice(-120)`. slice(-120) keeps the LAST
+// 120 — so at capacity a new item silently deleted the OLDEST one off the front, with no message
+// and no regard for whether it was locked. Locking guarded selling and salvaging and did nothing
+// here, so players lost gear they had explicitly protected.
+//
+// Nothing is ever dropped now. At capacity a new item is auto-sold, except a legendary or artifact,
+// which is held in an overflow mailbox until there is room.
+const BANK_BASE_SLOTS = 120;
+const BANK_SLOTS_PER_BUY = 25;      // matches the VEN_STORE entry above
+const bankCap = (c) => BANK_BASE_SLOTS + Math.max(0, (c && c.bankSlots) || 0);
+const bankFree = (c) => Math.max(0, bankCap(c) - ((c && c.inventory && c.inventory.length) || 0));
+const bankIsFull = (c) => bankFree(c) <= 0;
+// Vendor price, the same 15% of value the rest of the game pays.
+const overflowSellPrice = (it) => Math.max(1, Math.floor(((it && it.value) || 0) * 0.6 * 0.25));
+// Legendaries and artifacts are too valuable to vendor behind the player's back.
+const overflowGoesToMail = (it) => !!it && (it.rarity === "legendary" || it.rarity === "artifact" || it.artifact);
+
+// The ONE way items enter the bank. Returns the new inventory, the gold from anything auto-sold,
+// the overflow mailbox, and a summary the caller can log or notify from.
+//
+// `protectedItems` is gear the player ALREADY owned — swapped off by auto-equip, returned from a
+// cancelled listing, and so on. It is never auto-sold; if there is no room it waits in the mail.
+// Selling something a player already had, to make room for something they just found, would be the
+// same data loss in a friendlier costume. It is placed first, for the same reason.
+const depositItems = (c, items, protectedItems) => {
+  const inventory = [...((c && c.inventory) || [])];
+  const overflow = [...((c && c.overflow) || [])];
+  let gold = 0;
+  const sold = [], mailed = [];
+  const place = (it, maySell) => {
+    if (!it) return;
+    if (inventory.length < bankCap(c)) { inventory.push(it); return; }
+    if (!maySell || overflowGoesToMail(it) || it.locked) { overflow.push(it); mailed.push(it); return; }
+    const p = overflowSellPrice(it); gold += p; sold.push({ item: it, price: p });
+  };
+  for (const it of (protectedItems || [])) place(it, false);
+  for (const it of (items || [])) place(it, true);
+  return { inventory, overflow, gold, sold, mailed, full: inventory.length >= bankCap(c) };
+};
+
+// Something the player earned or paid for — a relic, a crafted piece, a won auction lot, mail they
+// collected. Never auto-sold; if the bank is full it waits in the overflow mailbox. Returns the
+// inventory/overflow pair to spread onto the character.
+const depositEarned = (c, items) => {
+  const r = depositItems(c, [], Array.isArray(items) ? items : [items]);
+  return { inventory: r.inventory, overflow: r.overflow, mailed: r.mailed };
+};
+
+// Pull items back out of the overflow mailbox as space appears.
+const claimOverflow = (c) => {
+  const inventory = [...((c && c.inventory) || [])];
+  const overflow = [...((c && c.overflow) || [])];
+  const claimed = [];
+  while (overflow.length && inventory.length < bankCap(c)) { const it = overflow.shift(); inventory.push(it); claimed.push(it); }
+  return { inventory, overflow, claimed };
+};
 const auraUntil = (char, type) => (char && char.auras && char.auras[type]) || 0;
 const auraActive = (char, type) => auraUntil(char, type) > Date.now();
 const auraXpMult = (char) => auraActive(char, "xp") ? 1.75 : 1;     // Aura of Experience: +75%
@@ -1821,6 +1880,25 @@ const LocalNotify = {
     const p = this.plugin();
     try { if (p) { await p.schedule({ notifications: [{ id: OFFLINE_NOTIF_ID + 1, title: "Realms of Eldoria", body }] }); return; } } catch {}
     try { if (this.webOk() && Notification.permission === "granted") new Notification("Realms of Eldoria", { body }); } catch {}
+  },
+  // A full bank while idle-battling means every non-legendary drop is being auto-sold on arrival.
+  // That is recoverable — no item is lost — but the player should be told rather than discover it
+  // from their gold going up. Its own id so it never replaces the defeat notification.
+  async bankFull(body, atMs) {
+    const p = this.plugin();
+    try {
+      if (p) {
+        await p.schedule({ notifications: [{ id: OFFLINE_NOTIF_ID + 2, title: "Realms of Eldoria", body,
+          ...(atMs ? { schedule: { at: new Date(atMs), allowWhileIdle: true } } : {}) }] });
+        return true;
+      }
+    } catch {}
+    try { if (this.webOk() && Notification.permission === "granted") { new Notification("Realms of Eldoria", { body }); return true; } } catch {}
+    return false;
+  },
+  async cancelBankFull() {
+    const p = this.plugin();
+    try { if (p) await p.cancel({ notifications: [{ id: OFFLINE_NOTIF_ID + 2 }] }); } catch {}
   },
 };
 
@@ -2649,9 +2727,24 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       addLog(`${g.icon} Bought ${g.name}`, rarityById(g.rarity).color);
     } else if (item.kind === "artifact") {
       const art = makeArtifact(nc.cls, item.slot, nc.level);
-      nc = { ...nc, inventory: [...(nc.inventory || []), art] };
-      showNotif(`${item.icon} ${art.name} forged — check your Bag!`);
+      // Through the same door as everything else. This pushed straight onto inventory with no cap
+      // at all, so a purchased artifact could sit above the bank limit and be the next thing the
+      // old truncation threw away.
+      const d = depositEarned(nc, art);
+      nc = { ...nc, inventory: d.inventory, overflow: d.overflow };
+      showNotif(d.mailed.length ? `${item.icon} ${art.name} forged — bank full, it is in your mail`
+                                : `${item.icon} ${art.name} forged — check your Bag!`);
       addLog(`${item.icon} Forged ${art.name} (ilvl ${art.ilvl})`, "#c8102e");
+    } else if (item.kind === "bank") {
+      nc = { ...nc, bankSlots: Math.max(0, (nc.bankSlots || 0) + item.slots) };
+      showNotif(`${item.icon} Bank expanded — ${bankCap(nc)} slots`);
+      addLog(`${item.icon} Bank expanded to ${bankCap(nc)} slots`, "#7fd0ff");
+      // Anything waiting in the mail can come home now that there is room.
+      const cl = claimOverflow(nc);
+      if (cl.claimed.length) {
+        nc = { ...nc, inventory: cl.inventory, overflow: cl.overflow };
+        addLog(`📬 ${cl.claimed.length} item(s) returned from your mail`, "#7fd0ff");
+      }
     }
     commitChar(nc);
   };
@@ -2808,7 +2901,18 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     const inventory = (c.inventory || []).map(fix);
     return touched ? { ...c, equipment, inventory } : c;
   };
-  const commitChar = useCallback((next) => { const n = syncArtifacts(next); charRef.current = n; setChar(n); onSave(n); }, [onSave]);
+  // Every write to the character goes through here, which makes it the one place that can reliably
+  // bring overflow home. Sell something, expand the bank, equip a piece — the moment a slot frees
+  // up, whatever was waiting in the mail comes back on its own. claimOverflow only moves items when
+  // there is room, so this cannot loop.
+  const commitChar = useCallback((next) => {
+    let n = syncArtifacts(next);
+    if (n && (n.overflow || []).length && bankFree(n) > 0) {
+      const cl = claimOverflow(n);
+      if (cl.claimed.length) n = { ...n, inventory: cl.inventory, overflow: cl.overflow };
+    }
+    charRef.current = n; setChar(n); onSave(n);
+  }, [onSave]);
   const commitBattle = useCallback((next) => { battleRef.current = next; setBattle(next); }, []);
 
   const addLog = useCallback((text, color = "#ccc") => setCombatLog((prev) => [...prev.slice(-70), { text, color }]), []);
@@ -2855,6 +2959,11 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     commitChar(res.char);
     setOfflineReport({ ...res, levelsGained: res.leveledTo - startLevel, zoneName: (ZONES.find((z) => z.id === c.offlineZoneId) || {}).name || "" });
     if (res.died) { showNotif("💀 Offline combat ended — you were defeated"); notifyDefeat(); }
+    else if (bankIsFull(res.char)) {
+      const waiting = (res.char.overflow || []).length;
+      showNotif(waiting ? `🏦 Bank full — ${waiting} item(s) waiting in your mail`
+                        : "🏦 Bank full — new gear is being auto-sold");
+    }
   }, [commitChar, showNotif, notifyDefeat]);
 
   // toggle offline auto-combat for a zone (single desired zone; checking one clears others)
@@ -2872,13 +2981,21 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     const onHide = () => {
       markActive();
       const c = charRef.current;
-      LocalNotify.cancelScheduled();
+      LocalNotify.cancelScheduled(); LocalNotify.cancelBankFull();
       if (c && c.offlineZoneId) {
         const ms = predictOfflineDeath(c);
         if (ms != null) LocalNotify.scheduleDefeat(Date.now() + ms); // fires at the predicted defeat time
+        // Idle-battling with nowhere to put anything: warn on the way out, so the player knows
+        // before they come back to a pile of gold instead of gear.
+        if (bankIsFull(c)) {
+          const waiting = (c.overflow || []).length;
+          LocalNotify.bankFull(waiting
+            ? `Your bank is full — ${waiting} item(s) are waiting in your mail and new gear is being sold.`
+            : `Your bank is full (${bankCap(c)} slots) — new gear is being auto-sold while you are away.`);
+        }
       }
     };
-    const onShow = () => { LocalNotify.cancelScheduled(); applyOffline(); };
+    const onShow = () => { LocalNotify.cancelScheduled(); LocalNotify.cancelBankFull(); applyOffline(); };
     const onVis = () => (document.visibilityState === "hidden" ? onHide() : onShow());
     document.addEventListener("visibilitychange", onVis);
     window.addEventListener("beforeunload", onHide);
@@ -2960,11 +3077,12 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     let equip = { ...c.equipment };
     let gold = c.gold;
     let firstShown = null;
+    const toBag = [], unequipped = [];
     items.forEach((it) => {
       if (c.autoEquip) {
         const cur = equip[it.slotId];
         if (!cur || itemScore(it, c.cls) > itemScore(cur, c.cls)) {
-          if (cur) inv.push(cur);
+          if (cur) unequipped.push(cur);
           equip[it.slotId] = it;
           if (!firstShown) firstShown = it;
           addLog(`✨ Equipped ${it.name}`, rarityById(it.rarity).color);
@@ -2981,12 +3099,19 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           return;
         }
       }
-      inv.push(it);
+      toBag.push(it);
       if (!firstShown) firstShown = it;
-      addLog(`🎁 Looted ${it.name}`, rarityById(it.rarity).color);
     });
+    // Everything reaching the bank goes through one door, so nothing can be silently dropped.
+    // `unequipped` is gear the player already owned — it is never auto-sold, only held.
+    const res = depositItems({ ...c, inventory: inv }, toBag, unequipped);
+    for (const it of toBag) {
+      if (res.mailed.includes(it)) addLog(`📬 Bank full — ${it.name} is waiting in your mail`, rarityById(it.rarity).color);
+      else if (res.sold.some((s) => s.item === it)) addLog(`💰 Bank full — auto-sold ${it.name} (+${overflowSellPrice(it)}g)`, "#caa64a");
+      else addLog(`🎁 Looted ${it.name}`, rarityById(it.rarity).color);
+    }
     if (firstShown) { setLastLoot(firstShown); setTimeout(() => setLastLoot(null), 2600); }
-    return { ...c, inventory: inv.slice(-120), equipment: equip, gold };
+    return { ...c, inventory: res.inventory, overflow: res.overflow, equipment: equip, gold: gold + res.gold };
   };
 
   // ---------- resolve enemy death → returns {char, battle} ----------
@@ -3140,7 +3265,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       if (inst?.raid) { if (Math.random() < 0.015) relicDef = pick(RELICS); }          // raids: very rare, any relic
       else { const d = relicForDungeon(b.dungeonId); if (d && Math.random() < 0.005) relicDef = d; } // dungeons: extremely rare, this dungeon's relic
       if (relicDef) {
-        nc = { ...nc, inventory: [...nc.inventory, makeRelic(relicDef, enemy.level)].slice(-120) };
+        nc = { ...nc, ...depositEarned(nc, makeRelic(relicDef, enemy.level)) };
         addLog(`🔱 RELIC DROP: ${relicDef.name}!`, "#f0b429");
         showNotif(`🔱 Relic drop: ${relicDef.name}!`);
       }
@@ -4249,8 +4374,8 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     // between, so the floor keeps a claim from ever pushing a character below zero.
     let inv = c.inventory, mats = { ...c.materials }, drops = { ...c.drops };
     let gold = Math.max(0, c.gold + (p.gold || 0));
-    if (p.item) inv = [...inv, p.item].slice(-120);
-    if (Array.isArray(p.items)) inv = [...inv, ...p.items].slice(-120);   // a run can win several lots
+    if (p.item) inv = depositEarned({ ...c, inventory: inv }, p.item).inventory;
+    if (Array.isArray(p.items)) inv = depositEarned({ ...c, inventory: inv }, p.items).inventory;   // a run can win several lots
     if (p.mat_id) { if (p.mat_kind === "drop") drops[p.mat_id] = (drops[p.mat_id] || 0) + p.qty; else mats[p.mat_id] = (mats[p.mat_id] || 0) + p.qty; }
     return { ...c, gold, inventory: inv, materials: mats, drops };
   };
@@ -4469,7 +4594,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       label: "Both dungeon relics",
       apply: (c) => {
         const relics = RELICS.map((def) => makeRelic(def, Math.max(1, c.level)));
-        const nc = { ...c, inventory: [...c.inventory, ...relics].slice(-120) };
+        const nc = { ...c, ...depositEarned(c, relics) };
         return { char: nc, msg: "🔱 Miner's Charm & Verdant Idol added to your bag!" };
       },
     },
@@ -4651,7 +4776,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     const ilvl = craftIlvl(prof.level, forgeOre);
     const rarity = rollWeighted(tier.craft); // rollWeighted returns the rarity object
     const item = generateItem(ilvl, rarity, forgeSlot, c.cls);
-    commitChar({ ...c, gold: c.gold - goldCost, materials: { ...c.materials, [tier.id]: c.materials[tier.id] - oreCost }, inventory: [...c.inventory, item].slice(-120), professions: { ...c.professions, armorsmith: gainProfXp(prof, craftXp(25, forgeOre)) } });
+    commitChar({ ...c, gold: c.gold - goldCost, materials: { ...c.materials, [tier.id]: c.materials[tier.id] - oreCost }, ...depositEarned(c, item), professions: { ...c.professions, armorsmith: gainProfXp(prof, craftXp(25, forgeOre)) } });
     addLog(`⚒️ Forged ${item.name}`, rarityById(item.rarity).color);
     showNotif(`Forged ${rarity.name} ${slotById(forgeSlot).name}!`);
   };
@@ -5192,6 +5317,27 @@ function GameScreen({ character: initChar, onSave, onBack }) {
 
             {bagTab === "equipment" && (
               <>
+                {/* Capacity, stated plainly. The bank silently deleted the oldest item at 120 with
+                    no indication it was even near the limit. */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 10,
+                              background: bankIsFull(char) ? "#2a1010" : "#100e1c",
+                              border: `1px solid ${bankIsFull(char) ? "#a44" : "#2a2740"}`, borderRadius: 8, padding: "7px 10px" }}>
+                  <span style={{ color: bankIsFull(char) ? "#ff9a8a" : "#8a83b8", fontSize: 11.5, fontWeight: 700 }}>
+                    🏦 Bank {char.inventory.length} / {bankCap(char)}
+                    {bankIsFull(char) && " — full, new gear is auto-sold"}
+                  </span>
+                  <span style={{ color: "#6b6486", fontSize: 10.5 }}>+{BANK_SLOTS_PER_BUY} slots · 💎100 in the Ven shop</span>
+                </div>
+                {(char.overflow || []).length > 0 && (
+                  <div style={{ marginBottom: 10, background: "#161033", border: "1px solid #6b4fa8", borderRadius: 8, padding: "8px 10px" }}>
+                    <div style={{ color: "#c9a6ff", fontSize: 11.5, fontWeight: 700, marginBottom: 4 }}>
+                      📬 {(char.overflow || []).length} item(s) waiting in your mail
+                    </div>
+                    <div style={{ color: "#8a83b8", fontSize: 10.5 }}>
+                      Too valuable to auto-sell. They return automatically as soon as you free a slot.
+                    </div>
+                  </div>
+                )}
                 {char.inventory.length === 0 && <div style={{ color: "#555", fontSize: 12, padding: "20px 0", textAlign: "center" }}>No unequipped gear. Slay enemies to find loot.</div>}
                 <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
                   {[...char.inventory].sort((a, b) => b.ilvl - a.ilvl || itemScore(b, char.cls) - itemScore(a, char.cls)).map((it) => (
@@ -7771,7 +7917,7 @@ function LootBidModal({ items, party, char, commitChar, showNotif, onClose, net,
   const resolveBid = () => setBid((B) => {
     if (!B || B.resolved) return B;
     const iWon = !B.passed && B.highName === char.name && B.high > 0;
-    if (iWon) { commitChar({ ...char, gold: Math.max(0, (char.gold || 0) - B.high), inventory: [...(char.inventory || []), item].slice(-120) }); return { ...B, resolved: true, iWon: true }; }
+    if (iWon) { commitChar({ ...char, gold: Math.max(0, (char.gold || 0) - B.high), ...depositEarned(char, item) }); return { ...B, resolved: true, iWon: true }; }
     const share = B.high > 0 ? Math.floor(B.high / Math.max(2, (party || []).length)) : 0;
     if (share > 0) commitChar({ ...char, gold: (char.gold || 0) + share });
     return { ...B, resolved: true, iWon: false, payout: share };
@@ -7818,7 +7964,7 @@ function LootBidModal({ items, party, char, commitChar, showNotif, onClose, net,
   };
   const buyCopy = () => {
     if ((char.ven || 0) < COPY_ITEM_VEN) { showNotif && showNotif(`Need ${COPY_ITEM_VEN} 💎 Ven for a copy`); return; }
-    commitChar({ ...char, ven: (char.ven || 0) - COPY_ITEM_VEN, inventory: [...(char.inventory || []), { ...item }].slice(-120) });
+    commitChar({ ...char, ven: (char.ven || 0) - COPY_ITEM_VEN, ...depositEarned(char, { ...item }) });
     showNotif && showNotif(`💎 Bought a copy of ${item.name}`); next();
   };
   const rc = (r) => rarityById(r) || { color: "#888", name: "" };
@@ -8484,7 +8630,7 @@ function MultiplayerHub({ char, commitChar, showNotif, onExit, onStartRated }) {
       let nc = { ...char };
       if (iWon) {
         nc.gold = Math.max(0, (nc.gold || 0) - L.high);
-        nc.inventory = [...(nc.inventory || []), L.item].slice(-120);
+        { const d = depositEarned(nc, L.item); nc.inventory = d.inventory; nc.overflow = d.overflow; }
         commitChar(nc);
         setRewardMsg(`🏆 You won ${L.item.name} for ${mpFmt(L.high)}g!`);
         setTimeout(() => openBid(L.queue, L.idx + 1), 1400);
@@ -8498,7 +8644,7 @@ function MultiplayerHub({ char, commitChar, showNotif, onExit, onStartRated }) {
   const buyCopy = () => {
     if ((char.ven || 0) < COPY_ITEM_VEN) { showNotif && showNotif(`Need ${COPY_ITEM_VEN} 💎 Ven for a copy`); return; }
     const L = loot; if (!L) return;
-    const nc = { ...char, ven: (char.ven || 0) - COPY_ITEM_VEN, inventory: [...(char.inventory || []), { ...L.item }].slice(-120) };
+    const nc = { ...char, ven: (char.ven || 0) - COPY_ITEM_VEN, ...depositEarned(char, { ...L.item }) };
     commitChar(nc);
     setRewardMsg(`💎 Bought an exact copy of ${L.item.name} for ${COPY_ITEM_VEN} Ven.`);
     setTimeout(() => openBid(L.queue, L.idx + 1), 1000);

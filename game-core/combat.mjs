@@ -1822,6 +1822,10 @@ const normalizeChar = (c) => ({
   gems: (c.gems && typeof c.gems === "object") ? c.gems : {},
   tomes: undefined, learnedSkills: undefined, // retired: every skill now unlocks by level
   gambits: (c.gambits && typeof c.gambits === "object") ? { owned: c.gambits.owned || {}, shards: c.gambits.shards || {}, rules: migrateGambitKeys(c.gambits.rules, c.selectedSkills), slots: migrateGambitKeys(c.gambits.slots, c.selectedSkills), general: Array.isArray(c.gambits.general) ? c.gambits.general : [], generalSlots: c.gambits.generalSlots || 2 } : { owned: {}, shards: {}, rules: {}, slots: {}, general: [], generalSlots: 2 },
+  // Purchased bank slots, and the overflow mailbox holding anything that would not fit. Both must
+  // survive a reload: overflow is real gear the player owns, just not carried.
+  bankSlots: Math.max(0, Number(c.bankSlots) || 0),
+  overflow: Array.isArray(c.overflow) ? c.overflow.map(migrateItem) : [],
   hardKills: (c.hardKills && typeof c.hardKills === "object") ? c.hardKills : {},
   hardBossKills: (c.hardBossKills && typeof c.hardBossKills === "object") ? c.hardBossKills : {},
   hardZoneDone: (c.hardZoneDone && typeof c.hardZoneDone === "object") ? c.hardZoneDone : {},

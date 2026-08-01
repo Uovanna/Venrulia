@@ -688,6 +688,39 @@ const highestOreTierIdx = (miningLevel) => { let idx = 0; for (let i = 0; i < OR
 const oreCraftCost = (tierIdx) => 4 + tierIdx * 4;   // ore units required (strict, grows with tier)
 const oreGoldCost = (tierIdx) => 40 + tierIdx * 70;  // gold cost grows with tier
 const craftIlvl = (armorLevel, tierIdx) => Math.max(1, Math.min(63, Math.round((armorLevel || 1) * 0.45) + tierIdx * 3)); // ilvl from armorsmith rank + ore tier; maxes at 63
+
+// ---------- SOULS: hard-mode crafting reagents ----------
+// Armorsmithing stopped at ilvl 63, which is exactly where Hard Mode begins — so the moment a
+// player reached the content the profession was aimed at, the profession stopped mattering. A Soul
+// is a hard-mode-only reagent that raises a craft to that zone's item level.
+//
+// The point is TARGETED gear. Hard mode drops two random pieces a boss, so the slot that refuses to
+// appear is the whole frustration; forge already lets you choose the slot, so a Soul turns crafting
+// into the answer to bad luck rather than a second, worse loot table.
+//
+// Crafted gear is ACCOUNT BOUND. At the new power-based auction prices a craftable ilvl-70 piece
+// would be a gold faucet, and binding is also what keeps this a catch-up mechanic rather than a
+// business. ah_post_gear in supabase/migrations already refuses to list a bound item, so the server
+// enforces it too — the client is not the only thing standing in the way.
+const SOULS = [
+  { id: "soul_green",  name: "Soul of Greenhollow",       icon: "🌲", zone: "hz_green",  dungeon: "hd_deadmines",  ilvl: 65, color: "#6fbf6f" },
+  { id: "soul_brack",  name: "Soul of Brackenfield",      icon: "🌾", zone: "hz_brack",  dungeon: "hd_scarlet",    ilvl: 66, color: "#d8c06a" },
+  { id: "soul_gloom",  name: "Soul of Gloomwood",         icon: "🕸️", zone: "hz_gloom",  dungeon: "hd_uldaman",    ilvl: 67, color: "#9a8ab8" },
+  { id: "soul_tangle", name: "Soul of Tanglevine",        icon: "🌴", zone: "hz_tangle", dungeon: "hd_blackrock",  ilvl: 68, color: "#5fae7a" },
+  { id: "soul_ember",  name: "Soul of Emberwaste",        icon: "🌋", zone: "hz_ember",  dungeon: "hd_stratholme", ilvl: 69, color: "#e0703a" },
+  { id: "soul_blight", name: "Soul of the Blighted Marches", icon: "☠️", zone: "hz_blight", dungeon: null,         ilvl: 70, color: "#8fbf6f" },
+];
+const soulById = (id) => SOULS.find((s) => s.id === id);
+const soulForZone = (hardZoneId) => SOULS.find((s) => s.zone === hardZoneId);
+const soulForDungeon = (hardDungeonId) => SOULS.find((s) => s.dungeon === hardDungeonId);
+// Zone rate is per KILL and a hard zone is an endless grind, so it stays low. The dungeon rate is
+// per CLEAR — a run is 4-8 fights behind a lockout — so at the 5% originally sketched a Soul would
+// take ~20 clears while those same clears hand over 40 pieces of gear, making crafting strictly
+// worse than farming. 20% puts a Soul at ~5 clears, which is a chase without being a wall.
+const SOUL_ZONE_CHANCE = 0.005;
+const SOUL_DUNGEON_CHANCE = 0.20;
+// Souls are heavy: a craft costs the reagent plus top-tier ore and real gold.
+const SOUL_CRAFT_GOLD = 25000;
 // Herb tiers: unlock by Herbalism rank; each maps to a potion tier (0-6) that Alchemy can brew.
 const HERB_TIERS = [
   { id: "bluepetal", name: "Bluepetal", node: "Bluepetal", icon: "🌸", color: "#7fb0e8", unlock: 1, ptier: 0 },
@@ -826,6 +859,19 @@ const MAX_LEVEL = 60;
 // Anchored to the ORIGINAL level-60 cost so faster leveling doesn't also speed up Honor.
 const honorXpForLevel = (h) => Math.floor(15 * Math.pow(MAX_LEVEL, 2.6) * (1 + h * 0.12));
 const professionXpForLevel = (lvl) => Math.floor(30 * Math.pow(lvl, 1.25));
+// ---------- HOW LONG A PROFESSION TAKES ----------
+// Idle training ran at a flat 3 XP every 2.5s, which is 96.5 HOURS to reach rank 100 — four days of
+// real time for a system that is meant to sit in the background. The rate is now DERIVED from the
+// target, so retuning it means editing the hours and nothing else.
+//
+// Active gathering is worth twice as much: half the idle time. It asks for attention, so it should
+// pay for it — before this it was actually SLOWER at 47.7 hours, which made playing the minigame
+// strictly worse than ignoring it.
+const PROF_IDLE_HOURS_TO_MAX = 10;
+const PROF_ACTIVE_HOURS_TO_MAX = PROF_IDLE_HOURS_TO_MAX / 2;
+const PROF_IDLE_TICK_MS = 2500;
+const PROF_TOTAL_XP = (() => { let t = 0; for (let l = 1; l < PROF_MAX; l++) t += professionXpForLevel(l); return t; })();
+const profIdleXpPerTick = () => Math.max(1, Math.round(PROF_TOTAL_XP / (PROF_IDLE_HOURS_TO_MAX * 3600000 / PROF_IDLE_TICK_MS)));
 // ---------- CRAFTING XP STANDARD ----------
 // Working rarer stock teaches you more: each material tier above the first multiplies the craft's
 // profession XP. Higher tiers also cost proportionally more material, so this rewards *quality*
@@ -840,7 +886,12 @@ const GATHER_NODES = {
 };
 const gatherNodeMaxHp = (tierIdx) => 40 + (tierIdx || 0) * 25;  // node toughness scales with MATERIAL tier (not player level)
 const gatherPower = (lvl) => 6 + (lvl || 1) * 0.6;   // damage per swing scales with skill level
-const gatherXpPerNode = (lvl) => Math.max(2, Math.round(professionXpForLevel(lvl) / 540)); // ~48h to reach max (100) // ~8 nodes per rank
+// Calibrated, not guessed: swept against the real node health, swing timer and power curve until a
+// full 1->100 climb lands on PROF_ACTIVE_HOURS_TO_MAX. At 540 it was 47.7 hours; at 51 it is 4.9.
+// There is no closed form for this — node toughness and swing damage both move with level — so the
+// divisor is a measured constant and game-core/profession.test.cjs re-measures it.
+const GATHER_XP_DIVISOR = 51;
+const gatherXpPerNode = (lvl) => Math.max(2, Math.round(professionXpForLevel(lvl) / GATHER_XP_DIVISOR));
 const makeGatherNode = (pid, lvl, tierIdx) => {
   const tiers = GATHER_TIERS[pid];
   const ti = (tierIdx == null ? highestTierIdx(tiers, lvl) : tierIdx);
@@ -1131,6 +1182,46 @@ const gambitWeight = (g) => (GAMBIT_RARITY_WEIGHT[g.rarity] || 10) * (g.type ===
 // A "then: use skill" is only relevant if the character can actually cast that skill (primary or dual class)
 const gambitAccessible = (char, id) => { const g = gambitById(id); if (!g) return false; if (g.type === "then" && g.kind === "skill") return isEquipped(char, g.skill); return true; };
 const rollOneGambit = (pool) => { const src = (pool && pool.length) ? pool : ALL_GAMBITS; const total = src.reduce((s, g) => s + gambitWeight(g), 0); let r = Math.random() * total; for (const g of src) { r -= gambitWeight(g); if (r <= 0) return g; } return src[0]; };
+// ---------- AUTO GAMBIT ----------
+// Gambits are a good system that asks a lot before it gives anything: a player has to understand
+// priority order, conditions and vetoes before their bar does anything at all. This lays down a
+// sane default from the gambits they ALREADY OWN, so the system works out of the box and stays
+// there to be learned rather than being a wall.
+//
+// The rules it writes are ordinary rules — nothing special-cased — so a player can inspect them,
+// reorder them, or tear them up.
+const autoGambitPlan = (c) => {
+  const owned = (c.gambits && c.gambits.owned) || {};
+  const has = (id) => !!owned[id];
+  const bar = (c.selectedSkills || []).slice(0, unlockedSlotCount(c.level));
+  // Best owned condition from a preference list, or null if the player owns none of them.
+  const pick = (...ids) => ids.find(has) || null;
+  const rules = {};
+  bar.forEach((name, i) => {
+    const slotNo = i + 1;
+    const sk = skillByName(c, name); if (!sk) return;
+    const thenId = "then_sk_" + _gslug(name);
+    if (!has(thenId)) return;                       // cannot script a skill they have not unlocked
+    let ifId;
+    if (skIsHeal(sk) || skIsHot(sk)) ifId = pick("if_selfhp50", "if_selfhp30", "if_selfhp20", "if_always");
+    else if (skIsDef(sk))            ifId = pick("if_selfhp30", "if_selfhp50", "if_selfhp20", "if_always");
+    else if (skIsCleanse(sk))        ifId = pick("if_debuffed", "if_always");
+    else if (skIsTaunt(sk))          ifId = pick("if_always");
+    // A finisher is worth holding for its window; a builder should just run.
+    else if (skillIsSpender(sk))     ifId = pick("if_res80", "if_resfull", "if_always");
+    else                             ifId = pick("if_always");
+    if (!ifId) return;
+    rules[slotNo] = [{ if: ifId, then: thenId }];
+  });
+  // A general rule for staying alive, if they own the pieces for one.
+  const general = [];
+  const healCon = CONSUMABLE_DEFS.find((d) => d.id === "heal");
+  const potThen = healCon ? "then_con_" + healCon.id : null;
+  const potIf = pick("if_selfhp30", "if_selfhp50", "if_selfhp20");
+  if (potThen && has(potThen) && potIf) general.push({ if: potIf, then: potThen });
+  return { rules, general };
+};
+
 const GENERAL_SLOT_COSTS = [100, 300, 500]; // Ven cost for general gambit slots 3, 4, 5 (2 are free)
 const GAMBIT_UNLOCK_LEVEL = 20; // the gambit system unlocks at character level 20
 const supplyById = (id) => SUPPLY_ITEMS.find((s) => s.id === id);
@@ -1415,8 +1506,67 @@ const PREMIUM_ITEMS = [
   { id: "gemCascade", kind: "gem", gem: "g_cascade", name: "Cascade Diamond", icon: "🔻", cost: 1200, desc: "Artifact gem: +10% cooldown reduction per skill on cooldown — ignores the CDR cap." },
   { id: "artifactWeapon",  kind: "artifact", slot: "weapon",  name: "Artifact Weapon",   icon: "⚔️", cost: 1500, desc: "Deep-red relic. Re-forges as you level (ilvl 40 → 60), 3 sockets." },
   { id: "artifactOffhand", kind: "artifact", slot: "offhand", name: "Artifact Off-hand", icon: "🛡️", cost: 1500, desc: "Deep-red relic. Re-forges as you level (ilvl 40 → 60), 3 sockets." },
+  { id: "bankSlots", kind: "bank", slots: 25, name: "Bank Expansion (+25 slots)", icon: "🏦", cost: 100, desc: "Permanently adds 25 slots to your bank. Buy as many as you like." },
 ];
 const VEN_TO_GOLD = 1000; // 1 Ven → 1,000 gold (100 Ven = 100,000 gold)
+
+// ---------- BANK CAPACITY ----------
+// The bank held a hard 120 and every grant site ended in `.slice(-120)`. slice(-120) keeps the LAST
+// 120 — so at capacity a new item silently deleted the OLDEST one off the front, with no message
+// and no regard for whether it was locked. Locking guarded selling and salvaging and did nothing
+// here, so players lost gear they had explicitly protected.
+//
+// Nothing is ever dropped now. At capacity a new item is auto-sold, except a legendary or artifact,
+// which is held in an overflow mailbox until there is room.
+const BANK_BASE_SLOTS = 120;
+const BANK_SLOTS_PER_BUY = 25;      // matches the VEN_STORE entry above
+const bankCap = (c) => BANK_BASE_SLOTS + Math.max(0, (c && c.bankSlots) || 0);
+const bankFree = (c) => Math.max(0, bankCap(c) - ((c && c.inventory && c.inventory.length) || 0));
+const bankIsFull = (c) => bankFree(c) <= 0;
+// Vendor price, the same 15% of value the rest of the game pays.
+const overflowSellPrice = (it) => Math.max(1, Math.floor(((it && it.value) || 0) * 0.6 * 0.25));
+// Legendaries and artifacts are too valuable to vendor behind the player's back.
+const overflowGoesToMail = (it) => !!it && (it.rarity === "legendary" || it.rarity === "artifact" || it.artifact);
+
+// The ONE way items enter the bank. Returns the new inventory, the gold from anything auto-sold,
+// the overflow mailbox, and a summary the caller can log or notify from.
+//
+// `protectedItems` is gear the player ALREADY owned — swapped off by auto-equip, returned from a
+// cancelled listing, and so on. It is never auto-sold; if there is no room it waits in the mail.
+// Selling something a player already had, to make room for something they just found, would be the
+// same data loss in a friendlier costume. It is placed first, for the same reason.
+const depositItems = (c, items, protectedItems) => {
+  const inventory = [...((c && c.inventory) || [])];
+  const overflow = [...((c && c.overflow) || [])];
+  let gold = 0;
+  const sold = [], mailed = [];
+  const place = (it, maySell) => {
+    if (!it) return;
+    if (inventory.length < bankCap(c)) { inventory.push(it); return; }
+    if (!maySell || overflowGoesToMail(it) || it.locked) { overflow.push(it); mailed.push(it); return; }
+    const p = overflowSellPrice(it); gold += p; sold.push({ item: it, price: p });
+  };
+  for (const it of (protectedItems || [])) place(it, false);
+  for (const it of (items || [])) place(it, true);
+  return { inventory, overflow, gold, sold, mailed, full: inventory.length >= bankCap(c) };
+};
+
+// Something the player earned or paid for — a relic, a crafted piece, a won auction lot, mail they
+// collected. Never auto-sold; if the bank is full it waits in the overflow mailbox. Returns the
+// inventory/overflow pair to spread onto the character.
+const depositEarned = (c, items) => {
+  const r = depositItems(c, [], Array.isArray(items) ? items : [items]);
+  return { inventory: r.inventory, overflow: r.overflow, mailed: r.mailed };
+};
+
+// Pull items back out of the overflow mailbox as space appears.
+const claimOverflow = (c) => {
+  const inventory = [...((c && c.inventory) || [])];
+  const overflow = [...((c && c.overflow) || [])];
+  const claimed = [];
+  while (overflow.length && inventory.length < bankCap(c)) { const it = overflow.shift(); inventory.push(it); claimed.push(it); }
+  return { inventory, overflow, claimed };
+};
 const auraUntil = (char, type) => (char && char.auras && char.auras[type]) || 0;
 const auraActive = (char, type) => auraUntil(char, type) > Date.now();
 const auraXpMult = (char) => auraActive(char, "xp") ? 1.75 : 1;     // Aura of Experience: +75%
@@ -1822,6 +1972,25 @@ const LocalNotify = {
     try { if (p) { await p.schedule({ notifications: [{ id: OFFLINE_NOTIF_ID + 1, title: "Realms of Eldoria", body }] }); return; } } catch {}
     try { if (this.webOk() && Notification.permission === "granted") new Notification("Realms of Eldoria", { body }); } catch {}
   },
+  // A full bank while idle-battling means every non-legendary drop is being auto-sold on arrival.
+  // That is recoverable — no item is lost — but the player should be told rather than discover it
+  // from their gold going up. Its own id so it never replaces the defeat notification.
+  async bankFull(body, atMs) {
+    const p = this.plugin();
+    try {
+      if (p) {
+        await p.schedule({ notifications: [{ id: OFFLINE_NOTIF_ID + 2, title: "Realms of Eldoria", body,
+          ...(atMs ? { schedule: { at: new Date(atMs), allowWhileIdle: true } } : {}) }] });
+        return true;
+      }
+    } catch {}
+    try { if (this.webOk() && Notification.permission === "granted") { new Notification("Realms of Eldoria", { body }); return true; } } catch {}
+    return false;
+  },
+  async cancelBankFull() {
+    const p = this.plugin();
+    try { if (p) await p.cancel({ notifications: [{ id: OFFLINE_NOTIF_ID + 2 }] }); } catch {}
+  },
 };
 
 // Average sustained DPS for offline auto-combat: auto-attacks + ONLY purchased & enabled auto-skills.
@@ -1978,7 +2147,7 @@ function ItemCard({ item, children, compare, cls, onClick }) {
         <GameIcon icon={item.icon} imgKey={item.iconKey} size={24} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ color: r.color, fontWeight: 700, fontSize: 12.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.enchant ? "✨ " : ""}{item.name}{temperSuffix(item)}</div>
-          <div style={{ color: "#9a93b3", fontSize: 10.5 }}>{slotById(item.slotId)?.name}{item.ilvl ? ` · ilvl ${item.ilvl}` : ""}</div>
+          <div style={{ color: "#9a93b3", fontSize: 10.5 }}>{slotById(item.slotId)?.name}{item.ilvl ? ` · ilvl ${item.ilvl}` : ""}{item.bound ? <span style={{ color: "#c9a6ff" }}> · 🔮 Bound</span> : null}</div>
           <div style={{ color: "#7fb5d6", fontSize: 10.5 }}>{item.relicId ? "🔱 Relic" : bodyLine}</div>
           {item.relicDesc && <div style={{ color: item.relicColor || "#f0b429", fontSize: 10 }}>{item.relicDesc}</div>}
           {item.enchant && <div style={{ color: "#c08bff", fontSize: 10 }}>✨ Enchant: {Object.entries(item.enchant).map(([k, v]) => `+${v} ${STAT_LABEL[k]}`).join(", ")}</div>}
@@ -2484,6 +2653,19 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     rules[slotNo] = arr;
     commitChar({ ...c, gambits: { ...c.gambits, rules } });
   };
+  const applyAutoGambit = () => {
+    const c = charRef.current;
+    if ((c.level || 1) < GAMBIT_UNLOCK_LEVEL) { showNotif(`Gambits unlock at level ${GAMBIT_UNLOCK_LEVEL}`); return; }
+    const plan = autoGambitPlan(c);
+    const n = Object.keys(plan.rules).length;
+    if (!n && !plan.general.length) { showNotif("No owned gambits fit your bar yet — roll a few first"); return; }
+    const general = [...(c.gambits.general || [])];
+    plan.general.forEach((r, i) => { if (i < generalSlotsFor(c)) general[i] = r; });
+    commitChar({ ...c, gambits: { ...c.gambits, rules: { ...(c.gambits.rules || {}), ...plan.rules }, general } });
+    showNotif(`⚙️ Auto-set ${n} gambit${n === 1 ? "" : "s"}`);
+    addLog(`⚙️ Auto gambit: ${n} rule(s) written from your owned gambits`, "#c8a0ff");
+  };
+
   const generalSlotsFor = (c) => c.gambits?.generalSlots || 2;
   const buyGeneralSlot = () => {
     const c = charRef.current;
@@ -2649,9 +2831,24 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       addLog(`${g.icon} Bought ${g.name}`, rarityById(g.rarity).color);
     } else if (item.kind === "artifact") {
       const art = makeArtifact(nc.cls, item.slot, nc.level);
-      nc = { ...nc, inventory: [...(nc.inventory || []), art] };
-      showNotif(`${item.icon} ${art.name} forged — check your Bag!`);
+      // Through the same door as everything else. This pushed straight onto inventory with no cap
+      // at all, so a purchased artifact could sit above the bank limit and be the next thing the
+      // old truncation threw away.
+      const d = depositEarned(nc, art);
+      nc = { ...nc, inventory: d.inventory, overflow: d.overflow };
+      showNotif(d.mailed.length ? `${item.icon} ${art.name} forged — bank full, it is in your mail`
+                                : `${item.icon} ${art.name} forged — check your Bag!`);
       addLog(`${item.icon} Forged ${art.name} (ilvl ${art.ilvl})`, "#c8102e");
+    } else if (item.kind === "bank") {
+      nc = { ...nc, bankSlots: Math.max(0, (nc.bankSlots || 0) + item.slots) };
+      showNotif(`${item.icon} Bank expanded — ${bankCap(nc)} slots`);
+      addLog(`${item.icon} Bank expanded to ${bankCap(nc)} slots`, "#7fd0ff");
+      // Anything waiting in the mail can come home now that there is room.
+      const cl = claimOverflow(nc);
+      if (cl.claimed.length) {
+        nc = { ...nc, inventory: cl.inventory, overflow: cl.overflow };
+        addLog(`📬 ${cl.claimed.length} item(s) returned from your mail`, "#7fd0ff");
+      }
     }
     commitChar(nc);
   };
@@ -2808,7 +3005,18 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     const inventory = (c.inventory || []).map(fix);
     return touched ? { ...c, equipment, inventory } : c;
   };
-  const commitChar = useCallback((next) => { const n = syncArtifacts(next); charRef.current = n; setChar(n); onSave(n); }, [onSave]);
+  // Every write to the character goes through here, which makes it the one place that can reliably
+  // bring overflow home. Sell something, expand the bank, equip a piece — the moment a slot frees
+  // up, whatever was waiting in the mail comes back on its own. claimOverflow only moves items when
+  // there is room, so this cannot loop.
+  const commitChar = useCallback((next) => {
+    let n = syncArtifacts(next);
+    if (n && (n.overflow || []).length && bankFree(n) > 0) {
+      const cl = claimOverflow(n);
+      if (cl.claimed.length) n = { ...n, inventory: cl.inventory, overflow: cl.overflow };
+    }
+    charRef.current = n; setChar(n); onSave(n);
+  }, [onSave]);
   const commitBattle = useCallback((next) => { battleRef.current = next; setBattle(next); }, []);
 
   const addLog = useCallback((text, color = "#ccc") => setCombatLog((prev) => [...prev.slice(-70), { text, color }]), []);
@@ -2855,6 +3063,11 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     commitChar(res.char);
     setOfflineReport({ ...res, levelsGained: res.leveledTo - startLevel, zoneName: (ZONES.find((z) => z.id === c.offlineZoneId) || {}).name || "" });
     if (res.died) { showNotif("💀 Offline combat ended — you were defeated"); notifyDefeat(); }
+    else if (bankIsFull(res.char)) {
+      const waiting = (res.char.overflow || []).length;
+      showNotif(waiting ? `🏦 Bank full — ${waiting} item(s) waiting in your mail`
+                        : "🏦 Bank full — new gear is being auto-sold");
+    }
   }, [commitChar, showNotif, notifyDefeat]);
 
   // toggle offline auto-combat for a zone (single desired zone; checking one clears others)
@@ -2872,13 +3085,21 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     const onHide = () => {
       markActive();
       const c = charRef.current;
-      LocalNotify.cancelScheduled();
+      LocalNotify.cancelScheduled(); LocalNotify.cancelBankFull();
       if (c && c.offlineZoneId) {
         const ms = predictOfflineDeath(c);
         if (ms != null) LocalNotify.scheduleDefeat(Date.now() + ms); // fires at the predicted defeat time
+        // Idle-battling with nowhere to put anything: warn on the way out, so the player knows
+        // before they come back to a pile of gold instead of gear.
+        if (bankIsFull(c)) {
+          const waiting = (c.overflow || []).length;
+          LocalNotify.bankFull(waiting
+            ? `Your bank is full — ${waiting} item(s) are waiting in your mail and new gear is being sold.`
+            : `Your bank is full (${bankCap(c)} slots) — new gear is being auto-sold while you are away.`);
+        }
       }
     };
-    const onShow = () => { LocalNotify.cancelScheduled(); applyOffline(); };
+    const onShow = () => { LocalNotify.cancelScheduled(); LocalNotify.cancelBankFull(); applyOffline(); };
     const onVis = () => (document.visibilityState === "hidden" ? onHide() : onShow());
     document.addEventListener("visibilitychange", onVis);
     window.addEventListener("beforeunload", onHide);
@@ -2960,11 +3181,12 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     let equip = { ...c.equipment };
     let gold = c.gold;
     let firstShown = null;
+    const toBag = [], unequipped = [];
     items.forEach((it) => {
       if (c.autoEquip) {
         const cur = equip[it.slotId];
         if (!cur || itemScore(it, c.cls) > itemScore(cur, c.cls)) {
-          if (cur) inv.push(cur);
+          if (cur) unequipped.push(cur);
           equip[it.slotId] = it;
           if (!firstShown) firstShown = it;
           addLog(`✨ Equipped ${it.name}`, rarityById(it.rarity).color);
@@ -2981,12 +3203,19 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           return;
         }
       }
-      inv.push(it);
+      toBag.push(it);
       if (!firstShown) firstShown = it;
-      addLog(`🎁 Looted ${it.name}`, rarityById(it.rarity).color);
     });
+    // Everything reaching the bank goes through one door, so nothing can be silently dropped.
+    // `unequipped` is gear the player already owned — it is never auto-sold, only held.
+    const res = depositItems({ ...c, inventory: inv }, toBag, unequipped);
+    for (const it of toBag) {
+      if (res.mailed.includes(it)) addLog(`📬 Bank full — ${it.name} is waiting in your mail`, rarityById(it.rarity).color);
+      else if (res.sold.some((s) => s.item === it)) addLog(`💰 Bank full — auto-sold ${it.name} (+${overflowSellPrice(it)}g)`, "#caa64a");
+      else addLog(`🎁 Looted ${it.name}`, rarityById(it.rarity).color);
+    }
     if (firstShown) { setLastLoot(firstShown); setTimeout(() => setLastLoot(null), 2600); }
-    return { ...c, inventory: inv.slice(-120), equipment: equip, gold };
+    return { ...c, inventory: res.inventory, overflow: res.overflow, equipment: equip, gold: gold + res.gold };
   };
 
   // ---------- resolve enemy death → returns {char, battle} ----------
@@ -3063,6 +3292,17 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       //
       // Hard ZONES keep their own rate. They are an endless kill-goal farm with no boss to hand
       // anything over at, so the run rule has nothing to attach to.
+      // Souls: per-kill in a zone, per-CLEAR in a dungeon (the boss, not its trash).
+      const soul = b.hardKind === "zone" ? soulForZone(b.hardId)
+                 : (enemy.hardBoss ? soulForDungeon(b.hardId) : null);
+      if (soul) {
+        const rate = b.hardKind === "zone" ? SOUL_ZONE_CHANCE : SOUL_DUNGEON_CHANCE;
+        if (Math.random() < rate) {
+          nc = { ...nc, souls: { ...(nc.souls || {}), [soul.id]: ((nc.souls || {})[soul.id] || 0) + 1 } };
+          addLog(`${soul.icon} ${soul.name} — a hard-mode crafting reagent!`, soul.color);
+          showNotif(`${soul.icon} ${soul.name}!`);
+        }
+      }
       const isHardRun = b.hardKind && b.hardKind !== "zone";
       const hardRar = () => (b.dropIlvl >= 70 ? rollRarityForDungeon("stratholme") : rollRarityForZone(60));
       const guildBoss = guildRunRef.current && (enemy.isBoss || enemy.hardBoss);
@@ -3140,7 +3380,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       if (inst?.raid) { if (Math.random() < 0.015) relicDef = pick(RELICS); }          // raids: very rare, any relic
       else { const d = relicForDungeon(b.dungeonId); if (d && Math.random() < 0.005) relicDef = d; } // dungeons: extremely rare, this dungeon's relic
       if (relicDef) {
-        nc = { ...nc, inventory: [...nc.inventory, makeRelic(relicDef, enemy.level)].slice(-120) };
+        nc = { ...nc, ...depositEarned(nc, makeRelic(relicDef, enemy.level)) };
         addLog(`🔱 RELIC DROP: ${relicDef.name}!`, "#f0b429");
         showNotif(`🔱 Relic drop: ${relicDef.name}!`);
       }
@@ -3608,7 +3848,9 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           nc.professions[pid] = prof;
           return;
         }
-        let gain = Math.floor(2 + Math.random() * 3);
+        // Derived from PROF_IDLE_HOURS_TO_MAX, with the same +/-1 jitter the flat rate had.
+        const base = profIdleXpPerTick();
+        let gain = Math.max(1, base + Math.floor(Math.random() * 3) - 1);
         if (c.race === "gnome") gain = Math.ceil(gain * 1.15);
         prof.xp = (prof.xp || 0) + gain;
         const needed = professionXpForLevel(prof.level);
@@ -4249,8 +4491,8 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     // between, so the floor keeps a claim from ever pushing a character below zero.
     let inv = c.inventory, mats = { ...c.materials }, drops = { ...c.drops };
     let gold = Math.max(0, c.gold + (p.gold || 0));
-    if (p.item) inv = [...inv, p.item].slice(-120);
-    if (Array.isArray(p.items)) inv = [...inv, ...p.items].slice(-120);   // a run can win several lots
+    if (p.item) inv = depositEarned({ ...c, inventory: inv }, p.item).inventory;
+    if (Array.isArray(p.items)) inv = depositEarned({ ...c, inventory: inv }, p.items).inventory;   // a run can win several lots
     if (p.mat_id) { if (p.mat_kind === "drop") drops[p.mat_id] = (drops[p.mat_id] || 0) + p.qty; else mats[p.mat_id] = (mats[p.mat_id] || 0) + p.qty; }
     return { ...c, gold, inventory: inv, materials: mats, drops };
   };
@@ -4469,7 +4711,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       label: "Both dungeon relics",
       apply: (c) => {
         const relics = RELICS.map((def) => makeRelic(def, Math.max(1, c.level)));
-        const nc = { ...c, inventory: [...c.inventory, ...relics].slice(-120) };
+        const nc = { ...c, ...depositEarned(c, relics) };
         return { char: nc, msg: "🔱 Miner's Charm & Verdant Idol added to your bag!" };
       },
     },
@@ -4488,6 +4730,16 @@ function GameScreen({ character: initChar, onSave, onBack }) {
         const rare = RARITIES.find((r) => r.id === "rare");
         const gear = GEAR_SLOTS.filter((s) => s.id !== "relic").map((s) => generateItem(64, rare, s.id, c.cls));
         return { char: { ...c, inventory: [...(c.inventory || []), ...gear] }, msg: "🔥 Received a full set of ilvl-64 rare gear — check your Bag!" };
+      },
+    },
+    // TESTING ONLY — remove before launch. Maxes every profession, gathering and crafting alike,
+    // so the crafting and gathering systems can be exercised without a 10-hour grind first.
+    maxp: {
+      label: "Max all professions (TEST)",
+      apply: (c) => {
+        const professions = { ...(c.professions || {}) };
+        for (const def of PROFESSIONS) professions[def.id] = { ...(professions[def.id] || {}), level: PROF_MAX, xp: 0, active: !!(professions[def.id] || {}).active };
+        return { char: { ...c, professions }, msg: `⚒️ All ${PROFESSIONS.length} professions set to rank ${PROF_MAX}.` };
       },
     },
     gambit: {
@@ -4642,6 +4894,32 @@ function GameScreen({ character: initChar, onSave, onBack }) {
   const profRank = (lvl) => (lvl < 25 ? "Apprentice" : lvl < 50 ? "Journeyman" : lvl < 75 ? "Expert" : lvl < 100 ? "Artisan" : "Master");
 
   // ---------- crafting actions ----------
+  // Forge with a Soul: the reagent sets the item level, the ore still sets the rarity, and the slot
+  // is whatever the player picked — which is the point, since hard mode hands out two RANDOM pieces
+  // a boss and the missing slot is the whole frustration.
+  const forgeWithSoul = (soulId) => {
+    const c = charRef.current; const prof = c.professions.armorsmith; if (!prof) return;
+    const soul = soulById(soulId); if (!soul) return;
+    if (((c.souls || {})[soulId] || 0) < 1) { showNotif(`You have no ${soul.name}`); return; }
+    const tier = ORE_TIERS[forgeOre]; const oreCost = oreCraftCost(forgeOre);
+    if ((c.materials[tier.id] || 0) < oreCost) { showNotif(`Need ${oreCost} ${tier.name}`); return; }
+    if ((c.gold || 0) < SOUL_CRAFT_GOLD) { showNotif(`Need ${SOUL_CRAFT_GOLD.toLocaleString()}g`); return; }
+    const rarity = rollWeighted(tier.craft);
+    // Bound on creation. A craftable ilvl-70 piece on the auction house would be a gold faucet at
+    // the new power-based prices, and binding keeps this a catch-up mechanic rather than a trade.
+    const item = { ...generateItem(soul.ilvl, rarity, forgeSlot, c.cls), bound: true };
+    const souls = { ...(c.souls || {}), [soulId]: (c.souls[soulId] || 0) - 1 };
+    if (souls[soulId] <= 0) delete souls[soulId];
+    commitChar({
+      ...c, souls, gold: c.gold - SOUL_CRAFT_GOLD,
+      materials: { ...c.materials, [tier.id]: c.materials[tier.id] - oreCost },
+      ...depositEarned(c, item),
+      professions: { ...c.professions, armorsmith: gainProfXp(prof, craftXp(60, forgeOre)) },
+    });
+    addLog(`${soul.icon} Forged ${item.name} (ilvl ${item.ilvl}, account bound)`, rarityById(item.rarity).color);
+    showNotif(`${soul.icon} Forged ilvl-${item.ilvl} ${slotById(forgeSlot).name}!`);
+  };
+
   const ARMOR_ORE_COST = 3;
   const forge = () => {
     const c = charRef.current; const prof = c.professions.armorsmith; if (!prof) return;
@@ -4651,7 +4929,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     const ilvl = craftIlvl(prof.level, forgeOre);
     const rarity = rollWeighted(tier.craft); // rollWeighted returns the rarity object
     const item = generateItem(ilvl, rarity, forgeSlot, c.cls);
-    commitChar({ ...c, gold: c.gold - goldCost, materials: { ...c.materials, [tier.id]: c.materials[tier.id] - oreCost }, inventory: [...c.inventory, item].slice(-120), professions: { ...c.professions, armorsmith: gainProfXp(prof, craftXp(25, forgeOre)) } });
+    commitChar({ ...c, gold: c.gold - goldCost, materials: { ...c.materials, [tier.id]: c.materials[tier.id] - oreCost }, ...depositEarned(c, item), professions: { ...c.professions, armorsmith: gainProfXp(prof, craftXp(25, forgeOre)) } });
     addLog(`⚒️ Forged ${item.name}`, rarityById(item.rarity).color);
     showNotif(`Forged ${rarity.name} ${slotById(forgeSlot).name}!`);
   };
@@ -5192,6 +5470,27 @@ function GameScreen({ character: initChar, onSave, onBack }) {
 
             {bagTab === "equipment" && (
               <>
+                {/* Capacity, stated plainly. The bank silently deleted the oldest item at 120 with
+                    no indication it was even near the limit. */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 10,
+                              background: bankIsFull(char) ? "#2a1010" : "#100e1c",
+                              border: `1px solid ${bankIsFull(char) ? "#a44" : "#2a2740"}`, borderRadius: 8, padding: "7px 10px" }}>
+                  <span style={{ color: bankIsFull(char) ? "#ff9a8a" : "#8a83b8", fontSize: 11.5, fontWeight: 700 }}>
+                    🏦 Bank {char.inventory.length} / {bankCap(char)}
+                    {bankIsFull(char) && " — full, new gear is auto-sold"}
+                  </span>
+                  <span style={{ color: "#6b6486", fontSize: 10.5 }}>+{BANK_SLOTS_PER_BUY} slots · 💎100 in the Ven shop</span>
+                </div>
+                {(char.overflow || []).length > 0 && (
+                  <div style={{ marginBottom: 10, background: "#161033", border: "1px solid #6b4fa8", borderRadius: 8, padding: "8px 10px" }}>
+                    <div style={{ color: "#c9a6ff", fontSize: 11.5, fontWeight: 700, marginBottom: 4 }}>
+                      📬 {(char.overflow || []).length} item(s) waiting in your mail
+                    </div>
+                    <div style={{ color: "#8a83b8", fontSize: 10.5 }}>
+                      Too valuable to auto-sell. They return automatically as soon as you free a slot.
+                    </div>
+                  </div>
+                )}
                 {char.inventory.length === 0 && <div style={{ color: "#555", fontSize: 12, padding: "20px 0", textAlign: "center" }}>No unequipped gear. Slay enemies to find loot.</div>}
                 <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
                   {[...char.inventory].sort((a, b) => b.ilvl - a.ilvl || itemScore(b, char.cls) - itemScore(a, char.cls)).map((it) => (
@@ -5720,6 +6019,9 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ color: "#e8e0d0", fontSize: 13, fontWeight: 700 }}>{sk.name} {pts > 0 && <span style={{ color: "#c8a0ff" }}>+{pts}</span>}</div>
                     <div style={{ color: "#7a7396", fontSize: 9.5, textTransform: "uppercase", letterSpacing: 0.5 }}>{skillTypeLabel(sk.name)} · +{Math.round(skillModPotency(char, sk.name) * 100)}% potency</div>
+                    {/* What the skill actually does. Investing points in a name alone asked the
+                        player to remember every ability's effect from another screen. */}
+                    {sk.desc && <div style={{ color: "#9a93b3", fontSize: 10, marginTop: 2, lineHeight: 1.35 }}>{sk.desc}</div>}
                   </div>
                   <button onClick={() => investSkillMod(sk.name)} disabled={poolAvail <= 0 || pts >= SKILL_MOD_CAP} style={{ background: (poolAvail > 0 && pts < SKILL_MOD_CAP) ? "linear-gradient(135deg,#2a1a4a,#3a2470)" : "#15131f", border: `1.5px solid ${(poolAvail > 0 && pts < SKILL_MOD_CAP) ? "#a06aff" : "#333"}`, borderRadius: 8, color: (poolAvail > 0 && pts < SKILL_MOD_CAP) ? "#c8a0ff" : "#666", fontSize: 15, fontWeight: 700, width: 34, height: 30, cursor: (poolAvail > 0 && pts < SKILL_MOD_CAP) ? "pointer" : "default" }}>+</button>
                 </div>
@@ -6017,9 +6319,14 @@ function GameScreen({ character: initChar, onSave, onBack }) {
 
         {tab === "temper" && (() => {
           const acc = "#f0913e";
+          // Equipped and LOCKED gear only. The list used to be every temperable item a player
+          // owned, which at a full bank is 120+ rows to scroll past to reach the piece they
+          // actually wear — and tempering something you are about to vendor is never the intent.
+          // Locking is the existing "I care about this" signal, so it doubles as the opt-in for
+          // anything not currently worn.
           const items = [
             ...Object.values(char.equipment || {}).filter(isTemperable),
-            ...(char.inventory || []).filter(isTemperable),
+            ...(char.inventory || []).filter((it) => isTemperable(it) && it.locked),
           ];
           const sel = temperSel ? items.find((i) => i.id === temperSel) : null;
           const fs = char.failStacks || 0;
@@ -6294,6 +6601,16 @@ function GameScreen({ character: initChar, onSave, onBack }) {
 
               {gambitMode === "skill" && (<>
                 <div style={{ color: "#9a93b3", fontSize: 11, marginBottom: 8 }}>Pick a skill, then set its <b style={{ color: "#fff" }}>IF</b> condition and <b style={{ color: "#fff" }}>THEN</b> action. It fires automatically in combat.</div>
+                {/* The system asks a lot before it gives anything back. This lays down a working
+                    default from the gambits already owned, so a player who does not want to learn
+                    priority order still gets a bar that fires. */}
+                <button onClick={applyAutoGambit}
+                  style={{ width: "100%", background: "linear-gradient(135deg,#241a3e,#33235c)", border: "1.5px solid #a06aff", borderRadius: 10, color: "#c8a0ff", fontSize: 12.5, fontWeight: 700, padding: "10px 8px", marginBottom: 10, cursor: "pointer" }}>
+                  ⚙️ Auto Gambit — set them up for me
+                  <span style={{ display: "block", fontSize: 10, color: "#8a83b8", fontWeight: 500, marginTop: 2 }}>
+                    Writes a sensible rule for every skill on your bar, using only gambits you own. Overwrites those slots.
+                  </span>
+                </button>
                 <select value={skName} onChange={(e) => setGambitSkill(e.target.value)} style={{ width: "100%", background: "#0a0a14", border: "1px solid #46407a", borderRadius: 8, color: "#fff", fontSize: 13, padding: "8px 10px", marginBottom: 12, cursor: "pointer" }}>
                   {pool.map((s) => {
                     // Slots are addressed by number now — the same numbers the "Skill N on
@@ -6688,7 +7005,9 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           const buyable = srvListings.filter((L) => (ahCat === "gear" ? L.kind === "gear" : L.kind !== "gear"));
           const shown = ahCat === "gear" ? buyable.filter((L) => matchGear(L.item)) : buyable.filter(matchStack);
           const mine = srvMine;
-          const postableGear = (char.inventory || []).filter((it) => !it.artifact && !it.relicId && it.slotId !== "relic" && !it.locked);
+          // Bound gear is not tradeable. ah_post_gear rejects it server-side too, so offering it
+          // here would only produce an error the player cannot act on.
+          const postableGear = (char.inventory || []).filter((it) => !it.artifact && !it.relicId && it.slotId !== "relic" && !it.locked && !it.bound);
           const postableMats = [
             ...Object.entries(char.materials || {}).filter(([, q]) => q >= AH_ECON.stackSize).map(([id, q]) => ({ kind: "mat", id, q })),
             ...Object.entries(char.drops || {}).filter(([, q]) => q >= AH_ECON.stackSize).map(([id, q]) => ({ kind: "drop", id, q })),
@@ -7050,6 +7369,37 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                 style={{ width: "100%", background: canCraft ? `linear-gradient(135deg,${pcol}33,${pcol}55)` : "#15130f", border: `2px solid ${canCraft ? pcol : "#3a3520"}`, borderRadius: 12, color: canCraft ? "#fff" : "#6a6450", fontSize: 15, fontWeight: 700, padding: 15, cursor: canCraft ? "pointer" : "default" }}>
                 ⚒️ Forge {slotById(forgeSlot).name} {owned < oreCost ? `(need ${oreCost} ${tier.name.replace(" Ore", "")})` : char.gold < goldCost ? `(need ${goldCost}g)` : ""}
               </button>
+
+              {/* Souls raise a craft to a hard-mode item level. Ordinary forging caps at 63, which
+                  is exactly where Hard Mode begins — so without these the profession stops
+                  mattering at the moment the content it feeds into starts. */}
+              {(() => {
+                const held = SOULS.filter((s) => ((char.souls || {})[s.id] || 0) > 0);
+                return (
+                  <div style={{ marginTop: 14, background: "#0e0c1a", border: "1px solid #6b4fa8", borderRadius: 10, padding: "11px 13px" }}>
+                    <div style={{ color: "#c9a6ff", fontSize: 12.5, fontWeight: 700, marginBottom: 4 }}>🔮 Soul Forging — hard-mode item levels</div>
+                    <div style={{ color: "#8a83b8", fontSize: 11, lineHeight: 1.45, marginBottom: held.length ? 9 : 0 }}>
+                      A Soul sets the item level; your ore still sets the rarity and the slot is the one you picked above.
+                      Costs the Soul, {oreCost} {tier.name} and <span style={{ color: "#FFD700" }}>{SOUL_CRAFT_GOLD.toLocaleString()}g</span>.
+                      <b style={{ color: "#c9a6ff" }}> Crafted gear is account bound</b> and cannot be sold on the auction house.
+                      {!held.length && <><br />Souls drop in Hard Mode zones and from hard dungeon bosses.</>}
+                    </div>
+                    {held.map((s) => {
+                      const can = (char.materials[tier.id] || 0) >= oreCost && (char.gold || 0) >= SOUL_CRAFT_GOLD;
+                      return (
+                        <button key={s.id} onClick={() => forgeWithSoul(s.id)} disabled={!can}
+                          style={{ width: "100%", marginTop: 6, background: can ? "linear-gradient(135deg,#241a3e,#33235c)" : "#15131f", border: `1.5px solid ${can ? s.color : "#333"}`, borderRadius: 10, color: can ? "#e0d0ff" : "#666", fontSize: 12.5, fontWeight: 700, padding: "10px 8px", cursor: can ? "pointer" : "default", textAlign: "left" }}>
+                          {s.icon} {s.name} <span style={{ color: s.color }}>×{(char.souls || {})[s.id]}</span>
+                          <span style={{ display: "block", fontSize: 10.5, color: "#9a93b3", fontWeight: 500, marginTop: 2 }}>
+                            Forge an <b style={{ color: s.color }}>ilvl {s.ilvl}</b> {slotById(forgeSlot).name}
+                            {!can && ((char.materials[tier.id] || 0) < oreCost ? ` — need ${oreCost} ${tier.name}` : ` — need ${SOUL_CRAFT_GOLD.toLocaleString()}g`)}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             </div>
           );
         })()}
@@ -7771,7 +8121,7 @@ function LootBidModal({ items, party, char, commitChar, showNotif, onClose, net,
   const resolveBid = () => setBid((B) => {
     if (!B || B.resolved) return B;
     const iWon = !B.passed && B.highName === char.name && B.high > 0;
-    if (iWon) { commitChar({ ...char, gold: Math.max(0, (char.gold || 0) - B.high), inventory: [...(char.inventory || []), item].slice(-120) }); return { ...B, resolved: true, iWon: true }; }
+    if (iWon) { commitChar({ ...char, gold: Math.max(0, (char.gold || 0) - B.high), ...depositEarned(char, item) }); return { ...B, resolved: true, iWon: true }; }
     const share = B.high > 0 ? Math.floor(B.high / Math.max(2, (party || []).length)) : 0;
     if (share > 0) commitChar({ ...char, gold: (char.gold || 0) + share });
     return { ...B, resolved: true, iWon: false, payout: share };
@@ -7818,7 +8168,7 @@ function LootBidModal({ items, party, char, commitChar, showNotif, onClose, net,
   };
   const buyCopy = () => {
     if ((char.ven || 0) < COPY_ITEM_VEN) { showNotif && showNotif(`Need ${COPY_ITEM_VEN} 💎 Ven for a copy`); return; }
-    commitChar({ ...char, ven: (char.ven || 0) - COPY_ITEM_VEN, inventory: [...(char.inventory || []), { ...item }].slice(-120) });
+    commitChar({ ...char, ven: (char.ven || 0) - COPY_ITEM_VEN, ...depositEarned(char, { ...item }) });
     showNotif && showNotif(`💎 Bought a copy of ${item.name}`); next();
   };
   const rc = (r) => rarityById(r) || { color: "#888", name: "" };
@@ -8484,7 +8834,7 @@ function MultiplayerHub({ char, commitChar, showNotif, onExit, onStartRated }) {
       let nc = { ...char };
       if (iWon) {
         nc.gold = Math.max(0, (nc.gold || 0) - L.high);
-        nc.inventory = [...(nc.inventory || []), L.item].slice(-120);
+        { const d = depositEarned(nc, L.item); nc.inventory = d.inventory; nc.overflow = d.overflow; }
         commitChar(nc);
         setRewardMsg(`🏆 You won ${L.item.name} for ${mpFmt(L.high)}g!`);
         setTimeout(() => openBid(L.queue, L.idx + 1), 1400);
@@ -8498,7 +8848,7 @@ function MultiplayerHub({ char, commitChar, showNotif, onExit, onStartRated }) {
   const buyCopy = () => {
     if ((char.ven || 0) < COPY_ITEM_VEN) { showNotif && showNotif(`Need ${COPY_ITEM_VEN} 💎 Ven for a copy`); return; }
     const L = loot; if (!L) return;
-    const nc = { ...char, ven: (char.ven || 0) - COPY_ITEM_VEN, inventory: [...(char.inventory || []), { ...L.item }].slice(-120) };
+    const nc = { ...char, ven: (char.ven || 0) - COPY_ITEM_VEN, ...depositEarned(char, { ...L.item }) };
     commitChar(nc);
     setRewardMsg(`💎 Bought an exact copy of ${L.item.name} for ${COPY_ITEM_VEN} Ven.`);
     setTimeout(() => openBid(L.queue, L.idx + 1), 1000);

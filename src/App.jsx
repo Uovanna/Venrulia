@@ -155,11 +155,14 @@ import {
   emptyProfessions,
   emptySockets,
   gearStatBase,
+  secondaryNominal,
   TRINITY_FILL,
   botTier,
   buildBotChar,
   specClassOf,
   specSkillNames,
+  specGrantedSkills,
+  SPEC_AUTOGRANT,
   guildBossDef,
   HUNTER_WEAPONS,
   gambitCondMet,
@@ -288,7 +291,13 @@ const statWeight = (clsId, stat) => {
   // and since it only ever appears on single-main-stat gear its absence made every focused piece
   // read 10.3% worse than a dual piece it actually matches or beats in combat.
   if (stat === "ap" || stat === "sp" || stat === "dmg") return 0.7;
-  if (stat === "csd") return 1.05;    // measured 1.03 — the largest error in the old table
+  // Crit damage is the one weight that does NOT hold still across the endgame, because its value is
+  // proportional to crit chance and crit chance keeps climbing with gear. Re-measured against the
+  // endgame ilvl curve: 1.0 at ilvl 60, 1.3 at 63, 1.6 at 66, 2.2 at 70. Priced at the entry
+  // bracket, so it is honest where players enter hard mode and conservative above it — a single
+  // number cannot be right across a x2.2 range. If crit damage starts dominating endgame gear, the
+  // lever is SEC_CAP.csd / SEC_RATE.csd in the core, not this weight.
+  if (stat === "csd") return 1.3;     // measured 1.28 at ilvl 63
   if (stat === "vers") return 0.7;    // measured 0.68
   if (stat === "crit") return 0.55;   // measured 0.53
   if (stat === "cdr") return 0.45;    // measured 0.43
@@ -422,11 +431,20 @@ const ZONES = [
 
 // ---------- DUNGEONS ----------
 const DUNGEONS = [
+  // `waves` counts TRASH only — the boss is an extra encounter on top, because resolveDeath treats
+  // wave > waves as the boss. So a run is waves + 1 fights. (Hard Mode uses the opposite
+  // convention as Hard Mode, which used to treat the last wave as the boss and now does not.)
+  //
+  // One wave per step down the chain: 3, 4, 5, 6, 7, and the raid at 8. The Cursed City used to
+  // have 10 against The Ember Deeps' 5 — more than double the dungeon before it, and longer than
+  // the raid, which made it the one instance nobody wanted to run twice.
+  //
+  // `lootFloor` is dead data: nothing reads it. DUNGEON_RARITY is the real loot table.
   { id: "deadmines", name: "The Sunken Mine", minLevel: 15, icon: "⚓", color: "#7a5230", boss: "Bandit Lord Garrick", waves: 3, lootFloor: "uncommon", goldMult: 6, hpMult: 4 },
   { id: "scarlet", name: "The Crimson Abbey", minLevel: 30, icon: "⛪", color: "#a11", boss: "Champion Hadrok", waves: 4, lootFloor: "uncommon", goldMult: 8, hpMult: 4 },
-  { id: "uldaman", name: "The Forgotten Vault", minLevel: 40, icon: "🏛️", color: "#b8860b", boss: "Stoneguard Aurok", waves: 4, lootFloor: "rare", goldMult: 10, hpMult: 4 },
-  { id: "blackrock", name: "The Ember Deeps", minLevel: 50, icon: "🔥", color: "#cc4400", boss: "Emperor Vorgath", waves: 5, lootFloor: "rare", goldMult: 14, hpMult: 4 },
-  { id: "stratholme", name: "The Cursed City", minLevel: 56, icon: "💀", color: "#3a5a2a", boss: "Baron Morthane", waves: 10, lootFloor: "epic", goldMult: 18, hpMult: 4 },
+  { id: "uldaman", name: "The Forgotten Vault", minLevel: 40, icon: "🏛️", color: "#b8860b", boss: "Stoneguard Aurok", waves: 5, lootFloor: "rare", goldMult: 10, hpMult: 4 },
+  { id: "blackrock", name: "The Ember Deeps", minLevel: 50, icon: "🔥", color: "#cc4400", boss: "Emperor Vorgath", waves: 6, lootFloor: "rare", goldMult: 14, hpMult: 4 },
+  { id: "stratholme", name: "The Cursed City", minLevel: 56, icon: "💀", color: "#3a5a2a", boss: "Baron Morthane", waves: 7, lootFloor: "epic", goldMult: 18, hpMult: 4 },
 ];
 
 // ---------- RAIDS (endgame, ilvl-gated, 24h lockout) ----------
@@ -436,6 +454,32 @@ const RAIDS = [
     desc: "Descend into the fiery heart of the mountain to face Ignaroth the Flamelord." },
 ];
 const RAID_COOLDOWN = 24 * 3600000; // 24 hours
+
+// ---------- DUNGEON DIFFICULTY RAMP ----------
+// A run used to be flat: wave 1 and wave 5 were the same fight with a different number on the log
+// line, and every wave paid the same. One function decides how much harder a wave is than the
+// first, and BOTH the enemy and the payout key off it — so a wave that is 70% harder is also worth
+// 70% more, automatically, and the shape can be retuned in one place without the two drifting.
+//
+// ACCELERATING, not linear. Early waves are close to free and the last two bite, so a run feels
+// like it is closing in on something rather than repeating itself. The exponent is what makes a
+// SHORT dungeon stay gentle without needing its own rule: the same curve that ends a 7-wave run at
+// x1.85 only reaches x1.23 by the end of a 3-wave one, because the ramp compounds with depth
+// rather than with a flat per-wave step.
+const DUNGEON_RAMP = {
+  perWave: 0.04,   // scale on the accelerating term
+  curve: 1.6,      // >1 back-loads the difficulty; 1.0 would be plain linear
+  bossBonus: 0.0,  // the boss already carries its own hpMult and rank; no extra ramp on top
+};
+// How many pieces the final boss of an instance drops. This is now the ENTIRE gear yield of a run,
+// since trash pays gold and XP only, so it is a fixed count rather than a coin flip.
+const DUNGEON_BOSS_DROPS = 2;
+// `wave` is 1-based and the boss arrives at waves + 1, in BOTH normal and Hard Mode.
+const dungeonWaveScale = (wave, waves) => {
+  const w = Math.max(1, Math.min(wave || 1, (waves || 1) + 1));
+  return 1 + DUNGEON_RAMP.perWave * Math.pow(w - 1, DUNGEON_RAMP.curve)
+           + (w > (waves || 1) ? DUNGEON_RAMP.bossBonus : 0);
+};
 const instanceById = (id) => DUNGEONS.find((d) => d.id === id) || RAIDS.find((r) => r.id === id);
 
 // ---------- HARD MODE (endgame progression) ----------
@@ -449,14 +493,18 @@ const HARD_ZONES = [
   { id: "hz_ember",  base: "searing",       name: "Emberwaste Canyon",   icon: "🌋", reqIlvl: 68, dropIlvl: 69, killGoal: 3750, prev: "hz_tangle",enemyLvl: 70 },
   { id: "hz_blight", base: "plaguelands",   name: "The Blighted Marches",icon: "☠️", reqIlvl: 69, dropIlvl: 70, killGoal: 5000, prev: "hz_ember", enemyLvl: 72 },
 ];
+// `waves` mirrors the normal-mode chain exactly: 3, 4, 5, 6, 7, and the raid at 8, counting TRASH
+// only with the boss as an extra fight on top. Hard Mode used a flat 4 for every dungeon and 6 for
+// the raid, so its five instances were the same length as each other and a different length from
+// their normal-mode counterparts.
 const HARD_DUNGEONS = [
-  { id: "hd_deadmines",  base: "deadmines",  name: "The Sunken Mine",     icon: "⚓", boss: "Bandit Lord Garrick", dropIlvl: 65, reqIlvl: 65, prevBoss: null, prevZone: null, enemyLvl: 63 },
-  { id: "hd_scarlet",    base: "scarlet",    name: "The Crimson Abbey",   icon: "⛪", boss: "Champion Hadrok",     dropIlvl: 66, prevBoss: "Bandit Lord Garrick", prevZone: "hz_green", enemyLvl: 65 },
-  { id: "hd_uldaman",    base: "uldaman",    name: "The Forgotten Vault", icon: "🏛️", boss: "Stoneguard Aurok",    dropIlvl: 67, prevBoss: "Champion Hadrok", prevZone: "hz_brack", enemyLvl: 66 },
-  { id: "hd_blackrock",  base: "blackrock",  name: "The Ember Deeps",     icon: "🔥", boss: "Emperor Vorgath",     dropIlvl: 68, prevBoss: "Stoneguard Aurok", prevZone: "hz_gloom", enemyLvl: 67 },
-  { id: "hd_stratholme", base: "stratholme", name: "The Cursed City",     icon: "💀", boss: "Baron Morthane",      dropIlvl: 69, prevBoss: "Emperor Vorgath", prevZone: "hz_tangle", enemyLvl: 68, completeCount: 10 },
+  { id: "hd_deadmines",  base: "deadmines",  name: "The Sunken Mine",     icon: "⚓", boss: "Bandit Lord Garrick", dropIlvl: 65, reqIlvl: 65, prevBoss: null, prevZone: null, enemyLvl: 63, waves: 3 },
+  { id: "hd_scarlet",    base: "scarlet",    name: "The Crimson Abbey",   icon: "⛪", boss: "Champion Hadrok",     dropIlvl: 66, prevBoss: "Bandit Lord Garrick", prevZone: "hz_green", enemyLvl: 65, waves: 4 },
+  { id: "hd_uldaman",    base: "uldaman",    name: "The Forgotten Vault", icon: "🏛️", boss: "Stoneguard Aurok",    dropIlvl: 67, prevBoss: "Champion Hadrok", prevZone: "hz_brack", enemyLvl: 66, waves: 5 },
+  { id: "hd_blackrock",  base: "blackrock",  name: "The Ember Deeps",     icon: "🔥", boss: "Emperor Vorgath",     dropIlvl: 68, prevBoss: "Stoneguard Aurok", prevZone: "hz_gloom", enemyLvl: 67, waves: 6 },
+  { id: "hd_stratholme", base: "stratholme", name: "The Cursed City",     icon: "💀", boss: "Baron Morthane",      dropIlvl: 69, prevBoss: "Emperor Vorgath", prevZone: "hz_tangle", enemyLvl: 68, completeCount: 10, waves: 7 },
 ];
-const HARD_RAID = { id: "hr_moltencore", base: "moltencore", name: "The Molten Heart", icon: "🌋", boss: "Ignaroth the Flamelord", dropIlvl: 71, enemyLvl: 72 };
+const HARD_RAID = { id: "hr_moltencore", base: "moltencore", name: "The Molten Heart", icon: "🌋", boss: "Ignaroth the Flamelord", dropIlvl: 71, enemyLvl: 72, waves: 8 };
 const HARD_BOSS_REQ = 10; // boss kills to unlock the next hard dungeon
 const hardZoneById = (id) => HARD_ZONES.find((z) => z.id === id);
 const hardDungeonById = (id) => HARD_DUNGEONS.find((d) => d.id === id);
@@ -915,12 +963,12 @@ const TEMPER_CFG = {
 // secondary meant remembering to update the temper shop too or it would silently ignore it.
 const SECONDARY_KEYS = SECONDARY_POOL;
 const isTemperable = (it) => !!it && !it.relicId && it.slotId !== "relic"; // relics excluded; all rarities + artifacts allowed
-// nominal secondary rating for a stat at a given ilvl/rarity (mirrors generateItem's formula)
+// What one secondary line is worth at a given ilvl/rarity. This used to restate generateItem's
+// formula under a comment saying it mirrored it — and a copy labelled as a copy is still a copy.
+// It missed the endgame ilvl curve entirely, so a 100k-250k reroll on an ilvl-70 line would have
+// handed back a pre-curve value about 45% smaller. One definition, in the core, for both.
 function secNominal(ilvl, rarityId, stat) {
-  const rIdx = RARITIES.findIndex((r) => r.id === rarityId);
-  const perStat = Math.max(1, Math.round((1 + (ilvl || 1) * 0.05) * (RARITY_STAT_MULT[rIdx] || 1)));
-  const secBase = Math.max(1, Math.round(perStat * 0.7));
-  return Math.max(1, Math.round(secBase * (SEC_SIZE[stat] || 0.5)));
+  return secondaryNominal(ilvl || 1, RARITIES.findIndex((r) => r.id === rarityId), stat);
 }
 const rerollRange = (ilvl, rarityId, stat) => { const n = secNominal(ilvl, rarityId, stat); return [Math.max(1, Math.round(n * (1 - TEMPER_CFG.reroll.jitter))), Math.max(1, Math.round(n * (1 + TEMPER_CFG.reroll.jitter)))]; };
 const rollRerollValue = (ilvl, rarityId, stat) => { const [lo, hi] = rerollRange(ilvl, rarityId, stat); return lo + Math.floor(Math.random() * (hi - lo + 1)); };
@@ -980,11 +1028,22 @@ function rollGem({ level, isBoss, dungeonId, dropMult = 1 }) {
   return pick(pool);
 }
 
-// loot roll on enemy death → array of items (0-2)
-function rollLoot({ level, isBoss, dungeonId, guaranteed, clsId, dropMult = 1 }) {
+// loot roll on enemy death → array of items (0-2, or exactly `rolls` when one is given)
+//
+// `rolls` is the dungeon-boss path: the boss of an instance drops a FIXED number of items rather
+// than one guaranteed plus a coin flip. Trash no longer drops gear at all, so this is the entire
+// gear yield of a run and leaving it to a coin flip made two identical clears pay differently for
+// no reason the player could see. Each roll goes through the same DUNGEON_RARITY table — that
+// table is the loot filter.
+function rollLoot({ level, isBoss, dungeonId, guaranteed, clsId, dropMult = 1, rolls = 0 }) {
   const items = [];
   const inst = dungeonId ? instanceById(dungeonId) : null;
   const isRaid = !!inst?.raid;
+  if (rolls > 0) {
+    const ilvlOf = () => (isRaid ? 64 : Math.max(1, Math.min(63, Math.round(level + (Math.random() * 4 - 1)))));
+    for (let i = 0; i < rolls; i++) items.push(generateItem(ilvlOf(), rollRarityForDungeon(dungeonId), pickLootSlot(), clsId));
+    return items;
+  }
   // The normal-mode raid is the bridge to Hard Mode: it drops frequently so one clear yields
   // several pieces, and it is exempt from the zone scaling below for exactly that reason.
   const dropChance = guaranteed ? 1 : isRaid ? 0.85 : (isBoss ? 1 : 0.34) * DROP_RATE_MULT * dropMult * zoneDropScale(level);
@@ -1090,6 +1149,11 @@ const tierHeal = (t) => Math.floor(referenceHp(tierMidLevel(t)) * 0.5);
 const tierScrollAmount = (t) => Math.max(3, Math.round(tierMidLevel(t) * 0.7)); // scroll stat points by tier
 // consumables are stored per-tier so a crafted/bought potion keeps its tier forever (no auto-upgrade)
 const conKey = (id, tier) => `${id}@${tier}`;
+// Module scope on purpose: the live combat tick and the offline simulator both need to read the
+// player's potion stock, and a second copy inside the component is how the two drift apart.
+const conCount = (c, id, tier) => ((c && c.consumables) || {})[conKey(id, tier)] || 0;
+const conTotal = (c, id) => { let s = 0; for (let t = 0; t <= 6; t++) s += conCount(c, id, t); return s; };
+const bestTier = (c, id) => { for (let t = 6; t >= 0; t--) if (conCount(c, id, t) > 0) return t; return -1; };
 
 const potionHeal = (level) => tierHeal(tierForLevel(level));         // HP restored (static within a tier)
 const scrollAmount = (level) => Math.max(3, Math.round(tierMidLevel(tierForLevel(level)) * 0.7)); // stat points (static within a tier)
@@ -1231,7 +1295,10 @@ const hasLoadout = (c, specId) => !!(c && c.specLoadouts && c.specLoadouts[specI
 // Pure spec swap: banks the outgoing template, restores the incoming one (or builds a default).
 // Returns { char, restored }. Kept at module scope so it is testable without React.
 const switchSpecCore = (c, specId) => {
-  const newSig = specSkillNames(specId);
+  // The GRANTED three, not the whole kit. Choosing Protection used to hand over five signature
+  // skills into a five-slot bar, which left no room for a damage skill and is what made the
+  // group-role specs so slow to kill anything. The other two remain in the pool to pick up.
+  const newSig = specGrantedSkills(specId);
   const banked = { ...(c.specLoadouts || {}) };
   if (c.spec && c.spec !== specId) banked[c.spec] = captureLoadout(c);
   let nc = { ...c, spec: specId, specLoadouts: banked };
@@ -1476,6 +1543,27 @@ const enemyStatBlock = (level, cls, { rank = "normal", tier = "normal" } = {}) =
   return st;
 };
 const enemyDamageStat = (enemy) => Math.max(enemy.str || 0, enemy.int || 0, enemy.agi || 0);
+// A creature casts `rank.skills` abilities drawn at random from its class pool, so the expected
+// damage of any one cast is the pool average — not any single skill. Shared so the offline
+// simulator and the wealth model cannot drift apart from what makeEnemy actually hands out.
+const avgEnemySkillMult = (cls, level) => {
+  const hitters = enemyUsableSkills(cls, level).filter((s) => (s.mult && s.mult > 0) || s.dotMult);
+  if (!hitters.length) return 0;
+  return hitters.reduce((a, s) => a + (s.mult || 0) * (s.hits || 1) + (s.dotMult || 0), 0) / hitters.length;
+};
+// Total damage per second an enemy puts out: autos on the archetype's swing timer, plus casts at
+// ENEMY_SKILL_SCALE on the archetype's cast timer. This is the live tick's own arithmetic
+// (App.jsx enemyCast + the auto-attack branch), collected in one place so a simulation of a fight
+// and the fight itself agree.
+const enemyDpsOf = (enemy) => {
+  const a = archetypeOf(enemy);
+  const raw = enemyBaseDamage(enemy);
+  const autos = raw * (enemyCanCast(enemy) ? enemyAutoMult(enemy.level) : 1)
+    / ((ENEMY_BASE_INTERVAL * a.atk) / 1000);
+  const casts = raw * ENEMY_SKILL_SCALE * avgEnemySkillMult(enemy.cls, enemy.level)
+    / ((ENEMY_CAST_CD * a.cast) / 1000);
+  return autos + casts;
+};
 // full pre-mitigation base damage for an enemy (used by both auto-attacks and skill casts)
 const enemyBaseDamage = (enemy) => (enemy.str != null ? enemyDamageStat(enemy) * DMG_PER_STAT : enemyDamageForLevel(enemy.level) * rankOf(enemy).off) * instanceDmgMult(enemy) * archetypeDmgMult(archetypeOf(enemy));
 
@@ -1575,7 +1663,11 @@ const STAT_LABEL = { str: "Str", agi: "Agi", int: "Int", sta: "Sta", armor: "Arm
 // One tunable block (single-row tuning). Balance = edit here, nothing else.
 const AH_ECON = {
   unlockLevel: 15,          // AH node & Mail gate
-  postFeePct: 0.25,         // deposit charged to post; CONSUMED (never refunded)
+  // Deposit charged to post; CONSUMED (never refunded). Was 0.25, set when a best-in-slot item
+  // anchored at 1,540g and the deposit was therefore ~385g. Now that a price tracks an item's
+  // power, 25% of a top listing would be over 6,000g — half an hour of endgame income, burned even
+  // if nobody buys. 0.06 keeps a real cost to spamming the shelves without making listing a gamble.
+  postFeePct: 0.06,
   saleTaxPct: 0.15,         // cut removed from every sale (gold sink)
   bandPct: 0.75,            // legal price band: base ± this fraction
   stackSize: 50,            // materials & drops post in stacks of exactly this
@@ -1591,14 +1683,56 @@ const AH_ECON = {
   marketRarityW: { poor: 8, common: 34, uncommon: 34, rare: 18, epic: 6 }, // NO legendary/artifact stock
   // phantom demand curve is sellChancePerHour() below
 };
+// ---------- WHAT AN ITEM IS WORTH ON THE SHELF ----------
+// This was `ilvl x rarity.valueMult`, which had two problems. It could not tell a well-rolled piece
+// from a badly-rolled one of the same ilvl — every ilvl-70 epic was worth exactly 1,540g, so there
+// was nothing for a market to be a market ABOUT. And it was flat: measured against real farming
+// income, a best-in-slot item was 0.15 hours of play while a +5 temper was 31 hours, so listing
+// anything was a rounding error rather than a decision.
+//
+// Price now follows the POWER an item carries, on a progressive curve. Vendor prices are
+// deliberately untouched: the gap between what a vendor pays and what a buyer pays is the whole
+// reason to walk to the auction house, and widening it is the point.
+const AH_PRICE = {
+  perPoint: 7.4,   // gold at one weighted stat point; calibrated below
+  exponent: 1.8,   // progressive — doubling an item's power raises its price ~3.5x
+};
+// Calibration: perPoint is set so a best-in-slot epic (ilvl 70, ~94 weighted points) lands at about
+// two hours of measured endgame income (~13,300 g/h) => ~25,000g. Re-measure with
+// game-core/wealth-sim.cjs whenever income moves; game-core/ah-price.test.cjs fails if it drifts.
+//
+// Weighted, not raw: a point of crit damage and a point of haste are not the same purchase, and
+// statWeight already knows the difference because it was measured through the combat code. Main
+// stats count at full weight regardless of class — every item's mains suit SOME buyer, and a
+// shelf price cannot depend on who is looking at it.
+const AH_MAIN_WEIGHT = 1;
+const AH_SCORED = ["str", "agi", "int", "sta", "armor", "leech", "resil", "vers", "cdr", "csd",
+                   "crit", "haste", "ap", "sp", "dmg"];
+function ahStatPoints(item) {
+  if (!item) return 0;
+  const s = item.stats || {}, e = (item.enchant && item.enchant.stats) || {};
+  let pts = 0;
+  for (const k of AH_SCORED) {
+    // Power is dormant on dual-main-stat gear, and a buyer cannot spend what the item will not give.
+    if ((k === "ap" || k === "sp") && !itemPowerActive(item)) continue;
+    const amount = (s[k] || 0) + (e[k] || 0);
+    if (!amount) continue;
+    pts += amount * (MAIN_KEYS.includes(k) ? AH_MAIN_WEIGHT : statWeight("warrior", k));
+  }
+  // A weapon's damage range is its whole point and lives outside stats{}.
+  if (item.wdmg) pts += ((item.wdmg.min + item.wdmg.max) / 2) * statWeight("warrior", "dmg");
+  return pts;
+}
 // Deterministic value anchor — NO jitter, so the seller's band and backend pricing agree.
 function ahBaseValue(item) {
   if (!item) return 1;
-  const r = rarityById(item.rarity);
-  let v = Math.max(1, Math.round((item.ilvl || 1) * r.valueMult));
+  const pts = ahStatPoints(item);
+  // A relic or anything else with no scorable stats still needs a price rather than a zero.
+  if (!(pts > 0)) return Math.max(1, Math.round((item.ilvl || 1) * rarityById(item.rarity).valueMult));
+  let v = Math.max(1, Math.round(AH_PRICE.perPoint * Math.pow(pts, AH_PRICE.exponent)));
   const sockets = Array.isArray(item.sockets) ? item.sockets.length : 0;
-  if (sockets) v = Math.round(v * (1 + 0.08 * sockets));   // socket premium
-  if (item.enchant) v = Math.round(v * 1.10);              // enchant premium
+  if (sockets) v = Math.round(v * (1 + 0.08 * sockets));   // socket premium: power the buyer can add
+  if (item.enchant) v = Math.round(v * 1.10);              // enchant premium, on top of its stats
   return Math.max(1, v);
 }
 const ahBand = (base) => [Math.max(1, Math.ceil(base * (1 - AH_ECON.bandPct))), Math.floor(base * (1 + AH_ECON.bandPct))];
@@ -1693,6 +1827,31 @@ const LocalNotify = {
 // Average sustained DPS for offline auto-combat: auto-attacks + ONLY purchased & enabled auto-skills.
 
 
+// What a representative fight in a zone looks like. The live loop builds a creature per kill and
+// hashes its NAME to a disposition, which then drives health, armor and how often it swings or
+// casts. Offline has no per-kill creature, so it averages the zone's roster — that is what "a
+// typical fight here" means. Before this, offline fought a creature that existed nowhere in the
+// game: no archetype health, no armor, and a damage curve 27% below the live one.
+const zoneEnemyProfile = (zone, level) => {
+  const names = (zone && zone.enemies && zone.enemies.length) ? zone.enemies : [null];
+  const atRank = (rank) => {
+    let hp = 0, mit = 0, dps = 0;
+    for (const nm of names) {
+      const cls = nm ? dispositionFor(nm) : CLASSES[0].id;
+      const st = enemyStatBlock(level, cls, { rank });
+      const e = { ...st, level, cls, isBoss: rank === "boss" };
+      hp += (ENEMY_ARCHETYPE[cls] || NEUTRAL_ARCHETYPE).hp;
+      mit += enemyMitigation(e, level);
+      dps += enemyDpsOf(e);
+    }
+    return { hp: hp / names.length, mit: mit / names.length, dps: dps / names.length };
+  };
+  const normal = atRank("normal"), boss = atRank("boss");
+  // NOTE: the live loop also spawns a Mimic (champion rank) on 5% of encounters. Offline does not
+  // model it, so offline stays a shade easier than live by that much.
+  return { hpMult: normal.hp, mit: normal.mit, dps: (isBoss) => (isBoss ? boss.dps : normal.dps) };
+};
+
 // Simulate up to `elapsedMs` (capped at 12h) of auto-combat in the character's chosen offline zone.
 // Returns null if nothing to do. Mirrors the live zone reward formulas. Loot is auto-sold for gold.
 const simulateOffline = (char, elapsedMs) => {
@@ -1710,22 +1869,50 @@ const simulateOffline = (char, elapsedMs) => {
   const dps = offlinePlayerDps(c);
   const leechPct = sp.leech / 100;
   const lowLvlMult = c.level < 5 ? 0.8 : 1;
-  const eDmg = (boss) => Math.max(1, Math.floor(enemyDamageForLevel(enemyLevel) * (boss ? 1.4 : 1) * enemyAutoMult(enemyLevel) * (1 - mit) * (1 - sp.vers / 200) * lowLvlMult));
-  const normalHp = enemyLevel * 26 + 50 + 10;
-  const bossHp = (enemyLevel * 26 + 50) * 2.2 + 10;
+  // Enemy output now comes from the same stat block and cadence the live tick uses, not the legacy
+  // per-level curve — the two were a flat 27% apart at every level, which made offline a measurably
+  // easier game than the one being played. Casts count too; offline used to model autos only.
+  const prof = zoneEnemyProfile(zone, enemyLevel);
+  const eDps = (boss) => Math.max(1, prof.dps(boss) * (1 - mit) * (1 - sp.vers / 200) * lowLvlMult);
+  const normalHp = (enemyLevel * 26 + 50) * prof.hpMult + 10;
+  const bossHp = (enemyLevel * 26 + 50) * 2.2 * prof.hpMult + 10;
 
   let hp = Math.min(maxHp0, char.hp || maxHp0);
   let timeUsed = 0, kills = 0, xpGained = 0, goldGained = 0, died = false, killCount = c.kills || 0, guard = 0;
+  // Potions are spent from the real stock, so an offline stint can run the player dry the way a
+  // live one does. Copy the map first — `c` is a shallow clone of the caller's character.
+  const autoPot = !!(c.upgrades && c.upgrades.autoPotion);
+  let potionsDrunk = 0, lastPotionAt = -POTION_CD / 1000;   // first sip allowed immediately
+  c.consumables = { ...(c.consumables || {}) };
 
   while (timeUsed < secs && guard++ < 500000) {
     const isBoss = killCount > 0 && (killCount + 1) % 10 === 0;
     const ehp = isBoss ? bossHp : normalHp;
-    const ktime = ehp / dps;
+    // Armoured archetypes turn player blows offline exactly as they do live (see the player-damage
+    // branch of the combat tick), so an armoured creature genuinely takes longer to kill.
+    const ktime = ehp / Math.max(1, dps * (1 - prof.mit));
     if (timeUsed + ktime > secs) break; // out of time, no death
-    const hits = Math.floor((ktime * 1000) / ENEMY_BASE_INTERVAL);
-    const incoming = hits * eDmg(isBoss);
+    const incoming = Math.floor(ktime * eDps(isBoss));
     const leechHeal = leechPct > 0 ? Math.floor(leechPct * ehp) : 0;
-    const hpAfter = hp - incoming + leechHeal;
+    let hpAfter = hp - incoming + leechHeal;
+    // Auto-potion, exactly as the live tick runs it: while below 30% health, drink the best potion
+    // owned, at most once every POTION_CD. Offline ignored this entirely, which mattered far more
+    // once offline stopped under-reporting enemy damage — a player who survives live on potions was
+    // dying offline for want of a mechanic they had already bought.
+    // The cooldown runs on wall-clock, not per fight: at ~1.6s a kill, a per-kill budget would
+    // round every sip away and the upgrade would do nothing.
+    if (autoPot && hpAfter < maxHp0 * 0.3) {
+      let at = Math.max(lastPotionAt + POTION_CD / 1000, timeUsed);
+      while (hpAfter < maxHp0 * 0.3 && at <= timeUsed + ktime) {
+        const t = bestTier(c, "heal");
+        if (t < 0) break;
+        const key = conKey("heal", t);
+        c.consumables = { ...c.consumables, [key]: c.consumables[key] - 1 };
+        if (c.consumables[key] <= 0) delete c.consumables[key];
+        hpAfter = Math.min(maxHp0, hpAfter + tierHeal(t));
+        potionsDrunk++; lastPotionAt = at; at += POTION_CD / 1000;
+      }
+    }
     if (hpAfter <= 0) { died = true; break; } // defeated mid-fight
     hp = Math.min(maxHp0, hpAfter + Math.floor(maxHp0 * 0.02)); // survived → 2% heal on kill
     timeUsed += ktime; killCount++; kills++;
@@ -1739,6 +1926,12 @@ const simulateOffline = (char, elapsedMs) => {
     let gold = Math.floor(c.level * (isBoss ? 5 : 1) + 3);
     if (c.race === "human") gold = Math.floor(gold * 1.1);
     gold = Math.max(0, Math.floor(gold * 0.25 * rewardMult * (1 + _tb.gold) * auraGoldMult(c)));
+    // At max level normal-mode rewards drop 95% — the endgame is meant to live in Hard Mode.
+    // resolveDeath has always done this; simulateOffline never got the line, so a parked character
+    // earned the pre-cap rate forever. That one omission made parking the most profitable activity
+    // in the game by a factor of 33, and it is why item prices read as worthless next to a purse.
+    // Loot is deliberately NOT cut here, matching resolveDeath, which cuts XP and gold only.
+    if (c.level >= MAX_LEVEL) { xpEarned = Math.floor(xpEarned * 0.05); gold = Math.floor(gold * 0.05); }
     for (const it of rollLoot({ level: enemyLevel, isBoss, dungeonId: null, guaranteed: false, clsId: c.cls, dropMult: rewardMult * (1 + _tb.drop) })) {
       gold += Math.max(1, Math.floor(it.value * 0.6 * 0.25)); // offline loot auto-sold
     }
@@ -1759,7 +1952,7 @@ const simulateOffline = (char, elapsedMs) => {
   c.hp = maxHpFor(c); // revive ready for play
   if (died) c.offlineZoneId = null; // defeat pauses offline combat until re-enabled
   c.lastActive = Date.now();
-  return { char: c, kills, xpGained, goldGained, leveledTo: c.level, died, secondsSimulated: Math.floor(timeUsed) };
+  return { char: c, kills, xpGained, goldGained, leveledTo: c.level, died, potionsDrunk, secondsSimulated: Math.floor(timeUsed) };
 };
 
 // Predict how long (ms) until the character would die in offline combat, or null if they
@@ -2375,7 +2568,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       addLog(`${spec.icon} Specialized as ${spec.name}. Your saved template (skills, mods, gambits) was restored.`, "#f0b429");
     } else {
       showNotif(`${spec.icon} Specialization: ${spec.name}!`);
-      addLog(`${spec.icon} Specialized as ${spec.name}. Signature skills granted: ${specSkillNames(specId).join(", ")}.`, "#f0b429");
+      addLog(`${spec.icon} Specialized as ${spec.name}. Signature skills granted: ${specGrantedSkills(specId).join(", ")}.`, "#f0b429");
     }
   };
   const toggleSelectedSkill = (name) => {
@@ -2807,12 +3000,21 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       const over = Math.max(0, c.level - z.maxLevel);
       rewardMult = Math.pow(0.85, over); // ~15% less per level above the zone's cap
     }
+    // Deeper into a run is both harder and better paid, off the one shared ramp. Hard Mode dungeons
+    // and the hard raid ride it too; hard ZONES are endless farm with no wave, so they sit at x1.00.
+    const waveScale = b.mode === "dungeon"
+      ? dungeonWaveScale(b.wave, (instanceById(b.dungeonId) || {}).waves)
+      : (b.mode === "hard" && b.hardKind && b.hardKind !== "zone")
+        ? dungeonWaveScale(b.wave, b.waves)
+        : 1;
     let xpEarned = Math.floor((c.level * (enemy.isBoss ? 9 : 3) + 10) * rewardMult);
-    if (b.mode === "dungeon") xpEarned *= 3; // dungeons & raids grant triple XP
+    if (b.mode === "dungeon") xpEarned = Math.floor(xpEarned * 3 * waveScale); // dungeons & raids grant triple XP, ramped by wave
+    else if (waveScale !== 1) xpEarned = Math.floor(xpEarned * waveScale);      // Hard Mode dungeons & raid ride the same ramp
     const _tb = townBonuses(c);
     xpEarned = Math.floor(xpEarned * (1 + _tb.xp) * auraXpMult(c)); // War College + Town Hall
     let goldBase = Math.floor(c.level * (enemy.isBoss ? 5 : 1) + Math.random() * 4 + 1);
-    if (b.mode === "dungeon") goldBase = Math.floor(goldBase * (instanceById(b.dungeonId)?.goldMult || 4) / 3);
+    if (b.mode === "dungeon") goldBase = Math.floor(goldBase * (instanceById(b.dungeonId)?.goldMult || 4) / 3 * waveScale);
+    else if (waveScale !== 1) goldBase = Math.floor(goldBase * waveScale);     // Hard Mode dungeons & raid
     if (c.race === "human") goldBase = Math.floor(goldBase * 1.1);
     goldBase = Math.max(0, Math.floor(goldBase * 0.25 * rewardMult * (1 + _tb.gold) * auraGoldMult(c))); // mob gold reduced by 75%, then zone penalty, then Vault + Town Hall
     // At max level, normal-mode combat rewards drop 95% — the endgame lives in Hard Mode (quest & gathering income unaffected)
@@ -2854,13 +3056,24 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     const isDungeon = b.mode === "dungeon";
     const isHard = b.mode === "hard";
     if (isHard) {
-      // Hard Mode drops: fixed high ilvl; infrequent in zones, common in dungeons/raid
-      const rate = (b.hardKind === "zone" ? 0.10 : 0.6) * (enemy.isBoss || enemy.isLord ? 1.6 : 1) * (1 + townBonuses(nc).drop);
-      if (Math.random() < rate && !(guildRunRef.current && (enemy.isBoss || enemy.hardBoss))) { // Guild boss gear is awarded through the GDKP bid, not auto-looted
-        const rar = b.dropIlvl >= 70 ? rollRarityForDungeon("stratholme") : rollRarityForZone(60);
-        nc = grantLoot(nc, [generateItem(b.dropIlvl, rar, pickLootSlot(), nc.cls)]);
+      // Hard Mode drops now follow the same rule as a normal dungeon: a RUN pays gold and XP
+      // through its waves and hands over its gear at the boss. Hard trash are all Lords, so the old
+      // 0.6 x 1.6 rate meant almost every kill dropped — a hard raid was worth roughly nine pieces
+      // a clear and the boss was just the last of them.
+      //
+      // Hard ZONES keep their own rate. They are an endless kill-goal farm with no boss to hand
+      // anything over at, so the run rule has nothing to attach to.
+      const isHardRun = b.hardKind && b.hardKind !== "zone";
+      const hardRar = () => (b.dropIlvl >= 70 ? rollRarityForDungeon("stratholme") : rollRarityForZone(60));
+      const guildBoss = guildRunRef.current && (enemy.isBoss || enemy.hardBoss);
+      if (!isHardRun) {
+        const rate = 0.10 * (enemy.isBoss || enemy.isLord ? 1.6 : 1) * (1 + townBonuses(nc).drop);
+        if (Math.random() < rate && !guildBoss) nc = grantLoot(nc, [generateItem(b.dropIlvl, hardRar(), pickLootSlot(), nc.cls)]);
+        nc = grantGem(nc, rollGem({ level: enemy.level, isBoss: enemy.isBoss || enemy.isLord, dungeonId: "stratholme", dropMult: 1 + townBonuses(nc).drop }));
+      } else if (enemy.hardBoss && !guildBoss) { // Guild boss gear is awarded through the GDKP bid, not auto-looted
+        nc = grantLoot(nc, Array.from({ length: DUNGEON_BOSS_DROPS }, () => generateItem(b.dropIlvl, hardRar(), pickLootSlot(), nc.cls)));
+        nc = grantGem(nc, rollGem({ level: enemy.level, isBoss: true, dungeonId: "stratholme", dropMult: 1 + townBonuses(nc).drop }));
       }
-      nc = grantGem(nc, rollGem({ level: enemy.level, isBoss: enemy.isBoss || enemy.isLord, dungeonId: "stratholme", dropMult: 1 + townBonuses(nc).drop }));
       // progression tracking
       if (b.hardKind === "zone") {
         const hz = hardZoneById(b.hardId);
@@ -2875,8 +3088,18 @@ function GameScreen({ character: initChar, onSave, onBack }) {
         if (hd?.completeCount && bk >= hd.completeCount && !nc.hardDungeonDone?.[b.hardId]) { nc = { ...nc, hardDungeonDone: { ...(nc.hardDungeonDone || {}), [b.hardId]: true } }; addLog(`🏆 ${hd.name} (Hard) cleared!`, "#FFD700"); showNotif(`🏆 ${hd.name} complete!`); }
         if (b.hardKind === "raid" && bk >= HARD_BOSS_REQ && !nc.hardDungeonDone?.[b.hardId]) { nc = { ...nc, hardDungeonDone: { ...(nc.hardDungeonDone || {}), [b.hardId]: true } }; addLog("🔥 The Molten Heart falls — HELL MODE awaits!", "#ff4500"); showNotif("🔥 Hard Mode raid cleared!"); }
       }
+    } else if (isDungeon && !enemy.isBoss && !(instanceById(b.dungeonId) || {}).raid) {
+      // Dungeon TRASH pays gold and XP only. Gear used to trickle out of every wave at 34%, which
+      // made the boss just another roll rather than the reason to be here, and meant a player who
+      // died on the last wave had still had most of the run's value. The ramp above is what makes
+      // pushing deeper worth it now.
+      //
+      // The RAID is deliberately exempt. rollLoot calls it the bridge to Hard Mode — it drops on
+      // 85% of kills so one clear yields the several ilvl-64 pieces a player needs to reach the
+      // average that gates Hard Mode. Cutting it to two would close the only route out of normal
+      // mode, the same reason zoneDropScale exempts it.
     } else {
-      if (!(guildRunRef.current && enemy.isBoss)) nc = grantLoot(nc, rollLoot({ level: enemy.level, isBoss: enemy.isBoss, dungeonId: isDungeon ? b.dungeonId : null, guaranteed: isDungeon && enemy.isBoss, clsId: nc.cls, dropMult: rewardMult * (1 + townBonuses(nc).drop) })); // Guild boss gear comes through the GDKP bid
+      if (!(guildRunRef.current && enemy.isBoss)) nc = grantLoot(nc, rollLoot({ level: enemy.level, isBoss: enemy.isBoss, dungeonId: isDungeon ? b.dungeonId : null, guaranteed: isDungeon && enemy.isBoss, clsId: nc.cls, dropMult: rewardMult * (1 + townBonuses(nc).drop), rolls: isDungeon && enemy.isBoss && !(instanceById(b.dungeonId) || {}).raid ? DUNGEON_BOSS_DROPS : 0 })); // Guild boss gear comes through the GDKP bid; the raid keeps its own drop maths
       nc = grantGem(nc, rollGem({ level: enemy.level, isBoss: enemy.isBoss, dungeonId: isDungeon ? b.dungeonId : null, dropMult: rewardMult * (1 + townBonuses(nc).drop) }));
     }
 
@@ -2941,8 +3164,11 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           nb = null;
         } else {
           const nextWave = b.wave + 1;
-          const isBossWave = nextWave >= b.waves;
-          const e = makeHardEnemy(inst, b.hardKind, isBossWave);
+          // waves + 1, matching normal mode. Hard Mode used to treat the LAST wave as the boss,
+          // so `waves` meant "fights including the boss" here and "trash only" there — the same
+          // field counting two different things in two places.
+          const isBossWave = nextWave > b.waves;
+          const e = makeHardEnemy(inst, b.hardKind, isBossWave, nextWave);
           addLog(isBossWave ? `⚔️ Final boss: ${inst.boss}!` : `🔥 Wave ${nextWave}/${b.waves}`, "#ff4500");
           nb = { ...b, wave: nextWave, enemy: e, hp: b.hp, enemyEffects: [], enemyNextAt: Date.now() + ENEMY_BASE_INTERVAL, playerNextAt: Date.now() + 600 };
         }
@@ -2959,7 +3185,11 @@ function GameScreen({ character: initChar, onSave, onBack }) {
         const dn = instanceById(b.dungeonId);
         const isBossWave = nextWave > dn.waves;
         const enemyLvl = dn.minLevel + 2 + Math.floor(Math.random() * 4) + (isBossWave ? 3 : 0);
-        const e = makeEnemy(enemyLvl, isBossWave ? { isBoss: true, dungeon: dn.id, name: `💀 ${dn.boss}`, hpMult: dn.hpMult || 1 } : { dungeon: dn.id, champion: true, hpMult: (dn.raid ? 1.3 : 1.1) * (dn.hpMult || 1) });
+        // The same ramp the rewards use, so a wave that pays 70% more is 70% harder.
+        const ramp = dungeonWaveScale(nextWave, dn.waves);
+        const e = makeEnemy(enemyLvl, isBossWave
+          ? { isBoss: true, dungeon: dn.id, name: `💀 ${dn.boss}`, hpMult: (dn.hpMult || 1) * ramp }
+          : { dungeon: dn.id, champion: true, hpMult: (dn.raid ? 1.3 : 1.1) * (dn.hpMult || 1) * ramp });
         addLog(isBossWave ? `⚔️ Final boss: ${dn.boss}!` : `⚔️ Wave ${nextWave}/${dn.waves}`, "#C79C6E");
         nb = { ...b, wave: nextWave, enemy: e, hp: b.hp, enemyEffects: [], enemyNextAt: Date.now() + ENEMY_BASE_INTERVAL, playerNextAt: Date.now() + 600 };
       }
@@ -3440,7 +3670,9 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     commitChar(nc);
     setLastDungeon(dn.id);
     const enemyLvl = dn.minLevel + 2 + Math.floor(Math.random() * 4);
-    const e = makeEnemy(enemyLvl, { dungeon: dn.id, champion: true, hpMult: 1.1 * (dn.hpMult || 1) });
+    // Through the ramp even at wave 1, where it is x1.00 — so the first fight cannot drift away
+    // from the rest of the run if the ramp's shape is retuned.
+    const e = makeEnemy(enemyLvl, { dungeon: dn.id, champion: true, hpMult: (dn.raid ? 1.3 : 1.1) * (dn.hpMult || 1) * dungeonWaveScale(1, dn.waves) });
     const t = Date.now();
     commitBattle({ mode: "dungeon", dungeonId: dn.id, wave: 1, runStart: t, drPlayer: {}, drEnemy: {}, hp: curHp(nc), enemy: e, res: 0, resQ: [], shardTicks: 0, cooldowns: {}, playerEffects: [], enemyEffects: [], playerNextAt: t + PLAYER_BASE_INTERVAL, enemyNextAt: t + ENEMY_BASE_INTERVAL });
     setTab("combat");
@@ -3463,8 +3695,11 @@ function GameScreen({ character: initChar, onSave, onBack }) {
   };
   // Hard Mode enemies: power comes from the "hard" row of DIFFICULTY_TIERS; these hpMults are the
   // per-content-type health weighting on top of it (zone < dungeon trash < dungeon boss < raid boss).
-  const makeHardEnemy = (inst, kind, bossWave) => {
+  // `wave` drives the same accelerating ramp normal-mode dungeons use, so a Hard Mode run builds
+  // the same way. Zones are endless farm and have no wave, so they sit at x1.00.
+  const makeHardEnemy = (inst, kind, bossWave, wave) => {
     const T = "hard";
+    const ramp = kind === "zone" ? 1 : dungeonWaveScale(wave || 1, hardWaveCount(inst));
     if (kind === "zone") {
       const bz = ZONES.find((z) => z.id === inst.base);
       const isLord = Math.random() < 0.1; // Lords appear at the same ~10% rate champions do in normal zones
@@ -3476,17 +3711,18 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     }
     // dungeons & raid: Lord-tier waves; the final wave is the named boss (tracked for the 10-kill unlock)
     if (bossWave) {
-      const e = makeEnemy(inst.enemyLvl, { lord: true, name: `👑 ${inst.boss}`, hpMult: kind === "raid" ? 24 : 14, tier: T });
+      const e = makeEnemy(inst.enemyLvl, { lord: true, name: `👑 ${inst.boss}`, hpMult: (kind === "raid" ? 24 : 14) * ramp, tier: T });
       e.hardBoss = inst.boss;
       return e;
     }
     const bz = ZONES.find((z) => z.id === inst.base);
-    const e = makeEnemy(inst.enemyLvl, { lord: true, hpMult: kind === "raid" ? 16 : 10, tier: T }); // Lord trash
+    const e = makeEnemy(inst.enemyLvl, { lord: true, hpMult: (kind === "raid" ? 16 : 10) * ramp, tier: T }); // Lord trash
     if (bz) e.name = `👑 ${pick(bz.enemies)}`;
     return e;
   };
-  const HARD_DUNGEON_WAVES = 4, HARD_RAID_WAVES = 6;
-  const hardWaveCount = (kind) => kind === "raid" ? HARD_RAID_WAVES : HARD_DUNGEON_WAVES;
+  // Per instance, off its own `waves`, exactly as normal mode does. This was a flat 4 for every
+  // hard dungeon and 6 for the raid, so the five hard instances were all the same length.
+  const hardWaveCount = (inst) => (inst && inst.waves) || 4;
   const startHard = (inst, kind, useTicket = false) => {
     const c = charRef.current;
     if (battleRef.current) { showNotif("Finish current fight first"); return; }
@@ -3510,8 +3746,9 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       nc = { ...c, raidCooldowns: { ...(c.raidCooldowns || {}), [inst.id]: Date.now() + RAID_COOLDOWN } };
     }
     commitChar(nc);
-    const waves = kind === "zone" ? 0 : hardWaveCount(kind);
-    const e = makeHardEnemy(inst, kind, kind !== "zone" && waves === 1);
+    const waves = kind === "zone" ? 0 : hardWaveCount(inst);
+    // The boss now arrives at waves + 1, so wave 1 is never the boss — same rule as normal mode.
+    const e = makeHardEnemy(inst, kind, false, 1);
     const t = Date.now();
     commitBattle({ mode: "hard", hardId: inst.id, hardKind: kind, dropIlvl: inst.dropIlvl, wave: 1, waves, runStart: t, drPlayer: {}, drEnemy: {}, hp: curHp(nc), enemy: e, res: 0, resQ: [], shardTicks: 0, cooldowns: {}, playerEffects: [], enemyEffects: [], playerNextAt: t + PLAYER_BASE_INTERVAL, enemyNextAt: t + ENEMY_BASE_INTERVAL });
     setTab("combat");
@@ -3844,9 +4081,8 @@ function GameScreen({ character: initChar, onSave, onBack }) {
   };
 
   // ---------- consumables (stored per-tier; a potion keeps its tier forever) ----------
-  const conCount = (c, id, tier) => c.consumables[conKey(id, tier)] || 0;
-  const conTotal = (c, id) => { let s = 0; for (let t = 0; t <= 6; t++) s += conCount(c, id, t); return s; };
-  const bestTier = (c, id) => { for (let t = 6; t >= 0; t--) if (conCount(c, id, t) > 0) return t; return -1; };
+  // conCount/conTotal/bestTier now live at module scope so the offline simulator can drink from the
+  // same stock the live tick does — see above ItemCard.
   const buyConsumable = (def) => {
     const c = charRef.current;
     const qty = Math.max(1, Math.min(999, Math.floor(vendorQty) || 1));
@@ -5684,8 +5920,13 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                       </div>
                       <div style={{ color: "#b9b3d6", fontSize: 10.5, lineHeight: 1.45, marginBottom: 8 }}><b style={{ color: "#d8d0f0" }}>Passive:</b> {sp.desc}</div>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 9 }}>
-                        {specSkillNames(sp.id).map((n) => { const sk = (SKILLS[char.cls] || []).find((s) => s.name === n); return (
-                          <span key={n} style={{ background: "#12102a", border: `1px solid ${cls.color}33`, borderRadius: 6, padding: "3px 7px", fontSize: 9.5, color: "#c9c2e6" }}>{sk?.icon} {n}</span>
+                        {specSkillNames(sp.id).map((n, si) => { const sk = (SKILLS[char.cls] || []).find((s) => s.name === n);
+                          // Only the first SPEC_AUTOGRANT are put on the bar for you; the rest belong to
+                          // the spec and are yours to slot in. Showing all five as though they were all
+                          // granted is how a Protection warrior ended up with no room for a damage skill.
+                          const granted = si < SPEC_AUTOGRANT; return (
+                          <span key={n} title={granted ? "Granted to your bar when you specialize" : "Available to this spec — slot it in yourself"}
+                            style={{ background: "#12102a", border: `1px ${granted ? "solid" : "dashed"} ${cls.color}${granted ? "33" : "22"}`, borderRadius: 6, padding: "3px 7px", fontSize: 9.5, color: granted ? "#c9c2e6" : "#8a83b8" }}>{sk?.icon} {n}</span>
                         ); })}
                       </div>
                       {active ? (
@@ -6289,7 +6530,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                           <div style={{ fontSize: 22 }}>{hd.icon}</div>
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ color: "#fff", fontWeight: 700, fontSize: 13 }}>{hd.name} {done && <span style={{ color: "#5fd35f", fontSize: 10 }}>✓</span>}</div>
-                            <div style={{ color: "#9a93b3", fontSize: 10.5 }}>Drops ilvl {hd.dropIlvl} · Boss: {hd.boss} · {hardWaveCount("dungeon")} waves</div>
+                            <div style={{ color: "#9a93b3", fontSize: 10.5 }}>Drops ilvl {hd.dropIlvl} · Boss: {hd.boss} · {hd.waves} waves</div>
                             <div style={{ color: "#8a83b8", fontSize: 10 }}>{hd.reqIlvl ? `Unlock: ilvl ${hd.reqIlvl}` : `Unlock: ${prevKills}/${HARD_BOSS_REQ} ${hd.prevBoss}`}{hd.prevZone ? <> · <span style={{ color: char.hardZoneDone?.[hd.prevZone] ? "#5fd35f" : "#ff8877" }}>{char.hardZoneDone?.[hd.prevZone] ? "✓" : "✗"} {hardZoneById(hd.prevZone)?.name}</span></> : null}{hd.completeCount ? ` · clear: ${bk}/${hd.completeCount}` : ` · ${hd.boss}: ${bk}`} · {runsLeft}/{DUNGEON_RUN_LIMIT} runs</div>
                           </div>
                         </div>
@@ -6307,7 +6548,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                     <div style={{ fontSize: 28 }}>{HARD_RAID.icon}</div>
                     <div style={{ flex: 1 }}>
                       <div style={{ color: "#fff", fontWeight: 700, fontSize: 14 }}>{HARD_RAID.name} {done && <span style={{ color: "#5fd35f", fontSize: 10 }}>✓</span>}</div>
-                      <div style={{ color: "#9a93b3", fontSize: 11 }}>Drops ilvl {HARD_RAID.dropIlvl} · Boss: {HARD_RAID.boss} · {hardWaveCount("raid")} waves</div>
+                      <div style={{ color: "#9a93b3", fontSize: 11 }}>Drops ilvl {HARD_RAID.dropIlvl} · Boss: {HARD_RAID.boss} · {HARD_RAID.waves} waves</div>
                       <div style={{ color: "#8a83b8", fontSize: 10 }}>Requires all Hard Mode complete · {bk}/{HARD_BOSS_REQ} kills{done ? " · unlocks HELL mode" : ""}{cd > 0 ? ` · ⏳ ${fmtClock(cd)}` : ""}</div>
                     </div>
                   </div>

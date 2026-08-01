@@ -499,11 +499,19 @@ const TALENT_TIERS = [
 const TALENT_L60 = {
   warrior: [
     { id: "w_berserk",  name: "Berserker",   icon: "😤", desc: "+10% attack speed per empty ability slot (bypasses the cap).", f: "berserk" },
+    // MEASURED, NOT YET CHANGED: the weakest spec in the game at 1,426 dps against w_berserk's
+    // 1,945 in the same class. Softening the penalty to -12% only reaches 1,500, so the cooldown
+    // reduction is not carrying its half of the trade — autos are too large a share of output for
+    // -25% attack speed to be bought back this way. cdrFracFor was checked and DOES apply spec cdr,
+    // so this is tuning, not a dropped modifier. See game-core/spec-solo-sim.cjs, OPEN POSITIONS.
     { id: "w_champion", name: "Juggernaut",  icon: "🏅", desc: "+15% cooldown reduction, but −25% attack speed.", m: { cdr: 0.15, atkSpeed: -0.25 } },
     { id: "w_antimage", name: "Spellbreaker", icon: "🚫", desc: "−15% magic damage taken & −20% magic crowd control. Taking magic damage grants +5% physical damage (stacks 5×).", f: "spellbreaker" },
     { id: "w_prot",     name: "Protection",  icon: "🛡️", role: "tank", desc: "Group Tank — high threat & −20% damage taken. Your damage −15%.", m: { dr: 0.20, dmgPct: -0.15 } },
   ],
   mage: [
+    // MEASURED, NOT YET CHANGED: the +3s is overpriced by roughly a factor of two. Even with Wild
+    // Magic credited this is the weakest mage spec at 1,453 dps; at skillCd 1.5 it measures 1,613,
+    // ahead of m_sword. See the OPEN POSITIONS note in game-core/spec-solo-sim.cjs.
     { id: "m_wild",   name: "Arcanist",    icon: "🎲", desc: "30% chance to double-cast magic skills. +3s skill cooldown.", f: "wildmagic", m: { skillCd: 3 } },
     { id: "m_trick",  name: "Frostweaver", icon: "🃏", desc: "Crowd control lasts 2s longer. Magic damage −15%.", m: { magicPct: -0.15 }, ccDur: 2 },
     { id: "m_sword",  name: "Spellblade",  icon: "🗡️", desc: "Auto-attacks scale from Intellect and you weave skills freely. +10% attack speed.", f: "intAuto", m: { atkSpeed: 0.10 } },
@@ -992,7 +1000,13 @@ const offlinePlayerDps = (char) => {
     const sbase = (isMagicSkill(sk) || talentFlag(char, "skillsInt")) ? magicBase : physBase; // magic → Int, physical → Str
     if (sk.detonate) { detonator = { sk, sbase }; continue; } // scored after the affliction pool is known
     const potf = 1 + tm.skillPot + skillModPotency(char, sk.name);
-    const instant = (sk.mult || 0) * (sk.hits || 1) * potf * critFactor; // instant hits can crit
+    // Wild Magic: a 30% chance to double-cast a magic skill, so ×1.30 in expectation. applySkillCore
+    // has always done this in live combat; this estimate did not, while it DID apply the Arcanist's
+    // +3s cooldown penalty — so the spec was charged for its downside and given none of its upside,
+    // in offline farming, in its multiplayer power rating, and in every group dps estimate.
+    // It doubles the instant hit only, not a damage-over-time component, so it is applied there.
+    const wildMagic = talentFlag(char, "wildmagic") && isMagicSkill(sk) ? 1.30 : 1;
+    const instant = (sk.mult || 0) * (sk.hits || 1) * potf * critFactor * wildMagic; // instant hits can crit
     const dot = (sk.dotMult || 0) * potf * hexStacked + (sk.snakeVenom ? sk.snakeVenom * 0.9 : 0); // Snake Trap: N venom stacks ≈ 0.9× base each
     const perCast = (instant + dot) * (talentFlag(char, "wildstrike") ? 0.55 : 1); // Wild Striker: 45% of skill casts miss
     const cd = Math.max(0.5, sk.cd * (1 - cdrFracFor(char)) * (hasSkillModEffect(char, sk.name, "ms_cdr") ? 0.75 : 1) + (tm.skillCd || 0) - gemFlatCd(char));
@@ -1243,7 +1257,17 @@ const botTier = (rating) => {
 const buildBotChar = (cls, spec, level, ilvl) => {
   const bc = createCharacter("BotRef", cls, "human");
   bc.level = level || 60;
-  if (spec) bc.spec = spec;
+  if (spec) {
+    bc.spec = spec;
+    // Say outright that a bot runs its spec's kit. createCharacter seeds selectedSkills with a
+    // single basic skill, and normalizeChar rightly treats whatever is there as a deliberate
+    // choice — so without this a bot spent slot 1 on that starter skill and lost its fifth
+    // signature ability, which for a tank is Shield Wall and for a healer is Aegis of Light.
+    // The FULL kit on purpose, not the granted three. A bot exists to play its role in group
+    // content, and a tank bot without its taunt or a healer without Aegis of Light would break
+    // encounters. Only a human's bar has to leave room for the skills they chose.
+    bc.selectedSkills = [...specSkillNames(spec)];
+  }
   const eq = { ...emptyEquipment() };
   for (const s of LOOT_SLOTS) eq[s.id] = generateItem(Math.max(1, ilvl || 60), rarityById("epic"), s.id, cls);
   bc.equipment = eq;
@@ -1294,12 +1318,31 @@ const SPEC_SKILLS = {
   l_hex:    ["Unstable Affliction", "Corruption Spread", "Soul Harvest", "Soul Detonation"],
   l_demon:  ["Summon Fiend", "Demonic Empowerment", "Soul Link"],
   // ---- Group-role specs (Phase 1) ----
+  // ORDER MATTERS for these five. Only the first SPEC_AUTOGRANT are handed to a player's empty
+  // bar, so the leading entries must be the ones that define the role and the trailing ones the
+  // situational cooldowns a player opts into. Bots still run the whole kit.
   w_prot:     ["Shield Slam", "Challenging Shout", "Thunder Clap", "Last Stand", "Shield Wall"],       // Warrior · Tank
   p_holy:     ["Holy Light", "Divine Radiance", "Beacon of Light", "Cleanse", "Aegis of Light"], // Paladin · Healer (Holy Smite available to swap in)
   p_prot:     ["Shield of the Righteous", "Hand of Authority", "Consecration", "Guardian's Bulwark", "Ardent Defender"], // Paladin · Tank
-  m_support:  ["Counterspell", "Temporal Surge", "Arcane Ward", "Arcane Barrage", "Dampen Magic"],   // Mage · Support
-  h_support:  ["Disrupting Shot", "Rallying Anthem", "Mending Volley", "Aimed Shot", "Warding Cry"], // Hunter · Support
+  // Arcane Barrage and Aimed Shot moved into the granted three: they are these specs' only real
+  // damage, and leaving them in the tail handed a support a bar that could barely hurt anything.
+  m_support:  ["Counterspell", "Arcane Barrage", "Temporal Surge", "Arcane Ward", "Dampen Magic"],   // Mage · Support
+  h_support:  ["Disrupting Shot", "Rallying Anthem", "Aimed Shot", "Mending Volley", "Warding Cry"], // Hunter · Support
 };
+// How many of a spec's signature skills are handed to an EMPTY bar.
+//
+// A level-60 character has 5 slots. Every DPS spec has 3 signatures, so it fills the last two with
+// class skills — a Berserker's default bar carries x10.20 of damage multiplier. Every group-role
+// spec has 5 signatures, which fill the bar exactly and leave nothing: a Protection warrior's
+// default bar carries x2.90, and a Holy paladin's x3.70. That was never a tuned number; it is a
+// slot count colliding with a signature count, and it cost those specs 21-86% of their damage.
+//
+// Granting three gives every spec in the game the same 3 + 2 shape. The other two signatures are
+// NOT removed — visibility comes from the skill's own `spec` field, so they stay in the player's
+// pool and can be picked back up at any time. Bots keep the whole kit, because a tank bot without
+// its taunt would break group content.
+const SPEC_AUTOGRANT = 3;
+const specGrantedSkills = (id) => specSkillNames(id).slice(0, SPEC_AUTOGRANT);
 const ALL_SPEC_SKILL_NAMES = new Set(Object.values(SPEC_SKILLS).flat());
 const migrateSpec = (id) => (id && SPEC_MIGRATIONS[id]) || id;
 const STARTER_WEAPON = {
@@ -1437,8 +1480,41 @@ const pickSlotSecondary = (slotId, exclude = []) => {
   while (r >= w[i] && i < w.length - 1) { r -= w[i]; i++; }
   return avail[i];
 };
-const gearStatBase = (ilvl, rarityIdx) => (1 + ilvl * 0.05) * (RARITY_STAT_MULT[rarityIdx] || 1);
+// ---------- THE ILVL POWER CURVE ----------
+// Item power was linear in ilvl: (1 + ilvl * 0.05). That form has a hard ceiling nobody can tune
+// around — across ilvl 63 to 70 the ratio is 4.50/4.15 = x1.08, and as the slope goes to infinity
+// it only approaches 70/63 = x1.11. So NO linear curve can make the hard-mode climb worth more
+// than 11%, however steep it is. Measured: an item gained 54 -> 58 raw stat points across the
+// whole ilvl 63-70 arc, an arc that costs 1,250 -> 5,000 kills per zone.
+//
+// The fix is a geometric term that only exists above the levelling cap, so ilvl 1-60 is bit-for-bit
+// unchanged and the climb compounds instead of creeping.
+// 1.08 is measured, not chosen by taste. Swept in game-core/ilvl-curve-sim.cjs against the content
+// the climb actually gates — a hard zone champion, with the auto-potion a real player carries:
+//
+//   1.00 (today)  every bracket kills the player.            Hard mode is unplayable solo.
+//   1.06          only the last bracket clears.              The climb still buys almost nothing.
+//   1.08          dies at ilvl 64-65, clears 66-69.          An arc: hard at the gate, soloable once out-geared.
+//   1.10          clears from the entry bracket onward.      No challenge left anywhere.
+//
+// 1.08 is the only rate that produces a progression arc rather than a wall or a walkover.
+const ENDGAME_ILVL_FLOOR = 60;    // levelling gear is untouched
+const ENDGAME_ILVL_GROWTH = 1.08; // compounding power per ilvl above the floor
+const endgameClimb = (ilvl) =>
+  Math.pow(ENDGAME_ILVL_GROWTH, Math.max(0, Math.floor(ilvl || 1) - ENDGAME_ILVL_FLOOR));
+const gearStatBase = (ilvl, rarityIdx) =>
+  (1 + ilvl * 0.05) * (RARITY_STAT_MULT[rarityIdx] || 1) * endgameClimb(ilvl);
 const baseArmorFor = (ilvl, rarityIdx, slotId) => (slotId === "weapon" ? 0 : Math.max(1, Math.round(gearStatBase(ilvl, rarityIdx) * (ARMOR_SLOT_WEIGHT[slotId] || 0.5) * ARMOR_BASE_MULT)));
+// What one secondary line is worth at a given ilvl/rarity. generateItem rolls lines with this and
+// the temper shop rerolls them to it — the shop used to carry its own copy of the formula, marked
+// "mirrors generateItem", and a copy marked as a copy is still a copy. When the endgame ilvl curve
+// landed, that copy did not move, so paying 100k-250k to reroll an ilvl-70 line would have handed
+// back a pre-curve value roughly 45% smaller.
+const secondaryNominal = (ilvl, rarityIdx, stat) => {
+  const perStat = Math.max(1, Math.round(gearStatBase(ilvl, rarityIdx)));
+  const secBase = Math.max(1, Math.round(perStat * 0.7));
+  return Math.max(1, Math.round(secBase * (SEC_SIZE[stat] || 0.5)));
+};
 const RARITY_STAT_MULT = [0.5, 0.8, 1.2, 1.8, 2.6, 3.8, 3.8];
 const ITEM_BASES = {
   head: ["Helm", "Coif", "Crown", "Hood", "Greathelm", "Circlet"],
@@ -1534,8 +1610,9 @@ function generateItem(ilvl, rarity, slotId, clsId) {
   const rarityIdx = RARITIES.findIndex((r) => r.id === rarity.id);
   // Dramatically squished values: small numbers, gentle rarity curve. World-zone gear gives
   // modest boosts; notable upgrades come from the higher rarities dropped by dungeons & raids.
-  const perStat = Math.max(1, Math.round((1 + ilvl * 0.05) * (RARITY_STAT_MULT[rarityIdx] || 1)));
-  const secBase = Math.max(1, Math.round(perStat * 0.7));
+  // gearStatBase, not a second copy of it: this line used to restate the ilvl curve inline, so
+  // armor and weapon damage moved with the curve and the stats on the item did not.
+  const perStat = Math.max(1, Math.round(gearStatBase(ilvl, rarityIdx)));
   const stats = { str: 0, agi: 0, int: 0, sta: 0, armor: 0, dmg: 0, leech: 0, resil: 0, vers: 0, cdr: 0, csd: 0, crit: 0, haste: 0, ap: 0, sp: 0 };
 
   // ----- MAIN stats (str/agi/int) -----
@@ -1567,7 +1644,7 @@ function generateItem(ilvl, rarity, slotId, clsId) {
     if (!k) break;
     chosen.push(k);
   }
-  chosen.forEach((k) => { stats[k] += Math.max(1, Math.round(secBase * (SEC_SIZE[k] || 0.5))); });
+  chosen.forEach((k) => { stats[k] += secondaryNominal(ilvl, rarityIdx, k); });
 
   // inherent Armor on all non-weapon gear; weapons instead carry a damage range
   if (!isWeapon) stats.armor += baseArmorFor(ilvl, rarityIdx, slotId);
@@ -1753,9 +1830,22 @@ const normalizeChar = (c) => ({
   selectedSkills: (() => {
     let spec = (migrateSpec(c.spec) && specById(migrateSpec(c.spec)) && specClassOf(migrateSpec(c.spec)) === c.cls) ? migrateSpec(c.spec) : null;
     if (!spec) { const old60 = c.talents && c.talents[60]; if (old60 && specById(migrateSpec(old60)) && specClassOf(migrateSpec(old60)) === c.cls) spec = migrateSpec(old60); }
-    const sig = spec ? specSkillNames(spec) : [];
-    const base = (c.selectedSkills || c.unlockedSkills || []).filter((n) => !ALL_SPEC_SKILL_NAMES.has(n) || sig.includes(n)); // drop signature skills from other specs
-    return padSelectedSkills({ cls: c.cls, level: c.level || 1, spec }, [...sig, ...base]);
+    // GRANTED signatures, not the whole kit. A group-role spec has five and a bar has five, so
+    // handing over all of them left no room for a single damage skill. The other two stay in the
+    // player's pool — this decides what fills an EMPTY slot, not what they may carry.
+    const sig = spec ? specGrantedSkills(spec) : [];
+    // Keeping a skill the player already chose must still work, so the filter checks the FULL kit.
+    const kit = spec ? specSkillNames(spec) : [];
+    const base = (c.selectedSkills || c.unlockedSkills || []).filter((n) => !ALL_SPEC_SKILL_NAMES.has(n) || kit.includes(n)); // drop signature skills from other specs
+    // The player's own bar comes FIRST; signature skills only fill what is left. This ran the other
+    // way round and re-applied on EVERY load, so padSelectedSkills truncated to the slot count and
+    // evicted real choices: a level-60 warrior with five non-signature skills kept two of them after
+    // a single save-and-reload, silently and permanently.
+    //
+    // Signature skills are still granted where that is the point — switchSpecCore puts them first
+    // when you actively choose a spec, and the UI says so. applyLoadout already used this ordering
+    // for restoring a saved template; normalizeChar was the one place that did not.
+    return padSelectedSkills({ cls: c.cls, level: c.level || 1, spec }, [...base, ...sig]);
   })(),
   equipment: (() => { const eq = { ...emptyEquipment(), ...(c.equipment || {}) }; for (const k in eq) eq[k] = migrateItem(eq[k]); return eq; })(),
   inventory: (c.inventory || []).map(migrateItem),
@@ -2226,6 +2316,10 @@ export {
   RARITY_STAT_MULT,
   baseArmorFor,
   gearStatBase,
+  secondaryNominal,
+  endgameClimb,
+  ENDGAME_ILVL_FLOOR,
+  ENDGAME_ILVL_GROWTH,
   ARMOR_SLOT_WEIGHT,
   SLOT_SECONDARY,
   SECONDARY_POOL,
@@ -2280,6 +2374,8 @@ export {
   SPEC_MIGRATIONS,
   specClassOf,
   specSkillNames,
+  specGrantedSkills,
+  SPEC_AUTOGRANT,
   RARITIES,
   rarityById,
   GEAR_SLOTS,

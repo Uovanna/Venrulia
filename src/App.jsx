@@ -688,6 +688,39 @@ const highestOreTierIdx = (miningLevel) => { let idx = 0; for (let i = 0; i < OR
 const oreCraftCost = (tierIdx) => 4 + tierIdx * 4;   // ore units required (strict, grows with tier)
 const oreGoldCost = (tierIdx) => 40 + tierIdx * 70;  // gold cost grows with tier
 const craftIlvl = (armorLevel, tierIdx) => Math.max(1, Math.min(63, Math.round((armorLevel || 1) * 0.45) + tierIdx * 3)); // ilvl from armorsmith rank + ore tier; maxes at 63
+
+// ---------- SOULS: hard-mode crafting reagents ----------
+// Armorsmithing stopped at ilvl 63, which is exactly where Hard Mode begins — so the moment a
+// player reached the content the profession was aimed at, the profession stopped mattering. A Soul
+// is a hard-mode-only reagent that raises a craft to that zone's item level.
+//
+// The point is TARGETED gear. Hard mode drops two random pieces a boss, so the slot that refuses to
+// appear is the whole frustration; forge already lets you choose the slot, so a Soul turns crafting
+// into the answer to bad luck rather than a second, worse loot table.
+//
+// Crafted gear is ACCOUNT BOUND. At the new power-based auction prices a craftable ilvl-70 piece
+// would be a gold faucet, and binding is also what keeps this a catch-up mechanic rather than a
+// business. ah_post_gear in supabase/migrations already refuses to list a bound item, so the server
+// enforces it too — the client is not the only thing standing in the way.
+const SOULS = [
+  { id: "soul_green",  name: "Soul of Greenhollow",       icon: "🌲", zone: "hz_green",  dungeon: "hd_deadmines",  ilvl: 65, color: "#6fbf6f" },
+  { id: "soul_brack",  name: "Soul of Brackenfield",      icon: "🌾", zone: "hz_brack",  dungeon: "hd_scarlet",    ilvl: 66, color: "#d8c06a" },
+  { id: "soul_gloom",  name: "Soul of Gloomwood",         icon: "🕸️", zone: "hz_gloom",  dungeon: "hd_uldaman",    ilvl: 67, color: "#9a8ab8" },
+  { id: "soul_tangle", name: "Soul of Tanglevine",        icon: "🌴", zone: "hz_tangle", dungeon: "hd_blackrock",  ilvl: 68, color: "#5fae7a" },
+  { id: "soul_ember",  name: "Soul of Emberwaste",        icon: "🌋", zone: "hz_ember",  dungeon: "hd_stratholme", ilvl: 69, color: "#e0703a" },
+  { id: "soul_blight", name: "Soul of the Blighted Marches", icon: "☠️", zone: "hz_blight", dungeon: null,         ilvl: 70, color: "#8fbf6f" },
+];
+const soulById = (id) => SOULS.find((s) => s.id === id);
+const soulForZone = (hardZoneId) => SOULS.find((s) => s.zone === hardZoneId);
+const soulForDungeon = (hardDungeonId) => SOULS.find((s) => s.dungeon === hardDungeonId);
+// Zone rate is per KILL and a hard zone is an endless grind, so it stays low. The dungeon rate is
+// per CLEAR — a run is 4-8 fights behind a lockout — so at the 5% originally sketched a Soul would
+// take ~20 clears while those same clears hand over 40 pieces of gear, making crafting strictly
+// worse than farming. 20% puts a Soul at ~5 clears, which is a chase without being a wall.
+const SOUL_ZONE_CHANCE = 0.005;
+const SOUL_DUNGEON_CHANCE = 0.20;
+// Souls are heavy: a craft costs the reagent plus top-tier ore and real gold.
+const SOUL_CRAFT_GOLD = 25000;
 // Herb tiers: unlock by Herbalism rank; each maps to a potion tier (0-6) that Alchemy can brew.
 const HERB_TIERS = [
   { id: "bluepetal", name: "Bluepetal", node: "Bluepetal", icon: "🌸", color: "#7fb0e8", unlock: 1, ptier: 0 },
@@ -2114,7 +2147,7 @@ function ItemCard({ item, children, compare, cls, onClick }) {
         <GameIcon icon={item.icon} imgKey={item.iconKey} size={24} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ color: r.color, fontWeight: 700, fontSize: 12.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.enchant ? "✨ " : ""}{item.name}{temperSuffix(item)}</div>
-          <div style={{ color: "#9a93b3", fontSize: 10.5 }}>{slotById(item.slotId)?.name}{item.ilvl ? ` · ilvl ${item.ilvl}` : ""}</div>
+          <div style={{ color: "#9a93b3", fontSize: 10.5 }}>{slotById(item.slotId)?.name}{item.ilvl ? ` · ilvl ${item.ilvl}` : ""}{item.bound ? <span style={{ color: "#c9a6ff" }}> · 🔮 Bound</span> : null}</div>
           <div style={{ color: "#7fb5d6", fontSize: 10.5 }}>{item.relicId ? "🔱 Relic" : bodyLine}</div>
           {item.relicDesc && <div style={{ color: item.relicColor || "#f0b429", fontSize: 10 }}>{item.relicDesc}</div>}
           {item.enchant && <div style={{ color: "#c08bff", fontSize: 10 }}>✨ Enchant: {Object.entries(item.enchant).map(([k, v]) => `+${v} ${STAT_LABEL[k]}`).join(", ")}</div>}
@@ -3259,6 +3292,17 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       //
       // Hard ZONES keep their own rate. They are an endless kill-goal farm with no boss to hand
       // anything over at, so the run rule has nothing to attach to.
+      // Souls: per-kill in a zone, per-CLEAR in a dungeon (the boss, not its trash).
+      const soul = b.hardKind === "zone" ? soulForZone(b.hardId)
+                 : (enemy.hardBoss ? soulForDungeon(b.hardId) : null);
+      if (soul) {
+        const rate = b.hardKind === "zone" ? SOUL_ZONE_CHANCE : SOUL_DUNGEON_CHANCE;
+        if (Math.random() < rate) {
+          nc = { ...nc, souls: { ...(nc.souls || {}), [soul.id]: ((nc.souls || {})[soul.id] || 0) + 1 } };
+          addLog(`${soul.icon} ${soul.name} — a hard-mode crafting reagent!`, soul.color);
+          showNotif(`${soul.icon} ${soul.name}!`);
+        }
+      }
       const isHardRun = b.hardKind && b.hardKind !== "zone";
       const hardRar = () => (b.dropIlvl >= 70 ? rollRarityForDungeon("stratholme") : rollRarityForZone(60));
       const guildBoss = guildRunRef.current && (enemy.isBoss || enemy.hardBoss);
@@ -4850,6 +4894,32 @@ function GameScreen({ character: initChar, onSave, onBack }) {
   const profRank = (lvl) => (lvl < 25 ? "Apprentice" : lvl < 50 ? "Journeyman" : lvl < 75 ? "Expert" : lvl < 100 ? "Artisan" : "Master");
 
   // ---------- crafting actions ----------
+  // Forge with a Soul: the reagent sets the item level, the ore still sets the rarity, and the slot
+  // is whatever the player picked — which is the point, since hard mode hands out two RANDOM pieces
+  // a boss and the missing slot is the whole frustration.
+  const forgeWithSoul = (soulId) => {
+    const c = charRef.current; const prof = c.professions.armorsmith; if (!prof) return;
+    const soul = soulById(soulId); if (!soul) return;
+    if (((c.souls || {})[soulId] || 0) < 1) { showNotif(`You have no ${soul.name}`); return; }
+    const tier = ORE_TIERS[forgeOre]; const oreCost = oreCraftCost(forgeOre);
+    if ((c.materials[tier.id] || 0) < oreCost) { showNotif(`Need ${oreCost} ${tier.name}`); return; }
+    if ((c.gold || 0) < SOUL_CRAFT_GOLD) { showNotif(`Need ${SOUL_CRAFT_GOLD.toLocaleString()}g`); return; }
+    const rarity = rollWeighted(tier.craft);
+    // Bound on creation. A craftable ilvl-70 piece on the auction house would be a gold faucet at
+    // the new power-based prices, and binding keeps this a catch-up mechanic rather than a trade.
+    const item = { ...generateItem(soul.ilvl, rarity, forgeSlot, c.cls), bound: true };
+    const souls = { ...(c.souls || {}), [soulId]: (c.souls[soulId] || 0) - 1 };
+    if (souls[soulId] <= 0) delete souls[soulId];
+    commitChar({
+      ...c, souls, gold: c.gold - SOUL_CRAFT_GOLD,
+      materials: { ...c.materials, [tier.id]: c.materials[tier.id] - oreCost },
+      ...depositEarned(c, item),
+      professions: { ...c.professions, armorsmith: gainProfXp(prof, craftXp(60, forgeOre)) },
+    });
+    addLog(`${soul.icon} Forged ${item.name} (ilvl ${item.ilvl}, account bound)`, rarityById(item.rarity).color);
+    showNotif(`${soul.icon} Forged ilvl-${item.ilvl} ${slotById(forgeSlot).name}!`);
+  };
+
   const ARMOR_ORE_COST = 3;
   const forge = () => {
     const c = charRef.current; const prof = c.professions.armorsmith; if (!prof) return;
@@ -6935,7 +7005,9 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           const buyable = srvListings.filter((L) => (ahCat === "gear" ? L.kind === "gear" : L.kind !== "gear"));
           const shown = ahCat === "gear" ? buyable.filter((L) => matchGear(L.item)) : buyable.filter(matchStack);
           const mine = srvMine;
-          const postableGear = (char.inventory || []).filter((it) => !it.artifact && !it.relicId && it.slotId !== "relic" && !it.locked);
+          // Bound gear is not tradeable. ah_post_gear rejects it server-side too, so offering it
+          // here would only produce an error the player cannot act on.
+          const postableGear = (char.inventory || []).filter((it) => !it.artifact && !it.relicId && it.slotId !== "relic" && !it.locked && !it.bound);
           const postableMats = [
             ...Object.entries(char.materials || {}).filter(([, q]) => q >= AH_ECON.stackSize).map(([id, q]) => ({ kind: "mat", id, q })),
             ...Object.entries(char.drops || {}).filter(([, q]) => q >= AH_ECON.stackSize).map(([id, q]) => ({ kind: "drop", id, q })),
@@ -7297,6 +7369,37 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                 style={{ width: "100%", background: canCraft ? `linear-gradient(135deg,${pcol}33,${pcol}55)` : "#15130f", border: `2px solid ${canCraft ? pcol : "#3a3520"}`, borderRadius: 12, color: canCraft ? "#fff" : "#6a6450", fontSize: 15, fontWeight: 700, padding: 15, cursor: canCraft ? "pointer" : "default" }}>
                 ⚒️ Forge {slotById(forgeSlot).name} {owned < oreCost ? `(need ${oreCost} ${tier.name.replace(" Ore", "")})` : char.gold < goldCost ? `(need ${goldCost}g)` : ""}
               </button>
+
+              {/* Souls raise a craft to a hard-mode item level. Ordinary forging caps at 63, which
+                  is exactly where Hard Mode begins — so without these the profession stops
+                  mattering at the moment the content it feeds into starts. */}
+              {(() => {
+                const held = SOULS.filter((s) => ((char.souls || {})[s.id] || 0) > 0);
+                return (
+                  <div style={{ marginTop: 14, background: "#0e0c1a", border: "1px solid #6b4fa8", borderRadius: 10, padding: "11px 13px" }}>
+                    <div style={{ color: "#c9a6ff", fontSize: 12.5, fontWeight: 700, marginBottom: 4 }}>🔮 Soul Forging — hard-mode item levels</div>
+                    <div style={{ color: "#8a83b8", fontSize: 11, lineHeight: 1.45, marginBottom: held.length ? 9 : 0 }}>
+                      A Soul sets the item level; your ore still sets the rarity and the slot is the one you picked above.
+                      Costs the Soul, {oreCost} {tier.name} and <span style={{ color: "#FFD700" }}>{SOUL_CRAFT_GOLD.toLocaleString()}g</span>.
+                      <b style={{ color: "#c9a6ff" }}> Crafted gear is account bound</b> and cannot be sold on the auction house.
+                      {!held.length && <><br />Souls drop in Hard Mode zones and from hard dungeon bosses.</>}
+                    </div>
+                    {held.map((s) => {
+                      const can = (char.materials[tier.id] || 0) >= oreCost && (char.gold || 0) >= SOUL_CRAFT_GOLD;
+                      return (
+                        <button key={s.id} onClick={() => forgeWithSoul(s.id)} disabled={!can}
+                          style={{ width: "100%", marginTop: 6, background: can ? "linear-gradient(135deg,#241a3e,#33235c)" : "#15131f", border: `1.5px solid ${can ? s.color : "#333"}`, borderRadius: 10, color: can ? "#e0d0ff" : "#666", fontSize: 12.5, fontWeight: 700, padding: "10px 8px", cursor: can ? "pointer" : "default", textAlign: "left" }}>
+                          {s.icon} {s.name} <span style={{ color: s.color }}>×{(char.souls || {})[s.id]}</span>
+                          <span style={{ display: "block", fontSize: 10.5, color: "#9a93b3", fontWeight: 500, marginTop: 2 }}>
+                            Forge an <b style={{ color: s.color }}>ilvl {s.ilvl}</b> {slotById(forgeSlot).name}
+                            {!can && ((char.materials[tier.id] || 0) < oreCost ? ` — need ${oreCost} ${tier.name}` : ` — need ${SOUL_CRAFT_GOLD.toLocaleString()}g`)}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             </div>
           );
         })()}

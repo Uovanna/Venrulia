@@ -1825,6 +1825,8 @@ const normalizeChar = (c) => ({
   // Purchased bank slots, and the overflow mailbox holding anything that would not fit. Both must
   // survive a reload: overflow is real gear the player owns, just not carried.
   bankSlots: Math.max(0, Number(c.bankSlots) || 0),
+  // Hard-mode crafting reagents, counted per Soul id.
+  souls: (c.souls && typeof c.souls === "object" && !Array.isArray(c.souls)) ? c.souls : {},
   overflow: Array.isArray(c.overflow) ? c.overflow.map(migrateItem) : [],
   hardKills: (c.hardKills && typeof c.hardKills === "object") ? c.hardKills : {},
   hardBossKills: (c.hardBossKills && typeof c.hardBossKills === "object") ? c.hardBossKills : {},

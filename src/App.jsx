@@ -826,6 +826,19 @@ const MAX_LEVEL = 60;
 // Anchored to the ORIGINAL level-60 cost so faster leveling doesn't also speed up Honor.
 const honorXpForLevel = (h) => Math.floor(15 * Math.pow(MAX_LEVEL, 2.6) * (1 + h * 0.12));
 const professionXpForLevel = (lvl) => Math.floor(30 * Math.pow(lvl, 1.25));
+// ---------- HOW LONG A PROFESSION TAKES ----------
+// Idle training ran at a flat 3 XP every 2.5s, which is 96.5 HOURS to reach rank 100 — four days of
+// real time for a system that is meant to sit in the background. The rate is now DERIVED from the
+// target, so retuning it means editing the hours and nothing else.
+//
+// Active gathering is worth twice as much: half the idle time. It asks for attention, so it should
+// pay for it — before this it was actually SLOWER at 47.7 hours, which made playing the minigame
+// strictly worse than ignoring it.
+const PROF_IDLE_HOURS_TO_MAX = 10;
+const PROF_ACTIVE_HOURS_TO_MAX = PROF_IDLE_HOURS_TO_MAX / 2;
+const PROF_IDLE_TICK_MS = 2500;
+const PROF_TOTAL_XP = (() => { let t = 0; for (let l = 1; l < PROF_MAX; l++) t += professionXpForLevel(l); return t; })();
+const profIdleXpPerTick = () => Math.max(1, Math.round(PROF_TOTAL_XP / (PROF_IDLE_HOURS_TO_MAX * 3600000 / PROF_IDLE_TICK_MS)));
 // ---------- CRAFTING XP STANDARD ----------
 // Working rarer stock teaches you more: each material tier above the first multiplies the craft's
 // profession XP. Higher tiers also cost proportionally more material, so this rewards *quality*
@@ -840,7 +853,12 @@ const GATHER_NODES = {
 };
 const gatherNodeMaxHp = (tierIdx) => 40 + (tierIdx || 0) * 25;  // node toughness scales with MATERIAL tier (not player level)
 const gatherPower = (lvl) => 6 + (lvl || 1) * 0.6;   // damage per swing scales with skill level
-const gatherXpPerNode = (lvl) => Math.max(2, Math.round(professionXpForLevel(lvl) / 540)); // ~48h to reach max (100) // ~8 nodes per rank
+// Calibrated, not guessed: swept against the real node health, swing timer and power curve until a
+// full 1->100 climb lands on PROF_ACTIVE_HOURS_TO_MAX. At 540 it was 47.7 hours; at 51 it is 4.9.
+// There is no closed form for this — node toughness and swing damage both move with level — so the
+// divisor is a measured constant and game-core/profession.test.cjs re-measures it.
+const GATHER_XP_DIVISOR = 51;
+const gatherXpPerNode = (lvl) => Math.max(2, Math.round(professionXpForLevel(lvl) / GATHER_XP_DIVISOR));
 const makeGatherNode = (pid, lvl, tierIdx) => {
   const tiers = GATHER_TIERS[pid];
   const ti = (tierIdx == null ? highestTierIdx(tiers, lvl) : tierIdx);
@@ -1131,6 +1149,46 @@ const gambitWeight = (g) => (GAMBIT_RARITY_WEIGHT[g.rarity] || 10) * (g.type ===
 // A "then: use skill" is only relevant if the character can actually cast that skill (primary or dual class)
 const gambitAccessible = (char, id) => { const g = gambitById(id); if (!g) return false; if (g.type === "then" && g.kind === "skill") return isEquipped(char, g.skill); return true; };
 const rollOneGambit = (pool) => { const src = (pool && pool.length) ? pool : ALL_GAMBITS; const total = src.reduce((s, g) => s + gambitWeight(g), 0); let r = Math.random() * total; for (const g of src) { r -= gambitWeight(g); if (r <= 0) return g; } return src[0]; };
+// ---------- AUTO GAMBIT ----------
+// Gambits are a good system that asks a lot before it gives anything: a player has to understand
+// priority order, conditions and vetoes before their bar does anything at all. This lays down a
+// sane default from the gambits they ALREADY OWN, so the system works out of the box and stays
+// there to be learned rather than being a wall.
+//
+// The rules it writes are ordinary rules — nothing special-cased — so a player can inspect them,
+// reorder them, or tear them up.
+const autoGambitPlan = (c) => {
+  const owned = (c.gambits && c.gambits.owned) || {};
+  const has = (id) => !!owned[id];
+  const bar = (c.selectedSkills || []).slice(0, unlockedSlotCount(c.level));
+  // Best owned condition from a preference list, or null if the player owns none of them.
+  const pick = (...ids) => ids.find(has) || null;
+  const rules = {};
+  bar.forEach((name, i) => {
+    const slotNo = i + 1;
+    const sk = skillByName(c, name); if (!sk) return;
+    const thenId = "then_sk_" + _gslug(name);
+    if (!has(thenId)) return;                       // cannot script a skill they have not unlocked
+    let ifId;
+    if (skIsHeal(sk) || skIsHot(sk)) ifId = pick("if_selfhp50", "if_selfhp30", "if_selfhp20", "if_always");
+    else if (skIsDef(sk))            ifId = pick("if_selfhp30", "if_selfhp50", "if_selfhp20", "if_always");
+    else if (skIsCleanse(sk))        ifId = pick("if_debuffed", "if_always");
+    else if (skIsTaunt(sk))          ifId = pick("if_always");
+    // A finisher is worth holding for its window; a builder should just run.
+    else if (skillIsSpender(sk))     ifId = pick("if_res80", "if_resfull", "if_always");
+    else                             ifId = pick("if_always");
+    if (!ifId) return;
+    rules[slotNo] = [{ if: ifId, then: thenId }];
+  });
+  // A general rule for staying alive, if they own the pieces for one.
+  const general = [];
+  const healCon = CONSUMABLE_DEFS.find((d) => d.id === "heal");
+  const potThen = healCon ? "then_con_" + healCon.id : null;
+  const potIf = pick("if_selfhp30", "if_selfhp50", "if_selfhp20");
+  if (potThen && has(potThen) && potIf) general.push({ if: potIf, then: potThen });
+  return { rules, general };
+};
+
 const GENERAL_SLOT_COSTS = [100, 300, 500]; // Ven cost for general gambit slots 3, 4, 5 (2 are free)
 const GAMBIT_UNLOCK_LEVEL = 20; // the gambit system unlocks at character level 20
 const supplyById = (id) => SUPPLY_ITEMS.find((s) => s.id === id);
@@ -2562,6 +2620,19 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     rules[slotNo] = arr;
     commitChar({ ...c, gambits: { ...c.gambits, rules } });
   };
+  const applyAutoGambit = () => {
+    const c = charRef.current;
+    if ((c.level || 1) < GAMBIT_UNLOCK_LEVEL) { showNotif(`Gambits unlock at level ${GAMBIT_UNLOCK_LEVEL}`); return; }
+    const plan = autoGambitPlan(c);
+    const n = Object.keys(plan.rules).length;
+    if (!n && !plan.general.length) { showNotif("No owned gambits fit your bar yet — roll a few first"); return; }
+    const general = [...(c.gambits.general || [])];
+    plan.general.forEach((r, i) => { if (i < generalSlotsFor(c)) general[i] = r; });
+    commitChar({ ...c, gambits: { ...c.gambits, rules: { ...(c.gambits.rules || {}), ...plan.rules }, general } });
+    showNotif(`⚙️ Auto-set ${n} gambit${n === 1 ? "" : "s"}`);
+    addLog(`⚙️ Auto gambit: ${n} rule(s) written from your owned gambits`, "#c8a0ff");
+  };
+
   const generalSlotsFor = (c) => c.gambits?.generalSlots || 2;
   const buyGeneralSlot = () => {
     const c = charRef.current;
@@ -3733,7 +3804,9 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           nc.professions[pid] = prof;
           return;
         }
-        let gain = Math.floor(2 + Math.random() * 3);
+        // Derived from PROF_IDLE_HOURS_TO_MAX, with the same +/-1 jitter the flat rate had.
+        const base = profIdleXpPerTick();
+        let gain = Math.max(1, base + Math.floor(Math.random() * 3) - 1);
         if (c.race === "gnome") gain = Math.ceil(gain * 1.15);
         prof.xp = (prof.xp || 0) + gain;
         const needed = professionXpForLevel(prof.level);
@@ -4613,6 +4686,16 @@ function GameScreen({ character: initChar, onSave, onBack }) {
         const rare = RARITIES.find((r) => r.id === "rare");
         const gear = GEAR_SLOTS.filter((s) => s.id !== "relic").map((s) => generateItem(64, rare, s.id, c.cls));
         return { char: { ...c, inventory: [...(c.inventory || []), ...gear] }, msg: "🔥 Received a full set of ilvl-64 rare gear — check your Bag!" };
+      },
+    },
+    // TESTING ONLY — remove before launch. Maxes every profession, gathering and crafting alike,
+    // so the crafting and gathering systems can be exercised without a 10-hour grind first.
+    maxp: {
+      label: "Max all professions (TEST)",
+      apply: (c) => {
+        const professions = { ...(c.professions || {}) };
+        for (const def of PROFESSIONS) professions[def.id] = { ...(professions[def.id] || {}), level: PROF_MAX, xp: 0, active: !!(professions[def.id] || {}).active };
+        return { char: { ...c, professions }, msg: `⚒️ All ${PROFESSIONS.length} professions set to rank ${PROF_MAX}.` };
       },
     },
     gambit: {
@@ -5866,6 +5949,9 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ color: "#e8e0d0", fontSize: 13, fontWeight: 700 }}>{sk.name} {pts > 0 && <span style={{ color: "#c8a0ff" }}>+{pts}</span>}</div>
                     <div style={{ color: "#7a7396", fontSize: 9.5, textTransform: "uppercase", letterSpacing: 0.5 }}>{skillTypeLabel(sk.name)} · +{Math.round(skillModPotency(char, sk.name) * 100)}% potency</div>
+                    {/* What the skill actually does. Investing points in a name alone asked the
+                        player to remember every ability's effect from another screen. */}
+                    {sk.desc && <div style={{ color: "#9a93b3", fontSize: 10, marginTop: 2, lineHeight: 1.35 }}>{sk.desc}</div>}
                   </div>
                   <button onClick={() => investSkillMod(sk.name)} disabled={poolAvail <= 0 || pts >= SKILL_MOD_CAP} style={{ background: (poolAvail > 0 && pts < SKILL_MOD_CAP) ? "linear-gradient(135deg,#2a1a4a,#3a2470)" : "#15131f", border: `1.5px solid ${(poolAvail > 0 && pts < SKILL_MOD_CAP) ? "#a06aff" : "#333"}`, borderRadius: 8, color: (poolAvail > 0 && pts < SKILL_MOD_CAP) ? "#c8a0ff" : "#666", fontSize: 15, fontWeight: 700, width: 34, height: 30, cursor: (poolAvail > 0 && pts < SKILL_MOD_CAP) ? "pointer" : "default" }}>+</button>
                 </div>
@@ -6163,9 +6249,14 @@ function GameScreen({ character: initChar, onSave, onBack }) {
 
         {tab === "temper" && (() => {
           const acc = "#f0913e";
+          // Equipped and LOCKED gear only. The list used to be every temperable item a player
+          // owned, which at a full bank is 120+ rows to scroll past to reach the piece they
+          // actually wear — and tempering something you are about to vendor is never the intent.
+          // Locking is the existing "I care about this" signal, so it doubles as the opt-in for
+          // anything not currently worn.
           const items = [
             ...Object.values(char.equipment || {}).filter(isTemperable),
-            ...(char.inventory || []).filter(isTemperable),
+            ...(char.inventory || []).filter((it) => isTemperable(it) && it.locked),
           ];
           const sel = temperSel ? items.find((i) => i.id === temperSel) : null;
           const fs = char.failStacks || 0;
@@ -6440,6 +6531,16 @@ function GameScreen({ character: initChar, onSave, onBack }) {
 
               {gambitMode === "skill" && (<>
                 <div style={{ color: "#9a93b3", fontSize: 11, marginBottom: 8 }}>Pick a skill, then set its <b style={{ color: "#fff" }}>IF</b> condition and <b style={{ color: "#fff" }}>THEN</b> action. It fires automatically in combat.</div>
+                {/* The system asks a lot before it gives anything back. This lays down a working
+                    default from the gambits already owned, so a player who does not want to learn
+                    priority order still gets a bar that fires. */}
+                <button onClick={applyAutoGambit}
+                  style={{ width: "100%", background: "linear-gradient(135deg,#241a3e,#33235c)", border: "1.5px solid #a06aff", borderRadius: 10, color: "#c8a0ff", fontSize: 12.5, fontWeight: 700, padding: "10px 8px", marginBottom: 10, cursor: "pointer" }}>
+                  ⚙️ Auto Gambit — set them up for me
+                  <span style={{ display: "block", fontSize: 10, color: "#8a83b8", fontWeight: 500, marginTop: 2 }}>
+                    Writes a sensible rule for every skill on your bar, using only gambits you own. Overwrites those slots.
+                  </span>
+                </button>
                 <select value={skName} onChange={(e) => setGambitSkill(e.target.value)} style={{ width: "100%", background: "#0a0a14", border: "1px solid #46407a", borderRadius: 8, color: "#fff", fontSize: 13, padding: "8px 10px", marginBottom: 12, cursor: "pointer" }}>
                   {pool.map((s) => {
                     // Slots are addressed by number now — the same numbers the "Skill N on

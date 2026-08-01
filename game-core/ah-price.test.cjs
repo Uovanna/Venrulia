@@ -142,8 +142,52 @@ js += `
     ok(ahBaseValue(ench) > ahBaseValue(plain), "an enchant raises the price, through its stats and its premium");
   }
 
+  // --- the SQL validator must agree with this file -------------------------------------------------
+  // ah_gear_base_value in supabase/migrations is a THIRD copy of the pricing rule. It cannot import
+  // this one — Postgres has to validate a listing without trusting the client — so it is pinned.
+  //
+  // This is not hypothetical: the client was repriced and the SQL was not, so the Sell screen
+  // offered an item at 7,467g inside a band of 1,867-13,067 while the server rejected it with
+  // "price 7467 outside band 385-2695". 385-2695 is the OLD formula's band. Posting gear was
+  // impossible for every piece in the game until the two were brought back together.
+  {
+    const fs = require("fs"), path = require("path");
+    const dir = path.join("${path.join(__dirname, '..').replace(/\\\\/g, '/')}", "supabase", "migrations");
+    const file = fs.readdirSync(dir).find((f) => /ah_price_by_power/.test(f));
+    ok(!!file, "the SQL pricing migration exists (" + (file || "MISSING") + ")");
+    const sql = fs.readFileSync(path.join(dir, file), "utf8");
+
+    // Constants
+    const num = (re) => { const m = sql.match(re); return m ? Number(m[1]) : null; };
+    ok(num(/price_per_point numeric not null default ([\\d.]+)/) === AH_PRICE.perPoint,
+       "SQL price_per_point matches the client (" + AH_PRICE.perPoint + ")");
+    ok(num(/price_exponent\\s+numeric not null default ([\\d.]+)/) === AH_PRICE.exponent,
+       "SQL price_exponent matches the client (" + AH_PRICE.exponent + ")");
+    ok(num(/update ah_config set deposit_pct = ([\\d.]+)/) === AH_ECON.postFeePct,
+       "SQL deposit_pct matches the client's posting fee (" + AH_ECON.postFeePct + ")");
+
+    // Every weight, read out of the INSERT rather than restated here.
+    const block = sql.slice(sql.indexOf("insert into ah_stat_weight"), sql.indexOf("on conflict (stat)"));
+    const sqlW = {};
+    for (const m of block.matchAll(/\\('(\\w+)',\\s*([\\d.]+)\\)/g)) sqlW[m[1]] = Number(m[2]);
+    let mismatched = [];
+    for (const k of AH_SCORED) {
+      const want = core.MAIN_KEYS.includes(k) ? AH_MAIN_WEIGHT : statWeight("warrior", k);
+      if (sqlW[k] !== want) mismatched.push(k + " sql=" + sqlW[k] + " js=" + want);
+    }
+    ok(mismatched.length === 0, "every stat weight matches between SQL and the client"
+       + (mismatched.length ? " — " + mismatched.join(", ") : " (" + AH_SCORED.length + " stats)"));
+    ok(Object.keys(sqlW).length === AH_SCORED.length,
+       "…and the SQL table has no stats the client does not score (" + Object.keys(sqlW).length + ")");
+    // The Power gate and the weapon-damage term have to be present, or a weapon prices at zero
+    // points and falls through to the ilvl anchor.
+    ok(/v_mains = 1/.test(sql), "SQL gates Power on a single main stat, as itemPowerActive does");
+    ok(/wdmg/.test(sql), "SQL prices a weapon's damage range, which lives outside stats{}");
+    ok(/0\\.08 \\* v_sockets/.test(sql) && /1\\.10/.test(sql), "SQL keeps the socket and enchant premiums");
+  }
+
   console.log(fail ? "\\n\\u274c " + fail + " auction-house price check(s) failed"
-                   : "\\n\\u2705 auction-house prices track an item's power, and vendoring one throws real gold away");
+                   : "\\n\\u2705 auction-house prices track an item's power, and the SQL validator agrees");
   process.exit(fail ? 1 : 0);
 })();`;
 const runf = path.join(dir, 'ahprice.cjs'); fs.writeFileSync(runf, js);

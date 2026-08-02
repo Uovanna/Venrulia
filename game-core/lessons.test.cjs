@@ -224,6 +224,75 @@ js += `
     ok(src.includes('b.pvp || b.mode === "dungeon"'), "auto-retreat never abandons an arena bout");
   }
 
+  // --- COMPLETABILITY: every lesson condition must have something that can SET it ------------------
+  //
+  // This is the check that was missing. upgrades.autoPotion was READ in three places — the live
+  // combat tick, simulateOffline and the autopot lesson — and WRITTEN in none, so no player could
+  // ever own it and that lesson could never be finished. Worse, the 704-run sweep had already
+  // measured that upgrade as the difference between reaching 60 and walling at level 39.
+  //
+  // Reading each lesson predicate and proving a writer exists is the general form of that bug.
+  {
+    const src = require("fs").readFileSync("${SRC.replace(/\\/g, '/')}", "utf8");
+    // Everything OUTSIDE the lesson table. A lesson mentioning its own key proves nothing.
+    const li = src.indexOf("const LESSONS = ["), le = src.indexOf("\\n];", li);
+    const outside = src.slice(0, li) + src.slice(le);
+    const townDests = new Set(TOWN_SPOTS.map((sp) => sp.dest));
+    // Literal search rather than a built regex: escaping one through this harness is what produced
+    // three broken patterns before this settled.
+    const seenWriter = (k) => outside.indexOf('setTab("' + k + '")') > 0
+      || outside.indexOf('setBagTab("' + k + '")') > 0
+      || outside.indexOf('bagTab === "' + k + '"') > 0
+      || townDests.has(k);
+    const fieldWriter = (k) => new RegExp("\\\\b" + k + ":\\\\s*true").test(outside)
+      || new RegExp("\\\\[" + k + "\\\\]:\\\\s*true").test(outside)
+      || new RegExp("\\\\." + k + "\\\\s*=[^=]").test(outside)
+      || new RegExp("\\\\b" + k + ":\\\\s*[A-Za-z0-9_.({\\\\[]").test(outside);
+
+    // An upgrade is bought through a table, so the write is a DYNAMIC key — [up.id]: true — which
+    // no literal search for "autoPotion: true" can see. It counts as a writer only when the id is
+    // actually in the purchasable table AND that dynamic write exists AND the row is rendered;
+    // a definition nobody can click is exactly the bug this section was added for.
+    const upgradeWriter = (k) => (typeof VENDOR_UPGRADES !== "undefined")
+      && VENDOR_UPGRADES.some((u) => u.id === k)
+      && outside.indexOf("[up.id]: true") > 0
+      && src.indexOf("VENDOR_UPGRADES.map") > 0;
+
+    let unreachable = 0;
+    for (const l of LESSONS) {
+      const body = String(l.done);
+      const keys = [];
+      for (const m of body.matchAll(/c\\.seen(\\?)?\\.([A-Za-z0-9_]+)/g)) keys.push(["seen", m[2]]);
+      for (const m of body.matchAll(/c\\.tutorial(\\?)?\\.([A-Za-z0-9_]+)/g)) keys.push(["tutorial", m[2]]);
+      for (const m of body.matchAll(/c\\.upgrades(\\?)?\\.([A-Za-z0-9_]+)/g)) keys.push(["upgrades", m[2]]);
+      for (const m of body.matchAll(/c\\.([A-Za-z0-9_]+)/g)) {
+        const k = m[1];
+        if (k === "seen" || k === "tutorial" || k === "upgrades" || k === "level") continue;
+        keys.push(["char", k]);
+      }
+      if (!keys.length) { ok(false, l.id + " reads no character state at all — it can never complete"); unreachable++; continue; }
+      // ANY one satisfiable path is enough: several lessons accept a legacy flag OR a panel visit.
+      const reach = keys.map((kv) => (kv[0] === "seen" ? seenWriter(kv[1])
+        : kv[0] === "upgrades" ? upgradeWriter(kv[1]) : fieldWriter(kv[1])));
+      const good = reach.some(Boolean);
+      if (!good) unreachable++;
+      ok(good, l.id + " completable via " + keys.map((kv, i) =>
+        (kv[0] === "char" ? "" : kv[0] + ".") + kv[1] + (reach[i] ? "" : " <NO WRITER>")).join(" / "));
+    }
+    ok(unreachable === 0, unreachable === 0
+      ? "all " + LESSONS.length + " lessons are completable"
+      : unreachable + " lesson(s) CANNOT be completed by any code path");
+
+    // The Draught Belt specifically: purchasable, with gold, and actually rendered.
+    const belt = VENDOR_UPGRADES.find((u) => u.id === "autoPotion");
+    ok(!!belt, "the Draught Belt exists as a vendor upgrade");
+    ok(!!belt && belt.cost > 0, "…and costs gold (" + (belt ? belt.cost.toLocaleString() : "?") + "g)");
+    ok(!PREMIUM_ITEMS.some((it) => it.id === "autoPotion"),
+       "…and is NOT a Ven purchase — the one upgrade a character cannot progress without must not sit behind the premium currency");
+    ok(outside.indexOf("[up.id]: true") > 0, "…and buying it writes the flag the lesson and the combat tick both read");
+    ok(src.indexOf("VENDOR_UPGRADES.map") > 0, "…and it is rendered in the vendor, not merely defined");
+  }
+
   // --- coverage: the systems the sweep named are all present ----------------------------------------
   {
     const want = ["potion", "autopot", "autoskill", "spec", "talent", "auction", "dungeon", "gems",

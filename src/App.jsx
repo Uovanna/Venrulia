@@ -681,7 +681,7 @@ const LESSONS = [
 
   // --- staying alive. The measured difference between finishing and walling at 39 ---------------
   { id: "potion", level: 6, title: "Field Medicine", body: "Drink a Healing Potion. Open 🎒 the Bank's Items tab and use one — health does not come back on its own.", highlight: "bag", done: (c) => !!c.tutorial?.drankPotion },
-  { id: "autopot", level: 7, title: "The Draught Belt", body: "Buy the Auto-Potion upgrade at the 🏪 Market. It drinks for you below 30% health — a parked hero without it stops progressing entirely.", highlight: "market", done: (c) => !!c.upgrades?.autoPotion },
+  { id: "autopot", level: 7, title: "The Draught Belt", body: "Buy the Draught Belt from the 🏪 Market's Vendor, under Permanent Upgrades. It drinks for you below 30% health — a parked hero without one stops progressing entirely.", highlight: "market", done: (c) => !!c.upgrades?.autoPotion },
 
   // --- fighting properly ------------------------------------------------------------------------
   { id: "skills", level: 8, title: "Know Your Kit", body: "Open the flashing 🛡️ Armory and look over your skills. Which five you carry is the whole of your damage.", highlight: "gear", done: (c) => !!c.seen?.gear },
@@ -1358,6 +1358,18 @@ const conKey = (id, tier) => `${id}@${tier}`;
 // player's potion stock, and a second copy inside the component is how the two drift apart.
 const conCount = (c, id, tier) => ((c && c.consumables) || {})[conKey(id, tier)] || 0;
 const conTotal = (c, id) => { let s = 0; for (let t = 0; t <= 6; t++) s += conCount(c, id, t); return s; };
+// PERMANENT VENDOR UPGRADES — bought once, with gold.
+//
+// `upgrades.autoPotion` was READ in three places (the live tick, simulateOffline and the lesson) and
+// WRITTEN in none, so no player could ever own it. That is not a cosmetic gap: the 704-playthrough
+// sweep in game-core/levelling-sim.cjs measured it as the difference between reaching 60 and walling
+// at level 39 — without it, 0 of 176 parked runs finished. It is deliberately GOLD and not Ven: the
+// one mechanic a character cannot progress without must not sit behind the premium currency.
+const VENDOR_UPGRADES = [
+  { id: "autoPotion", name: "Draught Belt", icon: "\u{1F9EA}", cost: 2500,
+    desc: "Drinks your best healing potion automatically when you drop below 30% health — in combat and while parked offline." },
+];
+const vendorUpgradeOwned = (c, id) => !!((c && c.upgrades) || {})[id];
 const bestTier = (c, id) => { for (let t = 6; t >= 0; t--) if (conCount(c, id, t) > 0) return t; return -1; };
 
 const potionHeal = (level) => tierHeal(tierForLevel(level));         // HP restored (static within a tier)
@@ -4572,6 +4584,14 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     commitChar({ ...c, gold: c.gold + price, consumables: { ...c.consumables, [key]: c.consumables[key] - 1 } });
     showNotif(`💰 Sold ${def.name} ${POTION_TIER_ROMAN[tier]} for ${price}g`);
   };
+  const buyVendorUpgrade = (up) => {
+    const c = charRef.current;
+    if (vendorUpgradeOwned(c, up.id)) { showNotif("Already owned"); return; }
+    if ((c.gold || 0) < up.cost) { showNotif(`Need ${up.cost.toLocaleString()}g`); return; }
+    commitChar({ ...c, gold: c.gold - up.cost, upgrades: { ...(c.upgrades || {}), [up.id]: true } });
+    showNotif(`${up.icon} ${up.name} purchased!`);
+    addLog(`${up.icon} ${up.name} — ${up.desc}`, "#7CFC9E");
+  };
   // use one consumable of a specific tier (defaults to the best tier you own)
   const useConsumable = (def, tier) => {
     let c = charRef.current;
@@ -6997,6 +7017,32 @@ function GameScreen({ character: initChar, onSave, onBack }) {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
               <div style={{ color: "#f0b429", fontWeight: 700, fontSize: 15, fontFamily: "Georgia, serif" }}>🛒 Vendor</div>
               <div style={{ color: "#888", fontSize: 11 }}>💰 {char.gold}g</div>
+            </div>
+
+            {/* Permanent upgrades first: the Draught Belt is the one purchase a character cannot
+                progress without, so it must not be buried under the consumable list. */}
+            <div style={{ color: "#aaa", fontSize: 11, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Permanent Upgrades</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 7, marginBottom: 18 }}>
+              {VENDOR_UPGRADES.map((up) => {
+                const owned = vendorUpgradeOwned(char, up.id);
+                const canBuy = (char.gold || 0) >= up.cost;
+                const wanted = (activeLesson(char) || {}).id === "autopot" && up.id === "autoPotion";
+                return (
+                  <div key={up.id} style={{ background: "#100e1c", border: `1px solid ${owned ? "#2e5a3a" : wanted ? "#f0b429" : "#2a2740"}`,
+                    borderLeft: `3px solid ${owned ? "#7CFC9E" : "#f0b429"}`, borderRadius: 8, padding: "10px 11px",
+                    display: "flex", alignItems: "center", gap: 10,
+                    animation: wanted && !owned ? "tutflash 1.4s ease-in-out infinite" : "none" }}>
+                    <div style={{ fontSize: 22 }}>{up.icon}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ color: owned ? "#7CFC9E" : "#f0b429", fontWeight: 700, fontSize: 12.5 }}>{up.name}{owned ? " \u2713" : ""}</div>
+                      <div style={{ color: "#9a93b3", fontSize: 10.5, lineHeight: 1.4 }}>{up.desc}</div>
+                    </div>
+                    {owned
+                      ? <span style={{ color: "#7CFC9E", fontSize: 11, fontWeight: 700 }}>Owned</span>
+                      : <MiniBtn onClick={() => buyVendorUpgrade(up)} color={canBuy ? "#FFD700" : "#666"} bg={canBuy ? "#1a1830" : "#15131f"}>{up.cost.toLocaleString()}g</MiniBtn>}
+                  </div>
+                );
+              })}
             </div>
 
             {/* Buy consumables */}

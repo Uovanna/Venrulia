@@ -166,6 +166,64 @@ js += `
     ok(veteran.tutorial.done === false, "the old 'done' flag is cleared, or the new lessons would never appear");
   }
 
+  // --- the Guild and Arena lessons are RUN, not merely visited --------------------------------------
+  // These two used to clear by opening the screen, so a player's first group boss was a real one
+  // with three other people's time on the line, and their first bout went on their record.
+  {
+    const src = require("fs").readFileSync("${SRC.replace(/\\/g, '/')}", "utf8");
+    const guild = byId("guild"), arena = byId("arena");
+    ok(guild.done({ tutorial: { delveCleared: true } }) && !guild.done({ seen: { guild: true } }),
+       "the Guild lesson needs the Training Delve CLEARED — opening the screen is not enough");
+    ok(arena.done({ tutorial: { duelDone: true } }) && !arena.done({ seen: { arena: true } }),
+       "the Arena lesson needs a Practice Duel FOUGHT — opening the screen is not enough");
+
+    // Read exactly one function by matching its braces. Slicing a fixed number of characters ran
+    // straight past startTutorialDuel into the online co-op block that follows it, so the test
+    // "found" connectEncounter in the duel and failed on code that was not the duel's.
+    const fnBody = (name) => {
+      const i = src.indexOf("const " + name + " = ");
+      if (i < 0) return "";
+      let d = 0, started = false;
+      for (let k = src.indexOf("{", i); k < src.length; k++) {
+        if (src[k] === "{") { d++; started = true; }
+        else if (src[k] === "}") { d--; if (started && d === 0) return src.slice(i, k + 1); }
+      }
+      return "";
+    };
+    // Comments mention the very calls being ruled out ("NOT mpProvider.findOpponent"), so a raw
+    // text search finds the prose and reports a violation that is not in the code.
+    const stripped = (t) => t.replace(/\\/\\*[\\s\\S]*?\\*\\//g, " ").replace(/(^|[^:])\\/\\/[^\\n]*/g, "$1");
+    const delve = stripped(fnBody("startTutorialDelve")), duel = stripped(fnBody("startTutorialDuel"));
+    ok(delve.length > 100, "startTutorialDelve was found and read (" + delve.length + " chars)");
+    ok(duel.length > 100, "startTutorialDuel was found and read (" + duel.length + " chars)");
+
+    // THE PROPERTY THAT MATTERS. connectEncounter is the only call that reaches the matchmaking
+    // server. Neither tutorial may go near it: a practice run must never occupy a real room.
+    ok(!/connectEncounter/.test(delve), "the Training Delve never contacts the matchmaking server");
+    ok(!/connectEncounter/.test(duel), "the Practice Duel never contacts the matchmaking server");
+    ok(/buildTrinityPartyOfSize/.test(delve), "…the delve fills its party with local bots");
+    ok(!/findOpponent/.test(duel), "…and the duel never draws a REAL player's loadout from findOpponent");
+    ok(/practice: true/.test(duel), "…and marks the bout practice");
+
+    // A practice result must not touch the ladder, and a practice boss must not pay out.
+    ok(src.includes("if (bSnap.practice)"), "a practice WIN is not recorded on the ladder");
+    ok(src.includes("if (!b.practice) recordRated(false)"), "…and neither is a practice loss");
+    ok(fnBody("onGroupCleared").includes("run.tutorialDelve"),
+       "clearing the delve marks the lesson and stops — no loot roll, no GDKP auction, no lockout");
+    // THE FAUCET. GroupCombat pays a flat purse on every offline clear. The delve has no lockout,
+    // so paying it would make a practice boss unlimited gold — 1,400g a clear against an endgame
+    // income of 13,180 an hour. Measured in a browser before this guard existed.
+    ok(src.includes("if (!networked && !practice)"),
+       "the Training Delve pays no clear purse — it has no lockout, so a payout would be a faucet");
+    ok(src.includes("practice={!!groupRun?.tutorialDelve}"), "…and the delve is what marks the run practice");
+    // Losing the practice bout must still count, or a player who cannot beat the bot is walled out.
+    const lossPath = src.slice(src.indexOf("if (b.pvp) {"), src.indexOf("if (b.pvp) {") + 1100);
+    ok(lossPath.includes("duelDone: true"),
+       "losing the practice duel still teaches it — the lesson is the fight, not the result");
+    // And a lesson arriving mid-bout must not yank the player out of one.
+    ok(src.includes('b.pvp || b.mode === "dungeon"'), "auto-retreat never abandons an arena bout");
+  }
+
   // --- coverage: the systems the sweep named are all present ----------------------------------------
   {
     const want = ["potion", "autopot", "autoskill", "spec", "talent", "auction", "dungeon", "gems",

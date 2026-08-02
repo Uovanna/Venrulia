@@ -707,8 +707,8 @@ const LESSONS = [
   { id: "temper", level: 38, title: "The Forge Heat", body: "Visit the 🏪 Market's Tempering Forge. Every failure raises the next attempt until the rank is guaranteed — read the odds before you spend.", highlight: "market", done: (c) => !!c.seen?.temper },
 
   // --- other people. Visiting only: none of these lessons queues the player for anything. -------
-  { id: "guild", level: 40, title: "Not Alone", body: "Visit 🏛️ The Guild. Group content asks for a party, and a party asks you to hold a role.", highlight: "guild", done: (c) => !!c.seen?.guild },
-  { id: "arena", level: 45, title: "The Sands", body: "Visit the ⚔️ Arena and read how rated combat is scored.", highlight: "arena", done: (c) => !!c.seen?.arena },
+  { id: "guild", level: 40, title: "Not Alone", body: "Run the Training Delve at 🏛️ The Guild. A practice party of four, no lockout and nothing at stake — learn to interrupt, hold a role and survive a boss before a real group depends on you.", highlight: "guild", done: (c) => !!c.tutorial?.delveCleared },
+  { id: "arena", level: 45, title: "The Sands", body: "Fight a Practice Duel at the ⚔️ Arena. An unranked bout against a training partner — nothing is recorded, win or lose.", highlight: "arena", done: (c) => !!c.tutorial?.duelDone },
   { id: "mail", level: 48, title: "The Courier", body: "Check your 📬 Mail. Auction sales and overflow from a full bank arrive here.", highlight: "auction", done: (c) => !!c.seen?.mail },
 
   // --- the handover to Hard Mode ------------------------------------------------------------------
@@ -3597,7 +3597,10 @@ function GameScreen({ character: initChar, onSave, onBack }) {
   };
 
   const finishKill = (c, bSnap) => {
-    if (bSnap && bSnap.pvp) { botCharRef.current = null; botMirrorRef.current = null; botTierRef.current = null; commitBattle(null); recordRated(true); addLog(`🏆 You defeated ${bSnap.ratedOpp?.name || "your rival"}!`, "#5fd35f"); setTab("arena"); return; }
+    if (bSnap && bSnap.pvp) { botCharRef.current = null; botMirrorRef.current = null; botTierRef.current = null; commitBattle(null);
+      if (bSnap.practice) { const pc = charRef.current; commitChar({ ...pc, tutorial: { ...(pc.tutorial || {}), duelDone: true } }); addLog(`🎯 Practice bout won against ${bSnap.ratedOpp?.name || "your partner"} — unranked, nothing recorded.`, "#5fd35f"); }
+      else { recordRated(true); addLog(`🏆 You defeated ${bSnap.ratedOpp?.name || "your rival"}!`, "#5fd35f"); }
+      setTab("arena"); return; }
     const res = resolveDeath(c, bSnap);
     commitChar(res.char);
     commitBattle(res.battle);
@@ -3634,7 +3637,16 @@ function GameScreen({ character: initChar, onSave, onBack }) {
   const applyDefeat = () => {
     const c = charRef.current; const b = battleRef.current;
     if (!b) return;
-    if (b.pvp) { botCharRef.current = null; botMirrorRef.current = null; botTierRef.current = null; guildRunRef.current = null; setGroupParty(null); commitChar({ ...c, hp: maxHpFor(c) }); commitBattle(null); recordRated(false); addLog(`💀 ${b.ratedOpp?.name || "Your rival"} bested you in the arena.`, "#e07a7a"); setTab("arena"); return; }
+    if (b.pvp) { botCharRef.current = null; botMirrorRef.current = null; botTierRef.current = null; guildRunRef.current = null; setGroupParty(null);
+      // A practice bout counts as learned whether it was won or lost — the lesson is the fight, not
+      // the result, and a player who cannot beat the partner must not be walled out of the game.
+      const base = { ...c, hp: maxHpFor(c) };
+      commitChar(b.practice ? { ...base, tutorial: { ...(base.tutorial || {}), duelDone: true } } : base);
+      commitBattle(null);
+      if (!b.practice) recordRated(false);
+      addLog(b.practice ? `🎯 ${b.ratedOpp?.name || "Your partner"} took that one — unranked, nothing recorded. Lesson learned.`
+                        : `💀 ${b.ratedOpp?.name || "Your rival"} bested you in the arena.`, "#e07a7a");
+      setTab("arena"); return; }
     // GROUP RUN death rule: an individual death does NOT fail the run. A living teammate battle-reses
     // you (limited charges). The run only fails on a true wipe — reses exhausted or every member down.
     if (guildRunRef.current && groupPartyRef.current) {
@@ -4194,6 +4206,43 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     setGroupRun({ trial: true, bossId, ilvl, size: 4, raid: false, bossDef: b, party: tp, bidParty: partyForBid(tp), label: b.name });
     setTab("group");
   };
+  // ---------- TUTORIAL DELVE + PRACTICE DUEL — bots only, and deliberately never online -------
+  //
+  // The Guild and Arena lessons used to be satisfied by opening the screen, which taught nothing:
+  // a player's first group boss was a real one, with three other people's time on the line, and
+  // their first arena bout went on their record.
+  //
+  // Both of these run ENTIRELY LOCALLY. mpProvider.connectEncounter is the only call that reaches
+  // the matchmaking server, and neither path touches it — the delve builds its party with
+  // buildTrinityPartyOfSize (the same local bots startTrial uses) and the duel builds its opponent
+  // with buildBotChar. So a player can learn group and rated play without ever occupying a real
+  // room or being matched against a real person.
+  const TUTORIAL_DELVE_ID = "tutorial_delve";
+  const startTutorialDelve = () => {
+    if (battleRef.current) { showNotif("Finish your current fight first"); return; }
+    const c = charRef.current;
+    // The boss scales to the player, so this reads the same at 40 as at 60. `guildBossDef` gives it
+    // the full teaching kit: a tank-buster, an interruptible cast and raid-wide damage.
+    const ilvl = Math.max(1, avgEquippedIlvl(c) || Math.min(63, (c.level || 40) + 3));
+    const content = { id: TUTORIAL_DELVE_ID, name: "The Training Delve", boss: "Drillmaster Vane" };
+    const bossDef = { ...guildBossDef(content, "dungeon", c.level || 40),
+      desc: "A practice bout. Interrupt the cast, keep the party alive, and nothing here is recorded." };
+    setGroupRun({ tutorialDelve: true, bossId: TUTORIAL_DELVE_ID, ilvl, size: 4, raid: false, bossDef,
+      party: buildTrinityPartyOfSize(c, ilvl, 4), bidParty: null, label: "Training Delve (practice)" });
+    setTab("group");
+    addLog("🏛️ The Training Delve — a practice party. No lockout, no loot, nothing at stake.", "#8fd0e0");
+  };
+  const startTutorialDuel = () => {
+    if (battleRef.current) { showNotif("Finish your current fight first"); return; }
+    const c = charRef.current;
+    // An explicitly built bot, NOT mpProvider.findOpponent — that can hand back a snapshot of a
+    // real player, and a practice bout must never be fought against someone's actual character.
+    const cls = pick(CLASSES); const specs = specsFor(cls.id);
+    const opp = { name: "Sparring Partner " + mpName(), cls: cls.id, spec: specs.length ? pick(specs).id : null,
+                  rating: arenaRating(((c.mp || {}).lifetime || {}).wins || 0, ((c.mp || {}).lifetime || {}).losses || 0) };
+    startRatedMatch(opp, { practice: true });
+  };
+
   // ---------- online co-op: join the authoritative server's room ----------
   // The server owns the seed, the party and every tick. We wait for `assigned` (which names our
   // combatant) before opening the combat screen, so the UI always knows which ally is ours.
@@ -4222,6 +4271,15 @@ function GameScreen({ character: initChar, onSave, onBack }) {
   const onGroupCleared = () => {
     const run = groupRunRef.current; if (!run) return;
     let c = charRef.current;
+    // The Training Delve is a lesson, not content: it marks itself learned and stops. No lockout is
+    // charged, no loot rolls and no GDKP auction runs — a practice boss must not be a gold faucet,
+    // and it has no lockout to gate one.
+    if (run.tutorialDelve) {
+      commitChar({ ...c, tutorial: { ...(c.tutorial || {}), delveCleared: true } });
+      addLog("🏛️ Training Delve cleared. That is how a group fight works — the real ones drop loot.", "#8fd0e0");
+      showNotif("🏛️ Training Delve cleared!");
+      return;
+    }
     // Trials lock on the KILL, not on entry — the lockout gates rewards, not attempts.
     if (run.trial && run.bossId) {
       c = { ...c, trialCooldowns: { ...(c.trialCooldowns || {}), [run.bossId]: Date.now() + TRIAL_COOLDOWN } };
@@ -4407,7 +4465,10 @@ function GameScreen({ character: initChar, onSave, onBack }) {
   };
 
   // ---------- RATED PvP: a live duel vs a class-accurate bot that runs the real combat engine ----------
-  const startRatedMatch = (opp) => {
+  // `opts.practice` marks a TUTORIAL bout: same fight, same bot, but the result is not recorded
+  // and no Arena Token is paid. A player's first duel should not go on their permanent record.
+  const startRatedMatch = (opp, opts) => {
+    const practice = !!(opts && opts.practice);
     const c = charRef.current;
     if (battleRef.current) { showNotif("Finish your current fight first"); return; }
     const lvl = c.level || 60;
@@ -4427,9 +4488,11 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     botCharRef.current = bc; botTierRef.current = tier;
     // the bot's own battle view: bot=caster, player=target
     botMirrorRef.current = { pvp: true, enemy: { name: c.name, cls: c.cls, level: lvl, hp: maxHpFor(c), maxHp: maxHpFor(c) }, hp, maxHp: hp, playerEffects: [], enemyEffects: [], cooldowns: {}, res: 0, resQ: [], shardTicks: 0, playerNextAt: t + PLAYER_BASE_INTERVAL, nextGcd: t + 900 };
-    commitBattle({ mode: "pvp", pvp: true, ratedOpp: { name: opp.name, rating: oppRating, tier: tier.label, cls: opp.cls }, wave: 1, waves: 1, runStart: t, drPlayer: {}, drEnemy: {}, hp: maxHpFor(c), enemy: e, res: 0, resQ: [], shardTicks: 0, cooldowns: {}, playerEffects: [], enemyEffects: [], playerNextAt: t + PLAYER_BASE_INTERVAL, enemyNextAt: t + ENEMY_BASE_INTERVAL });
+    commitBattle({ mode: "pvp", pvp: true, practice, ratedOpp: { name: opp.name, rating: oppRating, tier: tier.label, cls: opp.cls }, wave: 1, waves: 1, runStart: t, drPlayer: {}, drEnemy: {}, hp: maxHpFor(c), enemy: e, res: 0, resQ: [], shardTicks: 0, cooldowns: {}, playerEffects: [], enemyEffects: [], playerNextAt: t + PLAYER_BASE_INTERVAL, enemyNextAt: t + ENEMY_BASE_INTERVAL });
     setTab("combat");
-    addLog(`⚔️ Rated Arena — ${opp.name}, a ${tier.label.toLowerCase()} ${clsInfo.name || opp.cls} (${oppRating}). They fight for real — bring your best.`, "#c8a0ff");
+    addLog(practice
+      ? `🎯 Practice Duel — ${opp.name}, a ${tier.label.toLowerCase()} ${clsInfo.name || opp.cls}. Unranked: win or lose, nothing is recorded.`
+      : `⚔️ Rated Arena — ${opp.name}, a ${tier.label.toLowerCase()} ${clsInfo.name || opp.cls} (${oppRating}). They fight for real — bring your best.`, "#c8a0ff");
   };
   const recordRated = (win) => {
     const c = charRef.current; const mp = c.mp || {};
@@ -4470,7 +4533,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     if (!b) return;
     // Never abandon group or instanced content on the player's behalf: a dungeon, raid or Guild run
     // cannot be resumed where it left off, so retreating from one would cost far more than a death.
-    if (groupParty || guildRunRef.current || b.mode === "dungeon" || b.mode === "raid" || b.mode === "hard") return;
+    if (groupParty || guildRunRef.current || b.pvp || b.mode === "dungeon" || b.mode === "raid" || b.mode === "hard") return;
     stopCombat();
     setTab("town");
     showNotif(`📜 New lesson: ${lesson.title} — withdrawn from combat`);
@@ -6248,7 +6311,8 @@ function GameScreen({ character: initChar, onSave, onBack }) {
         })()}
 
         {tab === "arena" && (
-          <MultiplayerHub char={char} commitChar={commitChar} showNotif={showNotif} onExit={() => setTab("town")} onStartRated={startRatedMatch} />
+          <MultiplayerHub char={char} commitChar={commitChar} showNotif={showNotif} onExit={() => setTab("town")} onStartRated={startRatedMatch}
+            onStartPractice={startTutorialDuel} lessonWantsDuel={(activeLesson(char) || {}).id === "arena"} />
         )}
 
         {tab === "group" && (
@@ -6256,6 +6320,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
             bossId={groupRun ? undefined : groupBoss} bossDef={groupRun?.bossDef} party={groupRun?.party}
             label={groupRun?.label} onCleared={onGroupCleared}
             room={groupRun?.room} myAllyId={groupRun?.myAllyId} offlineReason={groupRun?.offlineReason}
+            practice={!!groupRun?.tutorialDelve}
             onExit={() => { try { groupRun?.room?.leave(); } catch { /* already gone */ } setGroupRun(null); setTab("guild"); }} />
         )}
 
@@ -6343,6 +6408,31 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                   </span>
                 </span>
               </div>
+              {/* The Training Delve sits ABOVE the real content, because it is what a player should
+                  run first. It flashes while its lesson is open, matching the town-map signpost. */}
+              {(() => {
+                const les = activeLesson(char);
+                const wanted = les && les.id === "guild";
+                const learned = !!char.tutorial?.delveCleared;
+                return (
+                  <button onClick={startTutorialDelve}
+                    style={{ width: "100%", textAlign: "left", background: "linear-gradient(135deg,#132030,#0e1622)",
+                      border: `1.5px solid ${wanted ? "#f0b429" : "#2a4a5a"}`, borderRadius: 12, padding: "12px 14px",
+                      marginBottom: 12, cursor: "pointer", display: "flex", alignItems: "center", gap: 12,
+                      animation: wanted ? "tutflash 1.4s ease-in-out infinite" : "none" }}>
+                    <span style={{ fontSize: 24 }}>🎯</span>
+                    <span style={{ flex: 1 }}>
+                      <span style={{ color: wanted ? "#f0b429" : "#8fd0e0", fontFamily: "Georgia, serif", fontSize: 14, fontWeight: 700, display: "block" }}>
+                        The Training Delve {learned ? <span style={{ color: "#5fd35f", fontSize: 11 }}>✓ cleared</span> : null}
+                      </span>
+                      <span style={{ color: "#9a93b3", fontSize: 11.5, lineHeight: 1.45, display: "block" }}>
+                        A practice party of four against a teaching boss. No lockout, no loot, nothing recorded —
+                        and it never occupies a real group.
+                      </span>
+                    </span>
+                  </button>
+                );
+              })()}
               <div style={{ color: "#f0b429", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, margin: "4px 0 6px" }}>Dungeons · 4 players · {GUILD_RUN_LIMIT} runs/hour</div>
               {DUNGEONS.map((d) => row(d, "dungeon", 4, char.level >= d.minLevel, `Lv ${d.minLevel}`))}
               {HARD_DUNGEONS.map((d) => row(d, "hard-dungeon", 4, hardDungeonUnlocked(char, avg, d), d.reqIlvl ? `ilvl ${d.reqIlvl}` : `${HARD_BOSS_REQ}× ${d.prevBoss || "prev"}`))}
@@ -8616,7 +8706,7 @@ const partyForBid = (party) => (party || []).map((p, i) => p.isHuman
 // one: the server owns every tick and this renders its snapshots, sending intents instead of
 // mutating state. Everything below the data layer — targeting, the action bar, telegraphs —
 // is identical either way, because both sides run the same game-core.
-function GroupCombat({ char, commitChar, onExit, bossId, bossDef, ilvl, party, onCleared, label, room, myAllyId: myAllyIdProp, offlineReason }) {
+function GroupCombat({ char, commitChar, onExit, bossId, bossDef, ilvl, party, onCleared, label, room, myAllyId: myAllyIdProp, offlineReason, practice }) {
   const networked = !!room;
   // Which combatant is ours arrives with the server's `assigned` message at start, and the
   // lobby tells us who else is waiting. Both are held here so the screen can be opened the
@@ -8673,7 +8763,10 @@ function GroupCombat({ char, commitChar, onExit, bossId, bossDef, ilvl, party, o
     rewarded.current = true;
     // Online clears are paid by the server (rewards.mjs → Supabase mail); paying locally too
     // would hand out the gold twice.
-    if (!networked) { const gold = 400 + (char.level || 60) * 25; commitChar({ ...char, gold: (char.gold || 0) + gold }); }
+    // A clear pays a flat purse offline. The Training Delve must NOT: it has no lockout, so paying
+    // it would make a practice boss an unlimited gold faucet — measured at 1,400g a clear against
+    // an endgame income of 13,180 an hour, which is several times the best farm in the game.
+    if (!networked && !practice) { const gold = 400 + (char.level || 60) * 25; commitChar({ ...char, gold: (char.gold || 0) + gold }); }
     if (onCleared) onCleared(enc);
   }, [enc?.cleared]);
   if (!enc) return (
@@ -8843,7 +8936,7 @@ function GroupCombat({ char, commitChar, onExit, bossId, bossDef, ilvl, party, o
   );
 }
 
-function MultiplayerHub({ char, commitChar, showNotif, onExit, onStartRated }) {
+function MultiplayerHub({ char, commitChar, showNotif, onExit, onStartRated, onStartPractice, lessonWantsDuel }) {
   const cls = CLASSES.find((c) => c.id === char.cls) || {};
   const myPower = mpPowerOf(char);
   const myDps = Math.max(1, Math.round(offlinePlayerDps(char)));
@@ -9267,7 +9360,23 @@ function MultiplayerHub({ char, commitChar, showNotif, onExit, onStartRated }) {
               <button onClick={findMatch} style={{ ...btnPrimary, margin: 0 }}>Queue again</button>
             </div>
           ) : (
-            <button onClick={findMatch} style={{ ...btnPrimary, margin: 0 }}>⚔️ Find match</button>
+            <>
+              {/* A first bout should not go on a permanent record. This one is fought against an
+                  explicitly built bot — never mpProvider.findOpponent, which can return a real
+                  player's loadout — and neither a win nor a loss is recorded. */}
+              <button onClick={onStartPractice} disabled={!onStartPractice}
+                style={{ width: "100%", background: "linear-gradient(135deg,#132030,#0e1622)",
+                  border: `1.5px solid ${lessonWantsDuel ? "#f0b429" : "#2a4a5a"}`, borderRadius: 10,
+                  color: lessonWantsDuel ? "#f0b429" : "#8fd0e0", fontSize: 13, fontWeight: 700,
+                  padding: "11px", cursor: "pointer", marginBottom: 8,
+                  animation: lessonWantsDuel ? "tutflash 1.4s ease-in-out infinite" : "none" }}>
+                🎯 Practice Duel {char.tutorial?.duelDone ? "✓" : ""}
+                <span style={{ display: "block", color: "#8a83b8", fontSize: 10, fontWeight: 400, marginTop: 2 }}>
+                  Unranked, against a training partner. Nothing is recorded, win or lose.
+                </span>
+              </button>
+              <button onClick={findMatch} style={{ ...btnPrimary, margin: 0 }}>⚔️ Find match</button>
+            </>
           )}
         </div>
       )}

@@ -652,18 +652,87 @@ const STORY_QUESTS = [
   { id: "ch3", chapter: 3, title: "Embers of the Old War", teaser: "The volcano remembers a war the world has forgotten.", status: "locked", reward: { xp: 0, items: 0 } },
 ];
 
-// ---------- TUTORIAL — forced objectives; completing all leaves the player at level 6 ----------
-const TUTORIAL_STEPS = [
-  { id: "fight", title: "First Blood", body: "Tap the flashing ⚔️ Adventure Gate, then defeat a monster in the wilds.", highlight: "world", forLevel: 1, done: (c) => (c.kills || 0) >= 1 },
-  { id: "shop", title: "Stock the Pack", body: "Visit the flashing 🏪 Market, enter the Vendor, and browse the shop.", highlight: "market", forLevel: 0, reward: { heal: 10 }, done: (c) => !!c.tutorial?.visitedVendor },
-  { id: "gear", title: "Gear Up", body: "Open the flashing 🏦 Bank and equip the white gear to upgrade a gray piece.", highlight: "bag", forLevel: 2, done: (c) => !!c.tutorial?.equipped },
-  { id: "hunt", title: "Cull the Beasts", body: "Return to the ⚔️ Adventure Gate and defeat 5 monsters.", highlight: "world", forLevel: 3, done: (c) => (c.kills || 0) >= 5 },
-  { id: "trade", title: "Learn a Trade", body: "Enter the flashing ⚒️ Crafting Hall and begin gathering with a profession.", highlight: "prof", forLevel: 4, done: (c) => Object.values(c.professions || {}).some((p) => p && p.active) },
-  { id: "bounty", title: "Bounty Hunter", body: "Visit the flashing 🍺 Tavern and open the Quest Board to take a bounty.", highlight: "quests", forLevel: 5, done: (c) => !!c.tutorial?.visitedBoard },
+// ---------- LESSONS — one per system, gated by level, spanning the whole of 1-60 ----------
+//
+// A 704-playthrough sweep of 1-60 (game-core/levelling-sim.cjs) found that the levelling game
+// teaches almost nothing Hard Mode then demands:
+//
+//   * ZERO deaths in 176 playthroughs across all 22 specs with the ordinary kit.
+//   * Levelling the whole way in STARTER GEAR costs 0.9 hours and still never kills you, so
+//     nothing on the road to 60 establishes that item level matters.
+//   * Never buying the rotation is 2.6x slower and still never fatal, so it reads as a preference.
+//   * The one genuinely mandatory purchase — the auto-potion upgrade — is unmarked. Without it a
+//     parked character walls at level 39 and 0 of 176 runs reach 60.
+//
+// So the tutorial is no longer six steps ending at level 6. Each system a player must understand
+// before Hard Mode has a lesson, it unlocks at the level that system does, and it has to be
+// completed. `level` is the gate; `highlight` flashes that building on the town map.
+//
+// Being flagged for a new lesson RETREATS the player from solo combat (see the effect that watches
+// activeLesson) so the interruption never costs them a death.
+const LESSONS = [
+  // --- the opening six: unchanged behaviour, now carrying an explicit level gate ---------------
+  { id: "fight", level: 1, title: "First Blood", body: "Tap the flashing ⚔️ Adventure Gate, then defeat a monster in the wilds.", highlight: "world", forLevel: 1, done: (c) => (c.kills || 0) >= 1 },
+  { id: "shop", level: 1, title: "Stock the Pack", body: "Visit the flashing 🏪 Market, enter the Vendor, and browse the shop.", highlight: "market", forLevel: 0, reward: { heal: 10 }, done: (c) => !!c.tutorial?.visitedVendor || !!c.seen?.vendor },
+  { id: "gear", level: 2, title: "Gear Up", body: "Open the flashing 🏦 Bank and equip the white gear to upgrade a gray piece.", highlight: "bag", forLevel: 2, done: (c) => !!c.tutorial?.equipped },
+  { id: "hunt", level: 3, title: "Cull the Beasts", body: "Return to the ⚔️ Adventure Gate and defeat 5 monsters.", highlight: "world", forLevel: 3, done: (c) => (c.kills || 0) >= 5 },
+  { id: "trade", level: 4, title: "Learn a Trade", body: "Enter the flashing ⚒️ Crafting Hall and begin gathering with a profession.", highlight: "prof", forLevel: 4, done: (c) => Object.values(c.professions || {}).some((p) => p && p.active) },
+  { id: "bounty", level: 5, title: "Bounty Hunter", body: "Visit the flashing 🍺 Tavern and open the Quest Board to take a bounty.", highlight: "quests", forLevel: 5, done: (c) => !!c.tutorial?.visitedBoard || !!c.seen?.questboard },
+
+  // --- staying alive. The measured difference between finishing and walling at 39 ---------------
+  { id: "potion", level: 6, title: "Field Medicine", body: "Drink a Healing Potion. Open 🎒 the Bank's Items tab and use one — health does not come back on its own.", highlight: "bag", done: (c) => !!c.tutorial?.drankPotion },
+  { id: "autopot", level: 7, title: "The Draught Belt", body: "Buy the Auto-Potion upgrade at the 🏪 Market. It drinks for you below 30% health — a parked hero without it stops progressing entirely.", highlight: "market", done: (c) => !!c.upgrades?.autoPotion },
+
+  // --- fighting properly ------------------------------------------------------------------------
+  { id: "skills", level: 8, title: "Know Your Kit", body: "Open the flashing 🛡️ Armory and look over your skills. Which five you carry is the whole of your damage.", highlight: "gear", done: (c) => !!c.seen?.gear },
+  { id: "autoskill", level: 9, title: "Muscle Memory", body: "Buy an Auto-Skill from the Armory's trainer so a skill fires on its own. Fighting with auto-attacks alone is 2.6x slower.", highlight: "gear", done: (c) => Object.keys(c.autoSkillsOwned || {}).length > 0 },
+  { id: "spec", level: 10, title: "Choose a Path", body: "Visit the flashing ⛪ Class Hall and pick a Specialization. It grants three signature skills and reshapes how you fight.", highlight: "classhall", done: (c) => !!c.spec },
+  { id: "talent", level: 11, title: "The First Talent", body: "Open the flashing 🗿 Hero's Statue and spend your talent point.", highlight: "hero", done: (c) => !!(c.talents || {})[10] || !!c.talentTutorialDone },
+  { id: "attrs", level: 12, title: "Raw Potential", body: "Spend an attribute point at the 🗿 Hero's Statue. Points are yours to place every level.", highlight: "hero", done: (c) => Object.values(c.allocated || {}).some((v) => v > 0) },
+
+  // --- the economy ------------------------------------------------------------------------------
+  { id: "auction", level: () => AH_ECON.unlockLevel, title: "The Trading Floor", body: "The 🏛️ Auction House is open. Visit it — gear you cannot use is worth more to another player than to a vendor.", highlight: "auction", done: (c) => !!c.seen?.auction },
+  { id: "dungeon", level: 15, title: "Into the Dark", body: "Run a Dungeon from the ⚔️ Adventure Gate. Bosses drop the gear the open world will not.", highlight: "world", done: (c) => (c.dungeonClears || 0) >= 1 },
+  { id: "salvage", level: 17, title: "Nothing Wasted", body: "Visit the 🏪 Market's Salvage bench and break down a piece you will never wear.", highlight: "market", done: (c) => !!c.seen?.salvage },
+  { id: "gems", level: 18, title: "Set in Stone", body: "Open the 🏦 Bank's Gems tab. Sockets turn a good piece into your best one.", highlight: "bag", done: (c) => !!c.seen?.bag && !!c.seen?.gems },
+
+  // --- automation and depth ---------------------------------------------------------------------
+  { id: "gambit", level: () => GAMBIT_UNLOCK_LEVEL, title: "Standing Orders", body: "Gambits are open. Visit the ⛪ Class Hall's Gambit panel and set one rule — or use Auto Gambit for a working default.", highlight: "classhall", done: (c) => !!c.seen?.gambits || !!c.seen?.gambitshop },
+  { id: "town", level: 22, title: "Build the Town", body: "Open City Management from the 🗿 Hero's Statue. Town buildings pay a permanent bonus to everything you do.", highlight: "hero", done: (c) => !!c.seen?.citymgmt },
+  { id: "craft", level: 24, title: "The Anvil", body: "Craft a piece of armour in the ⚒️ Crafting Hall's Forge, using ore you have mined.", highlight: "prof", done: (c) => !!c.seen?.forge },
+  { id: "brew", level: 26, title: "Better Draughts", body: "Visit the ⚒️ Crafting Hall's Brewery. Stronger potions are the difference in a long fight.", highlight: "prof", done: (c) => !!c.seen?.brewery },
+  { id: "enchant", level: 30, title: "Bound in Runes", body: "Visit the 🏪 Market's Enchanting bench and put an enchant on a piece you intend to keep.", highlight: "market", done: (c) => !!c.seen?.enchanting },
+  { id: "bestiary", level: 32, title: "Know the Enemy", body: "Open the Bestiary in the 🍺 Tavern. What you have killed is recorded, and what it drops with it.", highlight: "quests", done: (c) => !!c.seen?.bestiary },
+  { id: "skillmod", level: 35, title: "Reshape a Skill", body: "Visit the ⛪ Class Hall's Skill Mods and change what one of your abilities does.", highlight: "classhall", done: (c) => !!c.seen?.skillmods },
+  { id: "temper", level: 38, title: "The Forge Heat", body: "Visit the 🏪 Market's Tempering Forge. Every failure raises the next attempt until the rank is guaranteed — read the odds before you spend.", highlight: "market", done: (c) => !!c.seen?.temper },
+
+  // --- other people. Visiting only: none of these lessons queues the player for anything. -------
+  { id: "guild", level: 40, title: "Not Alone", body: "Run the Training Delve at 🏛️ The Guild. A practice party of four, no lockout and nothing at stake — learn to interrupt, hold a role and survive a boss before a real group depends on you.", highlight: "guild", done: (c) => !!c.tutorial?.delveCleared },
+  { id: "arena", level: 45, title: "The Sands", body: "Fight a Practice Duel at the ⚔️ Arena. An unranked bout against a training partner — nothing is recorded, win or lose.", highlight: "arena", done: (c) => !!c.tutorial?.duelDone },
+  { id: "mail", level: 48, title: "The Courier", body: "Check your 📬 Mail. Auction sales and overflow from a full bank arrive here.", highlight: "auction", done: (c) => !!c.seen?.mail },
+
+  // --- the handover to Hard Mode ------------------------------------------------------------------
+  { id: "supply", level: 52, title: "Lay In Supplies", body: "Visit the 🍺 Tavern's Supply Run. Consumables are no longer optional from here on.", highlight: "quests", done: (c) => !!c.seen?.supply },
+  { id: "hardprep", level: 58, title: "Before the Threshold", body: "Hard Mode judges item level, your rotation and your potions — all three. Check your 🛡️ Armory and make sure every slot is filled before you cross.", highlight: "gear", done: (c) => !!c.seen?.gear && (c.level || 1) >= 59 },
 ];
-const COMBAT_TUTORIAL_IDS = ["fight", "hunt"]; // tutorial steps that progress through combat
-const tutorialStep = (c) => (c.tutorial && !c.tutorial.done) ? TUTORIAL_STEPS[Math.min(c.tutorial.step || 0, TUTORIAL_STEPS.length - 1)] : null;
-const tutorialHighlight = (c) => { const s = tutorialStep(c); return s ? s.highlight : null; };
+// Kept as the old name so nothing that referenced the opening run breaks.
+const TUTORIAL_STEPS = LESSONS;
+const COMBAT_TUTORIAL_IDS = ["fight", "hunt", "dungeon"]; // lessons that progress through combat
+// The lowest-level lesson the player has unlocked and not finished. Level gates it, so a lesson for
+// a system that is still locked never appears — and a player who levels past several at once is
+// walked through them in order rather than having them silently skipped.
+const lessonDone = (c, l) => !!((c.tutorial || {}).doneIds || {})[l.id];
+// A gate may be a function so it can read a constant declared further down this file rather than
+// restating the number. Duplicated constants drifting apart is the bug this codebase keeps finding.
+const lessonLevel = (l) => (typeof l.level === "function" ? l.level() : l.level);
+const activeLesson = (c) => {
+  if (!c) return null;
+  const lvl = c.level || 1;
+  return LESSONS.find((l) => lessonLevel(l) <= lvl && !lessonDone(c, l)) || null;
+};
+const lessonsComplete = (c) => LESSONS.filter((l) => lessonDone(c, l)).length;
+const tutorialStep = activeLesson;
+const tutorialHighlight = (c) => { const s = activeLesson(c); return s ? s.highlight : null; };
 
 
 // ---------- PROFESSIONS ----------
@@ -999,12 +1068,41 @@ const SCORE_STATS = ["str", "agi", "int", "sta", "armor", "leech", "resil", "ver
 // ============================================================
 // One tunable block. Temper/reroll state rides on the item itself, so all costs
 // reset per-item automatically; fail stacks live on the character (transferable).
+//
+// THE LADDER. Every failed attempt raises the chance of the next one until the rank is GUARANTEED,
+// so a rank can never be walled off by dice alone. What was measured before this shipped, pushing
+// one piece from +0 to +10 over 20,000 runs at the endgame income of 13,180 gold an hour:
+//
+//   the old rules, unprotected   63,745,000g   4,836 h   15 items destroyed (p90: 50)
+//   the old rules, protected     11,085,000g     841 h    1 item      · 1,015 Ven
+//   this ladder, unprotected      2,673,000g     203 h    1 item  (p90: 2)
+//
+// De-ranking is gone. It is the one failure that can undo paid progress, and it fought the pity
+// directly — a de-rank threw away the very stacks that were meant to rescue the attempt.
+//
+// Destruction now fires ONLY on a failed attempt, and at a fraction of the old rate. The two used
+// to be independent rolls, so a SUCCESS could still destroy the item, and the shop displayed
+// success/de-rank/destroy figures that summed to 121% because no single roll produced them.
+//
+// The rates cannot be raised much without breaking the pity outright: at the old 60% destroy the
+// piece is gone in under two attempts, long before a 1% base chance has climbed anywhere. That
+// combination was measured at 3.27 BILLION gold and 686 items destroyed. Pity is only worth
+// anything if the item survives to collect it.
 const TEMPER_CFG = {
   maxRank: 10,
-  safeMax: 5,               // reaching ranks 1..5 is guaranteed (no destroy / no derank)
-  cost: { 1: 10000, 2: 25000, 3: 55000, 4: 95000, 5: 150000, 6: 275000, 7: 450000, 8: 650000, 9: 850000, 10: 1000000 },
-  odds: { 6: [0.01, 0.30], 7: [0.10, 0.40], 8: [0.20, 0.50], 9: [0.35, 0.60], 10: [0.60, 0.35] }, // [destroy, derank] per target rank
-  protectVen: { 6: 10, 7: 20, 8: 40, 9: 80, 10: 160 },   // Ven to negate DESTRUCTION only (doubles each rank)
+  safeMax: 5,               // reaching ranks 1..5 is guaranteed (no destroy, no risk at all)
+  cost: { 1: 2000, 2: 5000, 3: 10000, 4: 18000, 5: 28000, 6: 50000, 7: 80000, 8: 120000, 9: 150000, 10: 180000 },
+  // Per risky rank: base chance, failures that GUARANTEE it, and the chance a FAILED attempt
+  // destroys the piece. The step is derived from `pity` rather than listed, so the guarantee
+  // cannot drift away from the number shown to the player.
+  ladder: {
+    6:  { p0: 0.50, pity: 5,  destroy: 0.00 },
+    7:  { p0: 0.35, pity: 8,  destroy: 0.01 },
+    8:  { p0: 0.20, pity: 12, destroy: 0.02 },
+    9:  { p0: 0.10, pity: 16, destroy: 0.03 },
+    10: { p0: 0.01, pity: 20, destroy: 0.04 },
+  },
+  protectVen: { 6: 5, 7: 8, 8: 12, 9: 18, 10: 25 },       // Ven to negate DESTRUCTION, the only failure left
   grantAtRank: (r) => (r === 10 ? 6 : 1),                 // stat points added to each secondary line on success → +5 at +5, +15 at +10
   failStackPct: 0.04,       // 4% double-chance per stack → 25 stacks = guaranteed
   failStackMax: 25,
@@ -1026,6 +1124,21 @@ const rollRerollValue = (ilvl, rarityId, stat) => { const [lo, hi] = rerollRange
 const temperCost = (targetRank) => TEMPER_CFG.cost[targetRank] || 0;
 const rerollCost = (rerollsDone) => { const { start, max, rampRolls } = TEMPER_CFG.reroll; const n = Math.min(rerollsDone, rampRolls - 1); return Math.round(start + (max - start) * (n / (rampRolls - 1))); };
 const doubleChanceFor = (stacks) => Math.min(1, (stacks || 0) * TEMPER_CFG.failStackPct);
+// Pity is held ON THE ITEM and KEYED BY TARGET RANK, which is what stops it being laundered.
+// A character-wide counter could be farmed on cheap +5→+6 attempts and spent on +9→+10, and a
+// counter shared across ranks would do the same thing within one piece. It is lost when the piece
+// is destroyed — that loss is the stake the risk is there to provide.
+const temperPityAt = (it, target) => Math.max(0, Math.floor(((it && it.pity) || {})[target] || 0));
+// What an attempt at `target` actually looks like right now. One roll, so the numbers a player
+// reads are the numbers that get rolled.
+function temperOdds(it, target) {
+  const st = TEMPER_CFG.ladder[target];
+  if (!st) return { chance: 1, destroy: 0, stacks: 0, cap: 0, left: 0, step: 0, safe: true };
+  const step = (1 - st.p0) / st.pity;
+  const stacks = temperPityAt(it, target);
+  const chance = Math.min(1, st.p0 + step * stacks);
+  return { chance, destroy: st.destroy, stacks, cap: st.pity, left: Math.max(0, st.pity - stacks), step, safe: false };
+}
 // lazily capture an item's secondary lines + temper fields (base stats → discrete lines) on first shop use
 function ensureTemperData(it) {
   if (!Array.isArray(it.lines)) it.lines = SECONDARY_KEYS.filter((k) => (it.stats[k] || 0) > 0).map((k) => ({ stat: k, base: it.stats[k] }));
@@ -1034,6 +1147,7 @@ function ensureTemperData(it) {
   if (!Array.isArray(it.temperLog)) it.temperLog = [];
   if (typeof it.rerolls !== "number") it.rerolls = 0;
   if (typeof it.linesIlvl !== "number") it.linesIlvl = it.ilvl || 1;
+  if (!it.pity || typeof it.pity !== "object" || Array.isArray(it.pity)) it.pity = {};
   return it;
 }
 // fold lines + temper bonus back into it.stats (kept as the single source of truth for scoring/combat/tooltips)
@@ -2531,7 +2645,16 @@ function TownHub({ onEnter, highlight, charLevel = 1 }) {
 }
 function GameScreen({ character: initChar, onSave, onBack }) {
   const [char, setChar] = useState(() => normalizeChar(initChar));
-  const [tab, setTab] = useState("town");
+  const [tab, setTabRaw] = useState("town");
+  // Every panel the player opens is recorded once, on `c.seen`. Lessons that only ask a player to
+  // LOOK at a system read this, so a new lesson costs one line in the table rather than a flag
+  // threaded through its screen — the old tutorial needed a bespoke field per step, which is why
+  // it only ever covered six of them.
+  const setTab = useCallback((t) => {
+    setTabRaw(t);
+    const c = charRef.current;
+    if (c && t && !(c.seen || {})[t]) commitChar({ ...c, seen: { ...(c.seen || {}), [t]: true } });
+  }, []);
   const navHistory = useRef([]);      // screen history for the back arrow
   const backNav = useRef(false);      // true while a back-navigation is in progress
   const lastTabRef = useRef("town");
@@ -2539,7 +2662,14 @@ function GameScreen({ character: initChar, onSave, onBack }) {
   const [showSettings, setShowSettings] = useState(false);
   const [worldTab, setWorldTab] = useState("zones");
   const [heroTab, setHeroTab] = useState("stats");
-  const [bagTab, setBagTab] = useState("equipment");
+  const [bagTab, setBagTabRaw] = useState("equipment");
+  // The Bank's sub-tabs are panels too — Gems in particular is a whole system that has no top-level
+  // tab, so a lesson keyed on it would otherwise never be satisfiable. Same recorder as setTab.
+  const setBagTab = useCallback((t) => {
+    setBagTabRaw(t);
+    const c = charRef.current;
+    if (c && t && !(c.seen || {})[t]) commitChar({ ...c, seen: { ...(c.seen || {}), [t]: true } });
+  }, []);
   // Track screen history so the back arrow returns to the previous screen (not always Town)
   useEffect(() => {
     if (lastTabRef.current !== tab) {
@@ -2917,27 +3047,35 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     showNotif(`${opt.icon} ${opt.name} learned!`);
     addLog(`🌟 Talent path chosen: ${opt.name}. Manage talents under the Hero's Statue.`, "#f0b429");
   };
-  // Tutorial auto-completes each objective once its condition is met, granting XP up to the stage's target level.
+  // A lesson completes the moment its condition is met. This used to watch three fields, which was
+  // enough for six steps keyed on kills and professions; the lessons now key on gear, upgrades,
+  // spec, talents and panels visited, so it watches the whole character instead. commitChar hands
+  // back a new object, so this runs once per change and settles.
   useEffect(() => {
     const c = charRef.current;
-    if (!c || !c.tutorial || c.tutorial.done) return;
-    const idx = Math.min(c.tutorial.step || 0, TUTORIAL_STEPS.length - 1);
-    const step = TUTORIAL_STEPS[idx];
-    if (!step || !step.done(c)) return;
-    // grant the XP for that level band (0 = none) and any item reward
-    let nc = step.forLevel ? applyXp({ ...c }, xpForLevel(step.forLevel)) : { ...c };
-    let rewardMsg = step.forLevel ? `+${xpForLevel(step.forLevel)} XP` : "";
-    if (step.reward?.heal) {
+    if (!c) return;
+    const lesson = activeLesson(c);
+    if (!lesson || !lesson.done(c)) return;
+    // The opening six carry their original level-band XP and item rewards. Later lessons pay a
+    // fifth of a level — a nudge for detouring, deliberately too small to move the levelling curve
+    // the 704-run sweep measured.
+    const xp = lesson.forLevel != null ? (lesson.forLevel ? xpForLevel(lesson.forLevel) : 0)
+                                       : Math.floor(xpForLevel(lessonLevel(lesson)) * 0.2);
+    let nc = xp ? applyXp({ ...c }, xp) : { ...c };
+    let rewardMsg = xp ? `+${xp.toLocaleString()} XP` : "";
+    if (lesson.reward?.heal) {
       const key = conKey("heal", 0);
-      nc = { ...nc, consumables: { ...nc.consumables, [key]: (nc.consumables[key] || 0) + step.reward.heal } };
-      rewardMsg = `+${step.reward.heal} Healing Potion I`;
+      nc = { ...nc, consumables: { ...nc.consumables, [key]: (nc.consumables[key] || 0) + lesson.reward.heal } };
+      rewardMsg = `+${lesson.reward.heal} Healing Potion I`;
     }
-    const next = (c.tutorial.step || 0) + 1;
-    nc = { ...nc, tutorial: { ...nc.tutorial, step: next, done: next >= TUTORIAL_STEPS.length } };
+    const doneIds = { ...((nc.tutorial || {}).doneIds || {}), [lesson.id]: true };
+    const allDone = LESSONS.every((l) => doneIds[l.id]);
+    nc = { ...nc, tutorial: { ...nc.tutorial, doneIds, step: Object.keys(doneIds).length, done: allDone } };
     commitChar(nc);
-    addLog(`✅ ${step.title} complete — ${rewardMsg}!`, "#f0b429");
-    showNotif(`✅ ${step.title}! ${rewardMsg}${next >= TUTORIAL_STEPS.length ? " · Tutorial complete!" : ""}`);
-  }, [char.kills, char.tutorial, char.professions]);
+    addLog(`✅ ${lesson.title} complete${rewardMsg ? " — " + rewardMsg : ""}!`, "#f0b429");
+    showNotif(`✅ ${lesson.title}!${rewardMsg ? " " + rewardMsg : ""}${allDone ? " · Every system learned!" : ""}`);
+  }, [char]);
+
   const [gatherTapCd, setGatherTapCd] = useState(0); // timestamp the manual swing is ready again
   const [, setGatherTick] = useState(0);             // forces re-render for the live cooldown countdown
   const setNode = (n) => { gatherNodeRef.current = n; setGatherNode(n); };
@@ -2992,6 +3130,9 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           next.temperBonus = it.temperBonus || 0;
           next.temperLog = Array.isArray(it.temperLog) ? it.temperLog : [];
           next.rerolls = it.rerolls || 0;
+          // Artifacts re-forge on every level change. Dropping the pity here would silently reset
+          // the ladder each time the player levelled, which is the one thing it must never do.
+          next.pity = (it.pity && typeof it.pity === "object" && !Array.isArray(it.pity)) ? { ...it.pity } : {};
           const ratio = it.linesIlvl > 0 ? want / it.linesIlvl : 1;
           next.lines = (it.lines || []).map((l) => ({ stat: l.stat, base: Math.max(1, Math.round(l.base * ratio)) }));
           next.linesIlvl = want;
@@ -3456,7 +3597,10 @@ function GameScreen({ character: initChar, onSave, onBack }) {
   };
 
   const finishKill = (c, bSnap) => {
-    if (bSnap && bSnap.pvp) { botCharRef.current = null; botMirrorRef.current = null; botTierRef.current = null; commitBattle(null); recordRated(true); addLog(`🏆 You defeated ${bSnap.ratedOpp?.name || "your rival"}!`, "#5fd35f"); setTab("arena"); return; }
+    if (bSnap && bSnap.pvp) { botCharRef.current = null; botMirrorRef.current = null; botTierRef.current = null; commitBattle(null);
+      if (bSnap.practice) { const pc = charRef.current; commitChar({ ...pc, tutorial: { ...(pc.tutorial || {}), duelDone: true } }); addLog(`🎯 Practice bout won against ${bSnap.ratedOpp?.name || "your partner"} — unranked, nothing recorded.`, "#5fd35f"); }
+      else { recordRated(true); addLog(`🏆 You defeated ${bSnap.ratedOpp?.name || "your rival"}!`, "#5fd35f"); }
+      setTab("arena"); return; }
     const res = resolveDeath(c, bSnap);
     commitChar(res.char);
     commitBattle(res.battle);
@@ -3493,7 +3637,16 @@ function GameScreen({ character: initChar, onSave, onBack }) {
   const applyDefeat = () => {
     const c = charRef.current; const b = battleRef.current;
     if (!b) return;
-    if (b.pvp) { botCharRef.current = null; botMirrorRef.current = null; botTierRef.current = null; guildRunRef.current = null; setGroupParty(null); commitChar({ ...c, hp: maxHpFor(c) }); commitBattle(null); recordRated(false); addLog(`💀 ${b.ratedOpp?.name || "Your rival"} bested you in the arena.`, "#e07a7a"); setTab("arena"); return; }
+    if (b.pvp) { botCharRef.current = null; botMirrorRef.current = null; botTierRef.current = null; guildRunRef.current = null; setGroupParty(null);
+      // A practice bout counts as learned whether it was won or lost — the lesson is the fight, not
+      // the result, and a player who cannot beat the partner must not be walled out of the game.
+      const base = { ...c, hp: maxHpFor(c) };
+      commitChar(b.practice ? { ...base, tutorial: { ...(base.tutorial || {}), duelDone: true } } : base);
+      commitBattle(null);
+      if (!b.practice) recordRated(false);
+      addLog(b.practice ? `🎯 ${b.ratedOpp?.name || "Your partner"} took that one — unranked, nothing recorded. Lesson learned.`
+                        : `💀 ${b.ratedOpp?.name || "Your rival"} bested you in the arena.`, "#e07a7a");
+      setTab("arena"); return; }
     // GROUP RUN death rule: an individual death does NOT fail the run. A living teammate battle-reses
     // you (limited charges). The run only fails on a true wipe — reses exhausted or every member down.
     if (guildRunRef.current && groupPartyRef.current) {
@@ -4053,6 +4206,43 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     setGroupRun({ trial: true, bossId, ilvl, size: 4, raid: false, bossDef: b, party: tp, bidParty: partyForBid(tp), label: b.name });
     setTab("group");
   };
+  // ---------- TUTORIAL DELVE + PRACTICE DUEL — bots only, and deliberately never online -------
+  //
+  // The Guild and Arena lessons used to be satisfied by opening the screen, which taught nothing:
+  // a player's first group boss was a real one, with three other people's time on the line, and
+  // their first arena bout went on their record.
+  //
+  // Both of these run ENTIRELY LOCALLY. mpProvider.connectEncounter is the only call that reaches
+  // the matchmaking server, and neither path touches it — the delve builds its party with
+  // buildTrinityPartyOfSize (the same local bots startTrial uses) and the duel builds its opponent
+  // with buildBotChar. So a player can learn group and rated play without ever occupying a real
+  // room or being matched against a real person.
+  const TUTORIAL_DELVE_ID = "tutorial_delve";
+  const startTutorialDelve = () => {
+    if (battleRef.current) { showNotif("Finish your current fight first"); return; }
+    const c = charRef.current;
+    // The boss scales to the player, so this reads the same at 40 as at 60. `guildBossDef` gives it
+    // the full teaching kit: a tank-buster, an interruptible cast and raid-wide damage.
+    const ilvl = Math.max(1, avgEquippedIlvl(c) || Math.min(63, (c.level || 40) + 3));
+    const content = { id: TUTORIAL_DELVE_ID, name: "The Training Delve", boss: "Drillmaster Vane" };
+    const bossDef = { ...guildBossDef(content, "dungeon", c.level || 40),
+      desc: "A practice bout. Interrupt the cast, keep the party alive, and nothing here is recorded." };
+    setGroupRun({ tutorialDelve: true, bossId: TUTORIAL_DELVE_ID, ilvl, size: 4, raid: false, bossDef,
+      party: buildTrinityPartyOfSize(c, ilvl, 4), bidParty: null, label: "Training Delve (practice)" });
+    setTab("group");
+    addLog("🏛️ The Training Delve — a practice party. No lockout, no loot, nothing at stake.", "#8fd0e0");
+  };
+  const startTutorialDuel = () => {
+    if (battleRef.current) { showNotif("Finish your current fight first"); return; }
+    const c = charRef.current;
+    // An explicitly built bot, NOT mpProvider.findOpponent — that can hand back a snapshot of a
+    // real player, and a practice bout must never be fought against someone's actual character.
+    const cls = pick(CLASSES); const specs = specsFor(cls.id);
+    const opp = { name: "Sparring Partner " + mpName(), cls: cls.id, spec: specs.length ? pick(specs).id : null,
+                  rating: arenaRating(((c.mp || {}).lifetime || {}).wins || 0, ((c.mp || {}).lifetime || {}).losses || 0) };
+    startRatedMatch(opp, { practice: true });
+  };
+
   // ---------- online co-op: join the authoritative server's room ----------
   // The server owns the seed, the party and every tick. We wait for `assigned` (which names our
   // combatant) before opening the combat screen, so the UI always knows which ally is ours.
@@ -4081,6 +4271,15 @@ function GameScreen({ character: initChar, onSave, onBack }) {
   const onGroupCleared = () => {
     const run = groupRunRef.current; if (!run) return;
     let c = charRef.current;
+    // The Training Delve is a lesson, not content: it marks itself learned and stops. No lockout is
+    // charged, no loot rolls and no GDKP auction runs — a practice boss must not be a gold faucet,
+    // and it has no lockout to gate one.
+    if (run.tutorialDelve) {
+      commitChar({ ...c, tutorial: { ...(c.tutorial || {}), delveCleared: true } });
+      addLog("🏛️ Training Delve cleared. That is how a group fight works — the real ones drop loot.", "#8fd0e0");
+      showNotif("🏛️ Training Delve cleared!");
+      return;
+    }
     // Trials lock on the KILL, not on entry — the lockout gates rewards, not attempts.
     if (run.trial && run.bossId) {
       c = { ...c, trialCooldowns: { ...(c.trialCooldowns || {}), [run.bossId]: Date.now() + TRIAL_COOLDOWN } };
@@ -4266,7 +4465,10 @@ function GameScreen({ character: initChar, onSave, onBack }) {
   };
 
   // ---------- RATED PvP: a live duel vs a class-accurate bot that runs the real combat engine ----------
-  const startRatedMatch = (opp) => {
+  // `opts.practice` marks a TUTORIAL bout: same fight, same bot, but the result is not recorded
+  // and no Arena Token is paid. A player's first duel should not go on their permanent record.
+  const startRatedMatch = (opp, opts) => {
+    const practice = !!(opts && opts.practice);
     const c = charRef.current;
     if (battleRef.current) { showNotif("Finish your current fight first"); return; }
     const lvl = c.level || 60;
@@ -4286,9 +4488,11 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     botCharRef.current = bc; botTierRef.current = tier;
     // the bot's own battle view: bot=caster, player=target
     botMirrorRef.current = { pvp: true, enemy: { name: c.name, cls: c.cls, level: lvl, hp: maxHpFor(c), maxHp: maxHpFor(c) }, hp, maxHp: hp, playerEffects: [], enemyEffects: [], cooldowns: {}, res: 0, resQ: [], shardTicks: 0, playerNextAt: t + PLAYER_BASE_INTERVAL, nextGcd: t + 900 };
-    commitBattle({ mode: "pvp", pvp: true, ratedOpp: { name: opp.name, rating: oppRating, tier: tier.label, cls: opp.cls }, wave: 1, waves: 1, runStart: t, drPlayer: {}, drEnemy: {}, hp: maxHpFor(c), enemy: e, res: 0, resQ: [], shardTicks: 0, cooldowns: {}, playerEffects: [], enemyEffects: [], playerNextAt: t + PLAYER_BASE_INTERVAL, enemyNextAt: t + ENEMY_BASE_INTERVAL });
+    commitBattle({ mode: "pvp", pvp: true, practice, ratedOpp: { name: opp.name, rating: oppRating, tier: tier.label, cls: opp.cls }, wave: 1, waves: 1, runStart: t, drPlayer: {}, drEnemy: {}, hp: maxHpFor(c), enemy: e, res: 0, resQ: [], shardTicks: 0, cooldowns: {}, playerEffects: [], enemyEffects: [], playerNextAt: t + PLAYER_BASE_INTERVAL, enemyNextAt: t + ENEMY_BASE_INTERVAL });
     setTab("combat");
-    addLog(`⚔️ Rated Arena — ${opp.name}, a ${tier.label.toLowerCase()} ${clsInfo.name || opp.cls} (${oppRating}). They fight for real — bring your best.`, "#c8a0ff");
+    addLog(practice
+      ? `🎯 Practice Duel — ${opp.name}, a ${tier.label.toLowerCase()} ${clsInfo.name || opp.cls}. Unranked: win or lose, nothing is recorded.`
+      : `⚔️ Rated Arena — ${opp.name}, a ${tier.label.toLowerCase()} ${clsInfo.name || opp.cls} (${oppRating}). They fight for real — bring your best.`, "#c8a0ff");
   };
   const recordRated = (win) => {
     const c = charRef.current; const mp = c.mp || {};
@@ -4310,6 +4514,32 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     addLog("⏸ Retreated from combat.", "#888");
     commitBattle(null);
   };
+  // AUTO-RETREAT. Being handed a new lesson mid-fight used to mean reading it while something was
+  // hitting you. Levelling past a gate steps the player out of a solo fight first, keeping their
+  // current health, so the interruption can never cost a death.
+  // `undefined` means "not looked yet"; `null` means "looked, and there is no lesson open". They
+  // have to be distinguishable: a caught-up player sits on null, and null -> a new lesson is the
+  // single most common way a lesson arrives. Collapsing the two skipped exactly that case.
+  const lastLessonRef = useRef(undefined);
+  useEffect(() => {
+    const c = charRef.current;
+    const lesson = activeLesson(c);
+    const id = lesson ? lesson.id : null;
+    const prev = lastLessonRef.current;
+    lastLessonRef.current = id;
+    if (!id || prev === undefined || prev === id) return;   // first look, or the same lesson still open
+    if (COMBAT_TUTORIAL_IDS.includes(id)) return;          // this lesson IS the fight — do not yank them out
+    const b = battleRef.current;
+    if (!b) return;
+    // Never abandon group or instanced content on the player's behalf: a dungeon, raid or Guild run
+    // cannot be resumed where it left off, so retreating from one would cost far more than a death.
+    if (groupParty || guildRunRef.current || b.pvp || b.mode === "dungeon" || b.mode === "raid" || b.mode === "hard") return;
+    stopCombat();
+    setTab("town");
+    showNotif(`📜 New lesson: ${lesson.title} — withdrawn from combat`);
+    addLog(`📜 You withdraw to town: ${lesson.title}.`, "#f0b429");
+  }, [char, groupParty]);
+
   // can the remembered dungeon/raid be run right now (not locked out)?
   const instanceRunnable = (c, id) => { const inst = instanceById(id); if (!inst) return false; return inst.raid ? raidCooldownLeft(c, id) <= 0 : dungeonRunsLeft(c, id) > 0; };
   const reEnterInstance = () => { const inst = instanceById(lastDungeonId); if (!inst) return; if (inst.raid) startRaid(inst); else startDungeon(inst); };
@@ -4344,7 +4574,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
   };
   // use one consumable of a specific tier (defaults to the best tier you own)
   const useConsumable = (def, tier) => {
-    const c = charRef.current;
+    let c = charRef.current;
     const t = (tier == null) ? bestTier(c, def.id) : tier;
     if (t < 0 || conCount(c, def.id, t) <= 0) { showNotif("None left — brew or buy it"); return; }
     const key = conKey(def.id, t);
@@ -4365,6 +4595,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       if (cur >= mx) { showNotif("Already at full health"); return; }
       const healed = Math.min(mx, cur + Math.round(tierHeal(t) * gemPotionMult(c)));
       if (b) commitBattle({ ...b, hp: healed });
+      if (!c.tutorial?.drankPotion) c = { ...c, tutorial: { ...(c.tutorial || {}), drankPotion: true } };
       commitChar({ ...c, hp: healed, consumables: { ...c.consumables, [key]: c.consumables[key] - 1 } });
       setLastPotion(Date.now()); lastPotionRef.current = Date.now();
       addLog(`🧪 Drank ${def.name} ${roman} (+${healed - cur} HP)`, "#ff7766");
@@ -4605,36 +4836,36 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     if (venCost && (c.ven || 0) < venCost) { showNotif(`Need ${venCost} Ven to protect.`); return; }
     const item = ensureTemperData(cloneItem(it0));
     let gold = c.gold - cost, ven = (c.ven || 0) - venCost, fs = c.failStacks || 0;
-    // resolve outcome — destroy & derank are INDEPENDENT rolls; Ven negates destruction only
-    let outcome = "up";
-    if (risky) {
-      const [dP, rP] = TEMPER_CFG.odds[target];
-      const destroyHit = Math.random() < dP, derankHit = Math.random() < rP;
-      if (destroyHit && !useProtect) outcome = "destroy";
-      else if (destroyHit && useProtect) outcome = derankHit ? "derank" : "burn"; // saved; derank still lands
-      else if (derankHit) outcome = "derank";
-      else outcome = "up";
-    }
-    if (outcome === "up") {
+    // ONE roll against the chance the shop displayed. Success and destruction used to be separate
+    // independent rolls, which meant a successful temper could still destroy the piece.
+    const odds = risky ? temperOdds(item, target) : null;
+    const success = !risky || Math.random() < odds.chance;
+    if (success) {
       const doubled = Math.random() < doubleChanceFor(fs);
       const grant = TEMPER_CFG.grantAtRank(target) * (doubled ? 2 : 1);
       item.temperLog.push(grant);
       item.temper = item.temperLog.length;
       item.temperBonus = item.temperLog.reduce((a, b) => a + b, 0);
+      delete item.pity[target];   // the ladder for THIS rank is spent; higher ranks keep their own
       syncItemStats(item);
       if (item.artifact) item.shape = { ...(item.shape || {}), secs: item.lines.map((l) => l.stat) };
       commitChar(replaceItemInChar({ ...c, gold, ven, failStacks: 0 }, it0.id, item)); // success consumes fail stacks
       showNotif(doubled ? `✨ +${item.temper}! DOUBLE — +${grant}/line!` : `✨ Success! Now +${item.temper}`);
-    } else if (outcome === "derank") {
-      if (item.temperLog.length) { item.temperLog.pop(); item.temper = item.temperLog.length; item.temperBonus = item.temperLog.reduce((a, b) => a + b, 0); syncItemStats(item); }
-      commitChar(replaceItemInChar({ ...c, gold, ven, failStacks: fs + 1 }, it0.id, item));
-      showNotif(`💥 De-ranked to +${item.temper}. Fail stacks: ${fs + 1}`);
-    } else if (outcome === "burn") {
-      commitChar(replaceItemInChar({ ...c, gold, ven, failStacks: fs + 1 }, it0.id, item)); // protected, rank unchanged
-      showNotif(`🛡️ Protected — no change. Fail stacks: ${fs + 1}`);
+      return;
+    }
+    // A failure never takes a rank away any more. It buys a better chance at the next attempt,
+    // and — unless the piece is warded — carries the one risk left.
+    item.pity[target] = odds.stacks + 1;
+    const next = temperOdds(item, target);
+    const destroyed = !useProtect && Math.random() < odds.destroy;
+    if (destroyed) {
+      commitChar(replaceItemInChar({ ...c, gold, ven, failStacks: fs + 1 }, it0.id, null));
+      showNotif(`☠️ ${it0.name} was destroyed! Its forge progress is gone with it.`);
     } else {
-      commitChar(replaceItemInChar({ ...c, gold, ven, failStacks: fs + 1 }, it0.id, null)); // destroyed
-      showNotif(`☠️ ${it0.name} was destroyed! Fail stacks: ${fs + 1}`);
+      commitChar(replaceItemInChar({ ...c, gold, ven, failStacks: fs + 1 }, it0.id, item));
+      showNotif(next.chance >= 1
+        ? `🔥 Failed — but +${target} is now GUARANTEED on the next attempt.`
+        : `🔥 Failed. +${target} is now ${Math.round(next.chance * 100)}%${next.left ? ` · guaranteed in ${next.left}` : ""}`);
     }
   };
   const rerollLine = (srcItem, lineIdx) => {
@@ -5190,20 +5421,25 @@ function GameScreen({ character: initChar, onSave, onBack }) {
 
         {/* ============ TOWN HUB ============ */}
         {/* Tutorial quest banner — follows the player across every screen while active */}
-        {!char.tutorial?.done && (() => {
-          const tut = char.tutorial || { step: 0, done: false };
-          const step = TUTORIAL_STEPS[Math.min(tut.step || 0, TUTORIAL_STEPS.length - 1)];
+        {(() => {
+          const step = activeLesson(char);
           if (!step) return null;
+          const doneN = lessonsComplete(char);
+          const xp = step.forLevel != null ? (step.forLevel ? xpForLevel(step.forLevel) : 0)
+                                           : Math.floor(xpForLevel(lessonLevel(step)) * 0.2);
           return (
             <div style={{ background: "linear-gradient(135deg,#1a1535,#120f28)", border: "1.5px solid #f0b429", borderRadius: 12, padding: "12px 14px", marginBottom: 12, boxShadow: "0 0 14px #f0b42933" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
-                <span style={{ color: "#f0b429", fontFamily: "Georgia, serif", fontSize: 14, fontWeight: 700 }}>📜 Quest {(tut.step || 0) + 1}: {step.title}</span>
-                <span style={{ color: "#8a83b8", fontSize: 10 }}>{(tut.step || 0) + 1}/{TUTORIAL_STEPS.length}</span>
+                <span style={{ color: "#f0b429", fontFamily: "Georgia, serif", fontSize: 14, fontWeight: 700 }}>📜 Lesson {doneN + 1}: {step.title}</span>
+                <span style={{ color: "#8a83b8", fontSize: 10 }}>{doneN}/{LESSONS.length} · Lv {lessonLevel(step)}</span>
               </div>
               <div style={{ color: "#cbd3ea", fontSize: 12, lineHeight: 1.5, marginBottom: 8 }}>{step.body}</div>
+              <div style={{ height: 3, background: "#241c40", borderRadius: 2, overflow: "hidden", marginBottom: 8 }}>
+                <div style={{ width: `${Math.round((doneN / LESSONS.length) * 100)}%`, height: "100%", background: "linear-gradient(90deg,#8a6a1a,#f0b429)" }} />
+              </div>
               <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#f0d98a", fontSize: 11 }}>
                 <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "#f0b429", animation: "tutflash-sm 1.1s ease-in-out infinite" }} />
-                {tab === "town" ? "Follow the glowing signpost" : "🏰 Return to Town to find the glowing signpost"} · reward: {step.reward?.heal ? `${step.reward.heal} Healing Potion I` : `${xpForLevel(step.forLevel)} XP`}
+                {tab === "town" ? "Follow the glowing signpost" : "🏰 Return to Town to find the glowing signpost"} · reward: {step.reward?.heal ? `${step.reward.heal} Healing Potion I` : `${xp.toLocaleString()} XP`}
               </div>
             </div>
           );
@@ -6075,7 +6311,8 @@ function GameScreen({ character: initChar, onSave, onBack }) {
         })()}
 
         {tab === "arena" && (
-          <MultiplayerHub char={char} commitChar={commitChar} showNotif={showNotif} onExit={() => setTab("town")} onStartRated={startRatedMatch} />
+          <MultiplayerHub char={char} commitChar={commitChar} showNotif={showNotif} onExit={() => setTab("town")} onStartRated={startRatedMatch}
+            onStartPractice={startTutorialDuel} lessonWantsDuel={(activeLesson(char) || {}).id === "arena"} />
         )}
 
         {tab === "group" && (
@@ -6083,6 +6320,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
             bossId={groupRun ? undefined : groupBoss} bossDef={groupRun?.bossDef} party={groupRun?.party}
             label={groupRun?.label} onCleared={onGroupCleared}
             room={groupRun?.room} myAllyId={groupRun?.myAllyId} offlineReason={groupRun?.offlineReason}
+            practice={!!groupRun?.tutorialDelve}
             onExit={() => { try { groupRun?.room?.leave(); } catch { /* already gone */ } setGroupRun(null); setTab("guild"); }} />
         )}
 
@@ -6170,6 +6408,31 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                   </span>
                 </span>
               </div>
+              {/* The Training Delve sits ABOVE the real content, because it is what a player should
+                  run first. It flashes while its lesson is open, matching the town-map signpost. */}
+              {(() => {
+                const les = activeLesson(char);
+                const wanted = les && les.id === "guild";
+                const learned = !!char.tutorial?.delveCleared;
+                return (
+                  <button onClick={startTutorialDelve}
+                    style={{ width: "100%", textAlign: "left", background: "linear-gradient(135deg,#132030,#0e1622)",
+                      border: `1.5px solid ${wanted ? "#f0b429" : "#2a4a5a"}`, borderRadius: 12, padding: "12px 14px",
+                      marginBottom: 12, cursor: "pointer", display: "flex", alignItems: "center", gap: 12,
+                      animation: wanted ? "tutflash 1.4s ease-in-out infinite" : "none" }}>
+                    <span style={{ fontSize: 24 }}>🎯</span>
+                    <span style={{ flex: 1 }}>
+                      <span style={{ color: wanted ? "#f0b429" : "#8fd0e0", fontFamily: "Georgia, serif", fontSize: 14, fontWeight: 700, display: "block" }}>
+                        The Training Delve {learned ? <span style={{ color: "#5fd35f", fontSize: 11 }}>✓ cleared</span> : null}
+                      </span>
+                      <span style={{ color: "#9a93b3", fontSize: 11.5, lineHeight: 1.45, display: "block" }}>
+                        A practice party of four against a teaching boss. No lockout, no loot, nothing recorded —
+                        and it never occupies a real group.
+                      </span>
+                    </span>
+                  </button>
+                );
+              })()}
               <div style={{ color: "#f0b429", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, margin: "4px 0 6px" }}>Dungeons · 4 players · {GUILD_RUN_LIMIT} runs/hour</div>
               {DUNGEONS.map((d) => row(d, "dungeon", 4, char.level >= d.minLevel, `Lv ${d.minLevel}`))}
               {HARD_DUNGEONS.map((d) => row(d, "hard-dungeon", 4, hardDungeonUnlocked(char, avg, d), d.reqIlvl ? `ilvl ${d.reqIlvl}` : `${HARD_BOSS_REQ}× ${d.prevBoss || "prev"}`))}
@@ -6351,7 +6614,9 @@ function GameScreen({ character: initChar, onSave, onBack }) {
             <div style={{ display: "flex", gap: 8, marginBottom: 12, fontSize: 11.5 }}>
               <span style={{ color: "#FFD700" }}>💰 {char.gold.toLocaleString()}g</span>
               <span style={{ color: "#7fd0ff" }}>💎 {char.ven || 0}</span>
-              <span style={{ color: fs > 0 ? "#7CFC9E" : "#8a83b8", marginLeft: "auto" }}>🔥 {fs} fail stack{fs === 1 ? "" : "s"} · {dblPct}% double</span>
+              {/* Distinct from a piece's forge heat: this one is character-wide and pays a DOUBLE
+                  stat grant rather than a better chance, so it reads as its own counter. */}
+              <span style={{ color: fs > 0 ? "#7CFC9E" : "#8a83b8", marginLeft: "auto" }}>✨ {fs} lucky stack{fs === 1 ? "" : "s"} · {dblPct}% to double a grant</span>
             </div>
 
             {!sel && (
@@ -6359,12 +6624,18 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                 <div style={{ color: "#9a8a7a", fontSize: 11, marginBottom: 8 }}>Select a piece to temper or reroll. Relics can't be forged.</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
                   {items.length === 0 && <div style={{ color: "#555", fontSize: 12, textAlign: "center", padding: 20 }}>No forgeable gear.</div>}
-                  {items.map((it) => { const rc = rarityById(it.rarity).color; return (
+                  {items.map((it) => { const rc = rarityById(it.rarity).color;
+                    // Banked heat is real, paid-for progress. It has to be visible from the list,
+                    // or a player cannot tell which piece they were part-way through.
+                    const heat = (it.temper || 0) >= TEMPER_CFG.safeMax && (it.temper || 0) < TEMPER_CFG.maxRank
+                      ? temperOdds(it, (it.temper || 0) + 1) : null;
+                    return (
                     <button key={it.id} onClick={() => { setTemperSel(it.id); setTemperMode("temper"); setTemperProtect(false); }} style={{ textAlign: "left", background: "#120e0a", border: `1px solid ${rc}44`, borderLeft: `3px solid ${rc}`, borderRadius: 8, padding: "9px 11px", display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
                       <GameIcon icon={it.icon} size={22} />
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ color: rc, fontWeight: 700, fontSize: 12.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{it.name}{temperSuffix(it)}</div>
-                        <div style={{ color: "#8a83b8", fontSize: 10.5 }}>{slotById(it.slotId)?.name} · ilvl {it.ilvl}{it.rerolls ? ` · ${it.rerolls} rerolls` : ""}</div>
+                        <div style={{ color: "#8a83b8", fontSize: 10.5 }}>{slotById(it.slotId)?.name} · ilvl {it.ilvl}{it.rerolls ? ` · ${it.rerolls} rerolls` : ""}
+                          {heat && heat.stacks > 0 ? <span style={{ color: heat.chance >= 1 ? "#7CFC9E" : acc }}> · 🔥 {heat.chance >= 1 ? "next is guaranteed" : `${Math.round(heat.chance * 100)}% to +${(it.temper || 0) + 1}`}</span> : null}</div>
                       </div>
                       {it.temper ? <span style={{ color: acc, fontWeight: 800, fontSize: 13 }}>+{it.temper}</span> : null}
                     </button>
@@ -6396,11 +6667,11 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                   const target = tRank + 1;
                   const cost = temperCost(target);
                   const risky = tRank >= TEMPER_CFG.safeMax;
-                  const [dP, rP] = risky ? TEMPER_CFG.odds[target] : [0, 0];
+                  const odds = temperOdds(sel, target);
                   const protectOn = temperProtect && risky;
                   const venCost = risky ? (TEMPER_CFG.protectVen[target] || 0) : 0;
-                  const eDestroy = protectOn ? 0 : dP;
-                  const eSuccess = Math.round((1 - eDestroy) * (1 - rP) * 100);
+                  const eDestroy = protectOn ? 0 : odds.destroy;
+                  const eSuccess = Math.round(odds.chance * 100);
                   const grant = TEMPER_CFG.grantAtRank(target);
                   const canGold = char.gold >= cost, canVen = !protectOn || (char.ven || 0) >= venCost;
                   return (
@@ -6414,14 +6685,31 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                         <div style={{ background: "#122015", border: "1px solid #2e5a3a", borderRadius: 8, padding: "8px 10px", marginBottom: 10, color: "#7CFC9E", fontSize: 12, fontWeight: 700, textAlign: "center" }}>✓ Safe — guaranteed success (no risk until +5)</div>
                       ) : (
                         <div style={{ background: "#160e0a", border: "1px solid #3a2418", borderRadius: 8, padding: "8px 10px", marginBottom: 10 }}>
-                          {pctRow("Success", `${eSuccess}%`, "#7CFC9E")}
-                          {pctRow("De-rank (−1)", `${Math.round(rP * 100)}%`, "#e0a955")}
-                          {pctRow(protectOn ? "Destroy (protected)" : "Destroy (item lost)", protectOn ? "0%" : `${Math.round(dP * 100)}%`, protectOn ? "#7fd0ff" : "#e0455a")}
+                          {pctRow("Success", odds.chance >= 1 ? "GUARANTEED" : `${eSuccess}%`, "#7CFC9E")}
+                          {/* There is no failure to have a consequence once the ladder is full, so
+                              quoting a destroy chance here would just be frightening and untrue. */}
+                          {odds.chance < 1 && pctRow("On failure — destroyed", protectOn ? "0% (warded)" : `${Math.round(eDestroy * 100)}%`, protectOn ? "#7fd0ff" : "#e0455a")}
+                          <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid #2a1e14" }}>
+                            {odds.chance >= 1
+                              ? <div style={{ color: "#7CFC9E", fontSize: 11.5, fontWeight: 700, textAlign: "center" }}>🔥 The forge is ready — this attempt cannot fail.</div>
+                              : <>
+                                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#9a93b3", marginBottom: 4 }}>
+                                    <span>🔥 Forge heat · {odds.stacks} / {odds.cap} failures</span>
+                                    <span style={{ color: acc }}>+{Math.round(odds.step * 100)}% each</span>
+                                  </div>
+                                  <div style={{ height: 5, background: "#241810", borderRadius: 3, overflow: "hidden" }}>
+                                    <div style={{ width: `${Math.round((odds.stacks / odds.cap) * 100)}%`, height: "100%", background: `linear-gradient(90deg,#8a4a1a,${acc})` }} />
+                                  </div>
+                                  <div style={{ color: "#8a7a6a", fontSize: 10.5, marginTop: 4 }}>
+                                    Guaranteed after {odds.left} more failure{odds.left === 1 ? "" : "s"}. Heat is kept on this piece, for this rank only — and is lost if it is destroyed.
+                                  </div>
+                                </>}
+                          </div>
                         </div>
                       )}
                       {risky && (
                         <button onClick={() => setTemperProtect((v) => !v)} style={{ width: "100%", background: protectOn ? "#12203a" : "#140e0a", border: `1.5px solid ${protectOn ? "#7fd0ff" : "#3a2a1e"}`, borderRadius: 8, color: protectOn ? "#7fd0ff" : "#9a8a7a", fontSize: 11.5, fontWeight: 700, padding: "8px", cursor: "pointer", marginBottom: 10 }}>
-                          🛡️ {protectOn ? "Protected" : "Protect"} · {venCost} 💎 Ven {protectOn ? "(blocks destruction, not de-rank)" : ""}
+                          🛡️ {protectOn ? "Warded" : "Ward"} · {venCost} 💎 Ven {protectOn ? "(a failure costs the gold, never the piece)" : ""}
                         </button>
                       )}
                       <button onClick={() => temperItem(sel, protectOn)} disabled={!canGold || !canVen} style={{ width: "100%", background: canGold && canVen ? `linear-gradient(135deg,#3a2410,#5a3a12)` : "#15130f", border: `2px solid ${canGold && canVen ? acc : "#3a3520"}`, borderRadius: 10, color: canGold && canVen ? acc : "#6a6450", fontSize: 14, fontWeight: 800, padding: 12, cursor: canGold && canVen ? "pointer" : "default" }}>
@@ -8418,7 +8706,7 @@ const partyForBid = (party) => (party || []).map((p, i) => p.isHuman
 // one: the server owns every tick and this renders its snapshots, sending intents instead of
 // mutating state. Everything below the data layer — targeting, the action bar, telegraphs —
 // is identical either way, because both sides run the same game-core.
-function GroupCombat({ char, commitChar, onExit, bossId, bossDef, ilvl, party, onCleared, label, room, myAllyId: myAllyIdProp, offlineReason }) {
+function GroupCombat({ char, commitChar, onExit, bossId, bossDef, ilvl, party, onCleared, label, room, myAllyId: myAllyIdProp, offlineReason, practice }) {
   const networked = !!room;
   // Which combatant is ours arrives with the server's `assigned` message at start, and the
   // lobby tells us who else is waiting. Both are held here so the screen can be opened the
@@ -8475,7 +8763,10 @@ function GroupCombat({ char, commitChar, onExit, bossId, bossDef, ilvl, party, o
     rewarded.current = true;
     // Online clears are paid by the server (rewards.mjs → Supabase mail); paying locally too
     // would hand out the gold twice.
-    if (!networked) { const gold = 400 + (char.level || 60) * 25; commitChar({ ...char, gold: (char.gold || 0) + gold }); }
+    // A clear pays a flat purse offline. The Training Delve must NOT: it has no lockout, so paying
+    // it would make a practice boss an unlimited gold faucet — measured at 1,400g a clear against
+    // an endgame income of 13,180 an hour, which is several times the best farm in the game.
+    if (!networked && !practice) { const gold = 400 + (char.level || 60) * 25; commitChar({ ...char, gold: (char.gold || 0) + gold }); }
     if (onCleared) onCleared(enc);
   }, [enc?.cleared]);
   if (!enc) return (
@@ -8645,7 +8936,7 @@ function GroupCombat({ char, commitChar, onExit, bossId, bossDef, ilvl, party, o
   );
 }
 
-function MultiplayerHub({ char, commitChar, showNotif, onExit, onStartRated }) {
+function MultiplayerHub({ char, commitChar, showNotif, onExit, onStartRated, onStartPractice, lessonWantsDuel }) {
   const cls = CLASSES.find((c) => c.id === char.cls) || {};
   const myPower = mpPowerOf(char);
   const myDps = Math.max(1, Math.round(offlinePlayerDps(char)));
@@ -9069,7 +9360,23 @@ function MultiplayerHub({ char, commitChar, showNotif, onExit, onStartRated }) {
               <button onClick={findMatch} style={{ ...btnPrimary, margin: 0 }}>Queue again</button>
             </div>
           ) : (
-            <button onClick={findMatch} style={{ ...btnPrimary, margin: 0 }}>⚔️ Find match</button>
+            <>
+              {/* A first bout should not go on a permanent record. This one is fought against an
+                  explicitly built bot — never mpProvider.findOpponent, which can return a real
+                  player's loadout — and neither a win nor a loss is recorded. */}
+              <button onClick={onStartPractice} disabled={!onStartPractice}
+                style={{ width: "100%", background: "linear-gradient(135deg,#132030,#0e1622)",
+                  border: `1.5px solid ${lessonWantsDuel ? "#f0b429" : "#2a4a5a"}`, borderRadius: 10,
+                  color: lessonWantsDuel ? "#f0b429" : "#8fd0e0", fontSize: 13, fontWeight: 700,
+                  padding: "11px", cursor: "pointer", marginBottom: 8,
+                  animation: lessonWantsDuel ? "tutflash 1.4s ease-in-out infinite" : "none" }}>
+                🎯 Practice Duel {char.tutorial?.duelDone ? "✓" : ""}
+                <span style={{ display: "block", color: "#8a83b8", fontSize: 10, fontWeight: 400, marginTop: 2 }}>
+                  Unranked, against a training partner. Nothing is recorded, win or lose.
+                </span>
+              </button>
+              <button onClick={findMatch} style={{ ...btnPrimary, margin: 0 }}>⚔️ Find match</button>
+            </>
           )}
         </div>
       )}

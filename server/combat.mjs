@@ -1719,7 +1719,8 @@ const createCharacter = (name, cls, race) => {
     tickets: { dungeonReset: 0, arenaChallenge: 0 },
     auras: { xp: 0, gold: 0 },
     quests: { board: [] },
-    tutorial: { step: 0, done: false },
+    tutorial: { step: 0, done: false, doneIds: {} },
+    seen: {},
     buffs: {},
     hp: 0,
     createdAt: Date.now(),
@@ -1792,6 +1793,35 @@ const refundStrayScalingPoints = (c) => {
   if (physScalingStat(c.cls) !== "agi" || !(allocated.str > 0)) return { attrPoints, allocated };
   return { attrPoints: attrPoints + allocated.str, allocated: { ...allocated, str: 0 } };
 };
+// The tutorial used to be six steps tracked by an index. It is now a level-gated lesson per system,
+// tracked by id, so a save carrying the old shape has to be brought across: a player who finished
+// the opening run must not be marched through it again, and one part-way through keeps their steps.
+//
+// These are the ids of the opening six, in order. TUTORIAL_STEP_IDS is exported so the lesson table
+// in App.jsx can be pinned to it — a rename on one side and not the other would silently re-run the
+// tutorial for every existing player, and nothing else would notice.
+export const TUTORIAL_STEP_IDS = ["fight", "shop", "gear", "hunt", "trade", "bounty"];
+export function normalizeTutorial(c) {
+  const t = (c && c.tutorial && typeof c.tutorial === "object" && !Array.isArray(c.tutorial)) ? c.tutorial : null;
+  if (!t) {
+    // No tutorial block at all. A character that has already played is not a new one: credit the
+    // opening six rather than interrupting a level-40 hero with "defeat a monster".
+    const played = !!(c && ((c.level || 1) > 1 || (c.kills || 0) > 0));
+    const doneIds = {};
+    if (played) for (const id of TUTORIAL_STEP_IDS) doneIds[id] = true;
+    return { step: played ? TUTORIAL_STEP_IDS.length : 0, done: false, doneIds };
+  }
+  if (t.doneIds && typeof t.doneIds === "object" && !Array.isArray(t.doneIds))
+    return { ...t, done: !!t.done, doneIds: t.doneIds };
+  // Old shape: an index into the six, plus `done` meaning "finished all six".
+  const doneIds = {};
+  const upTo = t.done ? TUTORIAL_STEP_IDS.length : Math.max(0, Math.min(TUTORIAL_STEP_IDS.length, t.step || 0));
+  for (let i = 0; i < upTo; i++) doneIds[TUTORIAL_STEP_IDS[i]] = true;
+  // `done` now means every LESSON is finished, which an old save cannot have been. Clearing it is
+  // what lets the later lessons appear at all.
+  return { ...t, step: upTo, done: false, doneIds };
+}
+
 const normalizeChar = (c) => ({
   ...c,
   gold: c.gold || 0, kills: c.kills || 0, bossKills: c.bossKills || 0, dungeonClears: c.dungeonClears || 0,
@@ -1883,7 +1913,8 @@ const normalizeChar = (c) => ({
   tickets: { dungeonReset: (c.tickets && c.tickets.dungeonReset) || 0, arenaChallenge: (c.tickets && c.tickets.arenaChallenge) || 0 },
   auras: { xp: (c.auras && c.auras.xp) || 0, gold: (c.auras && c.auras.gold) || 0 },
   quests: { board: (c.quests && c.quests.board) || [] },
-  tutorial: c.tutorial || { step: 0, done: (c.level || 1) > 1 || (c.kills || 0) > 0 },
+  tutorial: normalizeTutorial(c),
+  seen: (c.seen && typeof c.seen === "object" && !Array.isArray(c.seen)) ? c.seen : {},
   consumables: (() => { const src = c.consumables || {}; const out = {}; const t = Math.min(6, Math.max(0, Math.floor((c.level || 1) / 10))); for (const k in src) { const v = src[k]; if (!v) continue; if (k.includes("@")) out[k] = (out[k] || 0) + v; else out[k + "@" + t] = (out[k + "@" + t] || 0) + v; } return out; })(),
   buffs: c.buffs || {},
   hp: typeof c.hp === "number" ? c.hp : maxHpFor(c),

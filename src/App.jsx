@@ -999,12 +999,41 @@ const SCORE_STATS = ["str", "agi", "int", "sta", "armor", "leech", "resil", "ver
 // ============================================================
 // One tunable block. Temper/reroll state rides on the item itself, so all costs
 // reset per-item automatically; fail stacks live on the character (transferable).
+//
+// THE LADDER. Every failed attempt raises the chance of the next one until the rank is GUARANTEED,
+// so a rank can never be walled off by dice alone. What was measured before this shipped, pushing
+// one piece from +0 to +10 over 20,000 runs at the endgame income of 13,180 gold an hour:
+//
+//   the old rules, unprotected   63,745,000g   4,836 h   15 items destroyed (p90: 50)
+//   the old rules, protected     11,085,000g     841 h    1 item      · 1,015 Ven
+//   this ladder, unprotected      2,673,000g     203 h    1 item  (p90: 2)
+//
+// De-ranking is gone. It is the one failure that can undo paid progress, and it fought the pity
+// directly — a de-rank threw away the very stacks that were meant to rescue the attempt.
+//
+// Destruction now fires ONLY on a failed attempt, and at a fraction of the old rate. The two used
+// to be independent rolls, so a SUCCESS could still destroy the item, and the shop displayed
+// success/de-rank/destroy figures that summed to 121% because no single roll produced them.
+//
+// The rates cannot be raised much without breaking the pity outright: at the old 60% destroy the
+// piece is gone in under two attempts, long before a 1% base chance has climbed anywhere. That
+// combination was measured at 3.27 BILLION gold and 686 items destroyed. Pity is only worth
+// anything if the item survives to collect it.
 const TEMPER_CFG = {
   maxRank: 10,
-  safeMax: 5,               // reaching ranks 1..5 is guaranteed (no destroy / no derank)
-  cost: { 1: 10000, 2: 25000, 3: 55000, 4: 95000, 5: 150000, 6: 275000, 7: 450000, 8: 650000, 9: 850000, 10: 1000000 },
-  odds: { 6: [0.01, 0.30], 7: [0.10, 0.40], 8: [0.20, 0.50], 9: [0.35, 0.60], 10: [0.60, 0.35] }, // [destroy, derank] per target rank
-  protectVen: { 6: 10, 7: 20, 8: 40, 9: 80, 10: 160 },   // Ven to negate DESTRUCTION only (doubles each rank)
+  safeMax: 5,               // reaching ranks 1..5 is guaranteed (no destroy, no risk at all)
+  cost: { 1: 2000, 2: 5000, 3: 10000, 4: 18000, 5: 28000, 6: 50000, 7: 80000, 8: 120000, 9: 150000, 10: 180000 },
+  // Per risky rank: base chance, failures that GUARANTEE it, and the chance a FAILED attempt
+  // destroys the piece. The step is derived from `pity` rather than listed, so the guarantee
+  // cannot drift away from the number shown to the player.
+  ladder: {
+    6:  { p0: 0.50, pity: 5,  destroy: 0.00 },
+    7:  { p0: 0.35, pity: 8,  destroy: 0.01 },
+    8:  { p0: 0.20, pity: 12, destroy: 0.02 },
+    9:  { p0: 0.10, pity: 16, destroy: 0.03 },
+    10: { p0: 0.01, pity: 20, destroy: 0.04 },
+  },
+  protectVen: { 6: 5, 7: 8, 8: 12, 9: 18, 10: 25 },       // Ven to negate DESTRUCTION, the only failure left
   grantAtRank: (r) => (r === 10 ? 6 : 1),                 // stat points added to each secondary line on success → +5 at +5, +15 at +10
   failStackPct: 0.04,       // 4% double-chance per stack → 25 stacks = guaranteed
   failStackMax: 25,
@@ -1026,6 +1055,21 @@ const rollRerollValue = (ilvl, rarityId, stat) => { const [lo, hi] = rerollRange
 const temperCost = (targetRank) => TEMPER_CFG.cost[targetRank] || 0;
 const rerollCost = (rerollsDone) => { const { start, max, rampRolls } = TEMPER_CFG.reroll; const n = Math.min(rerollsDone, rampRolls - 1); return Math.round(start + (max - start) * (n / (rampRolls - 1))); };
 const doubleChanceFor = (stacks) => Math.min(1, (stacks || 0) * TEMPER_CFG.failStackPct);
+// Pity is held ON THE ITEM and KEYED BY TARGET RANK, which is what stops it being laundered.
+// A character-wide counter could be farmed on cheap +5→+6 attempts and spent on +9→+10, and a
+// counter shared across ranks would do the same thing within one piece. It is lost when the piece
+// is destroyed — that loss is the stake the risk is there to provide.
+const temperPityAt = (it, target) => Math.max(0, Math.floor(((it && it.pity) || {})[target] || 0));
+// What an attempt at `target` actually looks like right now. One roll, so the numbers a player
+// reads are the numbers that get rolled.
+function temperOdds(it, target) {
+  const st = TEMPER_CFG.ladder[target];
+  if (!st) return { chance: 1, destroy: 0, stacks: 0, cap: 0, left: 0, step: 0, safe: true };
+  const step = (1 - st.p0) / st.pity;
+  const stacks = temperPityAt(it, target);
+  const chance = Math.min(1, st.p0 + step * stacks);
+  return { chance, destroy: st.destroy, stacks, cap: st.pity, left: Math.max(0, st.pity - stacks), step, safe: false };
+}
 // lazily capture an item's secondary lines + temper fields (base stats → discrete lines) on first shop use
 function ensureTemperData(it) {
   if (!Array.isArray(it.lines)) it.lines = SECONDARY_KEYS.filter((k) => (it.stats[k] || 0) > 0).map((k) => ({ stat: k, base: it.stats[k] }));
@@ -1034,6 +1078,7 @@ function ensureTemperData(it) {
   if (!Array.isArray(it.temperLog)) it.temperLog = [];
   if (typeof it.rerolls !== "number") it.rerolls = 0;
   if (typeof it.linesIlvl !== "number") it.linesIlvl = it.ilvl || 1;
+  if (!it.pity || typeof it.pity !== "object" || Array.isArray(it.pity)) it.pity = {};
   return it;
 }
 // fold lines + temper bonus back into it.stats (kept as the single source of truth for scoring/combat/tooltips)
@@ -2992,6 +3037,9 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           next.temperBonus = it.temperBonus || 0;
           next.temperLog = Array.isArray(it.temperLog) ? it.temperLog : [];
           next.rerolls = it.rerolls || 0;
+          // Artifacts re-forge on every level change. Dropping the pity here would silently reset
+          // the ladder each time the player levelled, which is the one thing it must never do.
+          next.pity = (it.pity && typeof it.pity === "object" && !Array.isArray(it.pity)) ? { ...it.pity } : {};
           const ratio = it.linesIlvl > 0 ? want / it.linesIlvl : 1;
           next.lines = (it.lines || []).map((l) => ({ stat: l.stat, base: Math.max(1, Math.round(l.base * ratio)) }));
           next.linesIlvl = want;
@@ -4605,36 +4653,36 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     if (venCost && (c.ven || 0) < venCost) { showNotif(`Need ${venCost} Ven to protect.`); return; }
     const item = ensureTemperData(cloneItem(it0));
     let gold = c.gold - cost, ven = (c.ven || 0) - venCost, fs = c.failStacks || 0;
-    // resolve outcome — destroy & derank are INDEPENDENT rolls; Ven negates destruction only
-    let outcome = "up";
-    if (risky) {
-      const [dP, rP] = TEMPER_CFG.odds[target];
-      const destroyHit = Math.random() < dP, derankHit = Math.random() < rP;
-      if (destroyHit && !useProtect) outcome = "destroy";
-      else if (destroyHit && useProtect) outcome = derankHit ? "derank" : "burn"; // saved; derank still lands
-      else if (derankHit) outcome = "derank";
-      else outcome = "up";
-    }
-    if (outcome === "up") {
+    // ONE roll against the chance the shop displayed. Success and destruction used to be separate
+    // independent rolls, which meant a successful temper could still destroy the piece.
+    const odds = risky ? temperOdds(item, target) : null;
+    const success = !risky || Math.random() < odds.chance;
+    if (success) {
       const doubled = Math.random() < doubleChanceFor(fs);
       const grant = TEMPER_CFG.grantAtRank(target) * (doubled ? 2 : 1);
       item.temperLog.push(grant);
       item.temper = item.temperLog.length;
       item.temperBonus = item.temperLog.reduce((a, b) => a + b, 0);
+      delete item.pity[target];   // the ladder for THIS rank is spent; higher ranks keep their own
       syncItemStats(item);
       if (item.artifact) item.shape = { ...(item.shape || {}), secs: item.lines.map((l) => l.stat) };
       commitChar(replaceItemInChar({ ...c, gold, ven, failStacks: 0 }, it0.id, item)); // success consumes fail stacks
       showNotif(doubled ? `✨ +${item.temper}! DOUBLE — +${grant}/line!` : `✨ Success! Now +${item.temper}`);
-    } else if (outcome === "derank") {
-      if (item.temperLog.length) { item.temperLog.pop(); item.temper = item.temperLog.length; item.temperBonus = item.temperLog.reduce((a, b) => a + b, 0); syncItemStats(item); }
-      commitChar(replaceItemInChar({ ...c, gold, ven, failStacks: fs + 1 }, it0.id, item));
-      showNotif(`💥 De-ranked to +${item.temper}. Fail stacks: ${fs + 1}`);
-    } else if (outcome === "burn") {
-      commitChar(replaceItemInChar({ ...c, gold, ven, failStacks: fs + 1 }, it0.id, item)); // protected, rank unchanged
-      showNotif(`🛡️ Protected — no change. Fail stacks: ${fs + 1}`);
+      return;
+    }
+    // A failure never takes a rank away any more. It buys a better chance at the next attempt,
+    // and — unless the piece is warded — carries the one risk left.
+    item.pity[target] = odds.stacks + 1;
+    const next = temperOdds(item, target);
+    const destroyed = !useProtect && Math.random() < odds.destroy;
+    if (destroyed) {
+      commitChar(replaceItemInChar({ ...c, gold, ven, failStacks: fs + 1 }, it0.id, null));
+      showNotif(`☠️ ${it0.name} was destroyed! Its forge progress is gone with it.`);
     } else {
-      commitChar(replaceItemInChar({ ...c, gold, ven, failStacks: fs + 1 }, it0.id, null)); // destroyed
-      showNotif(`☠️ ${it0.name} was destroyed! Fail stacks: ${fs + 1}`);
+      commitChar(replaceItemInChar({ ...c, gold, ven, failStacks: fs + 1 }, it0.id, item));
+      showNotif(next.chance >= 1
+        ? `🔥 Failed — but +${target} is now GUARANTEED on the next attempt.`
+        : `🔥 Failed. +${target} is now ${Math.round(next.chance * 100)}%${next.left ? ` · guaranteed in ${next.left}` : ""}`);
     }
   };
   const rerollLine = (srcItem, lineIdx) => {
@@ -6351,7 +6399,9 @@ function GameScreen({ character: initChar, onSave, onBack }) {
             <div style={{ display: "flex", gap: 8, marginBottom: 12, fontSize: 11.5 }}>
               <span style={{ color: "#FFD700" }}>💰 {char.gold.toLocaleString()}g</span>
               <span style={{ color: "#7fd0ff" }}>💎 {char.ven || 0}</span>
-              <span style={{ color: fs > 0 ? "#7CFC9E" : "#8a83b8", marginLeft: "auto" }}>🔥 {fs} fail stack{fs === 1 ? "" : "s"} · {dblPct}% double</span>
+              {/* Distinct from a piece's forge heat: this one is character-wide and pays a DOUBLE
+                  stat grant rather than a better chance, so it reads as its own counter. */}
+              <span style={{ color: fs > 0 ? "#7CFC9E" : "#8a83b8", marginLeft: "auto" }}>✨ {fs} lucky stack{fs === 1 ? "" : "s"} · {dblPct}% to double a grant</span>
             </div>
 
             {!sel && (
@@ -6359,12 +6409,18 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                 <div style={{ color: "#9a8a7a", fontSize: 11, marginBottom: 8 }}>Select a piece to temper or reroll. Relics can't be forged.</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
                   {items.length === 0 && <div style={{ color: "#555", fontSize: 12, textAlign: "center", padding: 20 }}>No forgeable gear.</div>}
-                  {items.map((it) => { const rc = rarityById(it.rarity).color; return (
+                  {items.map((it) => { const rc = rarityById(it.rarity).color;
+                    // Banked heat is real, paid-for progress. It has to be visible from the list,
+                    // or a player cannot tell which piece they were part-way through.
+                    const heat = (it.temper || 0) >= TEMPER_CFG.safeMax && (it.temper || 0) < TEMPER_CFG.maxRank
+                      ? temperOdds(it, (it.temper || 0) + 1) : null;
+                    return (
                     <button key={it.id} onClick={() => { setTemperSel(it.id); setTemperMode("temper"); setTemperProtect(false); }} style={{ textAlign: "left", background: "#120e0a", border: `1px solid ${rc}44`, borderLeft: `3px solid ${rc}`, borderRadius: 8, padding: "9px 11px", display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
                       <GameIcon icon={it.icon} size={22} />
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ color: rc, fontWeight: 700, fontSize: 12.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{it.name}{temperSuffix(it)}</div>
-                        <div style={{ color: "#8a83b8", fontSize: 10.5 }}>{slotById(it.slotId)?.name} · ilvl {it.ilvl}{it.rerolls ? ` · ${it.rerolls} rerolls` : ""}</div>
+                        <div style={{ color: "#8a83b8", fontSize: 10.5 }}>{slotById(it.slotId)?.name} · ilvl {it.ilvl}{it.rerolls ? ` · ${it.rerolls} rerolls` : ""}
+                          {heat && heat.stacks > 0 ? <span style={{ color: heat.chance >= 1 ? "#7CFC9E" : acc }}> · 🔥 {heat.chance >= 1 ? "next is guaranteed" : `${Math.round(heat.chance * 100)}% to +${(it.temper || 0) + 1}`}</span> : null}</div>
                       </div>
                       {it.temper ? <span style={{ color: acc, fontWeight: 800, fontSize: 13 }}>+{it.temper}</span> : null}
                     </button>
@@ -6396,11 +6452,11 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                   const target = tRank + 1;
                   const cost = temperCost(target);
                   const risky = tRank >= TEMPER_CFG.safeMax;
-                  const [dP, rP] = risky ? TEMPER_CFG.odds[target] : [0, 0];
+                  const odds = temperOdds(sel, target);
                   const protectOn = temperProtect && risky;
                   const venCost = risky ? (TEMPER_CFG.protectVen[target] || 0) : 0;
-                  const eDestroy = protectOn ? 0 : dP;
-                  const eSuccess = Math.round((1 - eDestroy) * (1 - rP) * 100);
+                  const eDestroy = protectOn ? 0 : odds.destroy;
+                  const eSuccess = Math.round(odds.chance * 100);
                   const grant = TEMPER_CFG.grantAtRank(target);
                   const canGold = char.gold >= cost, canVen = !protectOn || (char.ven || 0) >= venCost;
                   return (
@@ -6414,14 +6470,31 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                         <div style={{ background: "#122015", border: "1px solid #2e5a3a", borderRadius: 8, padding: "8px 10px", marginBottom: 10, color: "#7CFC9E", fontSize: 12, fontWeight: 700, textAlign: "center" }}>✓ Safe — guaranteed success (no risk until +5)</div>
                       ) : (
                         <div style={{ background: "#160e0a", border: "1px solid #3a2418", borderRadius: 8, padding: "8px 10px", marginBottom: 10 }}>
-                          {pctRow("Success", `${eSuccess}%`, "#7CFC9E")}
-                          {pctRow("De-rank (−1)", `${Math.round(rP * 100)}%`, "#e0a955")}
-                          {pctRow(protectOn ? "Destroy (protected)" : "Destroy (item lost)", protectOn ? "0%" : `${Math.round(dP * 100)}%`, protectOn ? "#7fd0ff" : "#e0455a")}
+                          {pctRow("Success", odds.chance >= 1 ? "GUARANTEED" : `${eSuccess}%`, "#7CFC9E")}
+                          {/* There is no failure to have a consequence once the ladder is full, so
+                              quoting a destroy chance here would just be frightening and untrue. */}
+                          {odds.chance < 1 && pctRow("On failure — destroyed", protectOn ? "0% (warded)" : `${Math.round(eDestroy * 100)}%`, protectOn ? "#7fd0ff" : "#e0455a")}
+                          <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid #2a1e14" }}>
+                            {odds.chance >= 1
+                              ? <div style={{ color: "#7CFC9E", fontSize: 11.5, fontWeight: 700, textAlign: "center" }}>🔥 The forge is ready — this attempt cannot fail.</div>
+                              : <>
+                                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#9a93b3", marginBottom: 4 }}>
+                                    <span>🔥 Forge heat · {odds.stacks} / {odds.cap} failures</span>
+                                    <span style={{ color: acc }}>+{Math.round(odds.step * 100)}% each</span>
+                                  </div>
+                                  <div style={{ height: 5, background: "#241810", borderRadius: 3, overflow: "hidden" }}>
+                                    <div style={{ width: `${Math.round((odds.stacks / odds.cap) * 100)}%`, height: "100%", background: `linear-gradient(90deg,#8a4a1a,${acc})` }} />
+                                  </div>
+                                  <div style={{ color: "#8a7a6a", fontSize: 10.5, marginTop: 4 }}>
+                                    Guaranteed after {odds.left} more failure{odds.left === 1 ? "" : "s"}. Heat is kept on this piece, for this rank only — and is lost if it is destroyed.
+                                  </div>
+                                </>}
+                          </div>
                         </div>
                       )}
                       {risky && (
                         <button onClick={() => setTemperProtect((v) => !v)} style={{ width: "100%", background: protectOn ? "#12203a" : "#140e0a", border: `1.5px solid ${protectOn ? "#7fd0ff" : "#3a2a1e"}`, borderRadius: 8, color: protectOn ? "#7fd0ff" : "#9a8a7a", fontSize: 11.5, fontWeight: 700, padding: "8px", cursor: "pointer", marginBottom: 10 }}>
-                          🛡️ {protectOn ? "Protected" : "Protect"} · {venCost} 💎 Ven {protectOn ? "(blocks destruction, not de-rank)" : ""}
+                          🛡️ {protectOn ? "Warded" : "Ward"} · {venCost} 💎 Ven {protectOn ? "(a failure costs the gold, never the piece)" : ""}
                         </button>
                       )}
                       <button onClick={() => temperItem(sel, protectOn)} disabled={!canGold || !canVen} style={{ width: "100%", background: canGold && canVen ? `linear-gradient(135deg,#3a2410,#5a3a12)` : "#15130f", border: `2px solid ${canGold && canVen ? acc : "#3a3520"}`, borderRadius: 10, color: canGold && canVen ? acc : "#6a6450", fontSize: 14, fontWeight: 800, padding: 12, cursor: canGold && canVen ? "pointer" : "default" }}>

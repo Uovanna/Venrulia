@@ -652,18 +652,87 @@ const STORY_QUESTS = [
   { id: "ch3", chapter: 3, title: "Embers of the Old War", teaser: "The volcano remembers a war the world has forgotten.", status: "locked", reward: { xp: 0, items: 0 } },
 ];
 
-// ---------- TUTORIAL — forced objectives; completing all leaves the player at level 6 ----------
-const TUTORIAL_STEPS = [
-  { id: "fight", title: "First Blood", body: "Tap the flashing ⚔️ Adventure Gate, then defeat a monster in the wilds.", highlight: "world", forLevel: 1, done: (c) => (c.kills || 0) >= 1 },
-  { id: "shop", title: "Stock the Pack", body: "Visit the flashing 🏪 Market, enter the Vendor, and browse the shop.", highlight: "market", forLevel: 0, reward: { heal: 10 }, done: (c) => !!c.tutorial?.visitedVendor },
-  { id: "gear", title: "Gear Up", body: "Open the flashing 🏦 Bank and equip the white gear to upgrade a gray piece.", highlight: "bag", forLevel: 2, done: (c) => !!c.tutorial?.equipped },
-  { id: "hunt", title: "Cull the Beasts", body: "Return to the ⚔️ Adventure Gate and defeat 5 monsters.", highlight: "world", forLevel: 3, done: (c) => (c.kills || 0) >= 5 },
-  { id: "trade", title: "Learn a Trade", body: "Enter the flashing ⚒️ Crafting Hall and begin gathering with a profession.", highlight: "prof", forLevel: 4, done: (c) => Object.values(c.professions || {}).some((p) => p && p.active) },
-  { id: "bounty", title: "Bounty Hunter", body: "Visit the flashing 🍺 Tavern and open the Quest Board to take a bounty.", highlight: "quests", forLevel: 5, done: (c) => !!c.tutorial?.visitedBoard },
+// ---------- LESSONS — one per system, gated by level, spanning the whole of 1-60 ----------
+//
+// A 704-playthrough sweep of 1-60 (game-core/levelling-sim.cjs) found that the levelling game
+// teaches almost nothing Hard Mode then demands:
+//
+//   * ZERO deaths in 176 playthroughs across all 22 specs with the ordinary kit.
+//   * Levelling the whole way in STARTER GEAR costs 0.9 hours and still never kills you, so
+//     nothing on the road to 60 establishes that item level matters.
+//   * Never buying the rotation is 2.6x slower and still never fatal, so it reads as a preference.
+//   * The one genuinely mandatory purchase — the auto-potion upgrade — is unmarked. Without it a
+//     parked character walls at level 39 and 0 of 176 runs reach 60.
+//
+// So the tutorial is no longer six steps ending at level 6. Each system a player must understand
+// before Hard Mode has a lesson, it unlocks at the level that system does, and it has to be
+// completed. `level` is the gate; `highlight` flashes that building on the town map.
+//
+// Being flagged for a new lesson RETREATS the player from solo combat (see the effect that watches
+// activeLesson) so the interruption never costs them a death.
+const LESSONS = [
+  // --- the opening six: unchanged behaviour, now carrying an explicit level gate ---------------
+  { id: "fight", level: 1, title: "First Blood", body: "Tap the flashing ⚔️ Adventure Gate, then defeat a monster in the wilds.", highlight: "world", forLevel: 1, done: (c) => (c.kills || 0) >= 1 },
+  { id: "shop", level: 1, title: "Stock the Pack", body: "Visit the flashing 🏪 Market, enter the Vendor, and browse the shop.", highlight: "market", forLevel: 0, reward: { heal: 10 }, done: (c) => !!c.tutorial?.visitedVendor || !!c.seen?.vendor },
+  { id: "gear", level: 2, title: "Gear Up", body: "Open the flashing 🏦 Bank and equip the white gear to upgrade a gray piece.", highlight: "bag", forLevel: 2, done: (c) => !!c.tutorial?.equipped },
+  { id: "hunt", level: 3, title: "Cull the Beasts", body: "Return to the ⚔️ Adventure Gate and defeat 5 monsters.", highlight: "world", forLevel: 3, done: (c) => (c.kills || 0) >= 5 },
+  { id: "trade", level: 4, title: "Learn a Trade", body: "Enter the flashing ⚒️ Crafting Hall and begin gathering with a profession.", highlight: "prof", forLevel: 4, done: (c) => Object.values(c.professions || {}).some((p) => p && p.active) },
+  { id: "bounty", level: 5, title: "Bounty Hunter", body: "Visit the flashing 🍺 Tavern and open the Quest Board to take a bounty.", highlight: "quests", forLevel: 5, done: (c) => !!c.tutorial?.visitedBoard || !!c.seen?.questboard },
+
+  // --- staying alive. The measured difference between finishing and walling at 39 ---------------
+  { id: "potion", level: 6, title: "Field Medicine", body: "Drink a Healing Potion. Open 🎒 the Bank's Items tab and use one — health does not come back on its own.", highlight: "bag", done: (c) => !!c.tutorial?.drankPotion },
+  { id: "autopot", level: 7, title: "The Draught Belt", body: "Buy the Auto-Potion upgrade at the 🏪 Market. It drinks for you below 30% health — a parked hero without it stops progressing entirely.", highlight: "market", done: (c) => !!c.upgrades?.autoPotion },
+
+  // --- fighting properly ------------------------------------------------------------------------
+  { id: "skills", level: 8, title: "Know Your Kit", body: "Open the flashing 🛡️ Armory and look over your skills. Which five you carry is the whole of your damage.", highlight: "gear", done: (c) => !!c.seen?.gear },
+  { id: "autoskill", level: 9, title: "Muscle Memory", body: "Buy an Auto-Skill from the Armory's trainer so a skill fires on its own. Fighting with auto-attacks alone is 2.6x slower.", highlight: "gear", done: (c) => Object.keys(c.autoSkillsOwned || {}).length > 0 },
+  { id: "spec", level: 10, title: "Choose a Path", body: "Visit the flashing ⛪ Class Hall and pick a Specialization. It grants three signature skills and reshapes how you fight.", highlight: "classhall", done: (c) => !!c.spec },
+  { id: "talent", level: 11, title: "The First Talent", body: "Open the flashing 🗿 Hero's Statue and spend your talent point.", highlight: "hero", done: (c) => !!(c.talents || {})[10] || !!c.talentTutorialDone },
+  { id: "attrs", level: 12, title: "Raw Potential", body: "Spend an attribute point at the 🗿 Hero's Statue. Points are yours to place every level.", highlight: "hero", done: (c) => Object.values(c.allocated || {}).some((v) => v > 0) },
+
+  // --- the economy ------------------------------------------------------------------------------
+  { id: "auction", level: () => AH_ECON.unlockLevel, title: "The Trading Floor", body: "The 🏛️ Auction House is open. Visit it — gear you cannot use is worth more to another player than to a vendor.", highlight: "auction", done: (c) => !!c.seen?.auction },
+  { id: "dungeon", level: 15, title: "Into the Dark", body: "Run a Dungeon from the ⚔️ Adventure Gate. Bosses drop the gear the open world will not.", highlight: "world", done: (c) => (c.dungeonClears || 0) >= 1 },
+  { id: "salvage", level: 17, title: "Nothing Wasted", body: "Visit the 🏪 Market's Salvage bench and break down a piece you will never wear.", highlight: "market", done: (c) => !!c.seen?.salvage },
+  { id: "gems", level: 18, title: "Set in Stone", body: "Open the 🏦 Bank's Gems tab. Sockets turn a good piece into your best one.", highlight: "bag", done: (c) => !!c.seen?.bag && !!c.seen?.gems },
+
+  // --- automation and depth ---------------------------------------------------------------------
+  { id: "gambit", level: () => GAMBIT_UNLOCK_LEVEL, title: "Standing Orders", body: "Gambits are open. Visit the ⛪ Class Hall's Gambit panel and set one rule — or use Auto Gambit for a working default.", highlight: "classhall", done: (c) => !!c.seen?.gambits || !!c.seen?.gambitshop },
+  { id: "town", level: 22, title: "Build the Town", body: "Open City Management from the 🗿 Hero's Statue. Town buildings pay a permanent bonus to everything you do.", highlight: "hero", done: (c) => !!c.seen?.citymgmt },
+  { id: "craft", level: 24, title: "The Anvil", body: "Craft a piece of armour in the ⚒️ Crafting Hall's Forge, using ore you have mined.", highlight: "prof", done: (c) => !!c.seen?.forge },
+  { id: "brew", level: 26, title: "Better Draughts", body: "Visit the ⚒️ Crafting Hall's Brewery. Stronger potions are the difference in a long fight.", highlight: "prof", done: (c) => !!c.seen?.brewery },
+  { id: "enchant", level: 30, title: "Bound in Runes", body: "Visit the 🏪 Market's Enchanting bench and put an enchant on a piece you intend to keep.", highlight: "market", done: (c) => !!c.seen?.enchanting },
+  { id: "bestiary", level: 32, title: "Know the Enemy", body: "Open the Bestiary in the 🍺 Tavern. What you have killed is recorded, and what it drops with it.", highlight: "quests", done: (c) => !!c.seen?.bestiary },
+  { id: "skillmod", level: 35, title: "Reshape a Skill", body: "Visit the ⛪ Class Hall's Skill Mods and change what one of your abilities does.", highlight: "classhall", done: (c) => !!c.seen?.skillmods },
+  { id: "temper", level: 38, title: "The Forge Heat", body: "Visit the 🏪 Market's Tempering Forge. Every failure raises the next attempt until the rank is guaranteed — read the odds before you spend.", highlight: "market", done: (c) => !!c.seen?.temper },
+
+  // --- other people. Visiting only: none of these lessons queues the player for anything. -------
+  { id: "guild", level: 40, title: "Not Alone", body: "Visit 🏛️ The Guild. Group content asks for a party, and a party asks you to hold a role.", highlight: "guild", done: (c) => !!c.seen?.guild },
+  { id: "arena", level: 45, title: "The Sands", body: "Visit the ⚔️ Arena and read how rated combat is scored.", highlight: "arena", done: (c) => !!c.seen?.arena },
+  { id: "mail", level: 48, title: "The Courier", body: "Check your 📬 Mail. Auction sales and overflow from a full bank arrive here.", highlight: "auction", done: (c) => !!c.seen?.mail },
+
+  // --- the handover to Hard Mode ------------------------------------------------------------------
+  { id: "supply", level: 52, title: "Lay In Supplies", body: "Visit the 🍺 Tavern's Supply Run. Consumables are no longer optional from here on.", highlight: "quests", done: (c) => !!c.seen?.supply },
+  { id: "hardprep", level: 58, title: "Before the Threshold", body: "Hard Mode judges item level, your rotation and your potions — all three. Check your 🛡️ Armory and make sure every slot is filled before you cross.", highlight: "gear", done: (c) => !!c.seen?.gear && (c.level || 1) >= 59 },
 ];
-const COMBAT_TUTORIAL_IDS = ["fight", "hunt"]; // tutorial steps that progress through combat
-const tutorialStep = (c) => (c.tutorial && !c.tutorial.done) ? TUTORIAL_STEPS[Math.min(c.tutorial.step || 0, TUTORIAL_STEPS.length - 1)] : null;
-const tutorialHighlight = (c) => { const s = tutorialStep(c); return s ? s.highlight : null; };
+// Kept as the old name so nothing that referenced the opening run breaks.
+const TUTORIAL_STEPS = LESSONS;
+const COMBAT_TUTORIAL_IDS = ["fight", "hunt", "dungeon"]; // lessons that progress through combat
+// The lowest-level lesson the player has unlocked and not finished. Level gates it, so a lesson for
+// a system that is still locked never appears — and a player who levels past several at once is
+// walked through them in order rather than having them silently skipped.
+const lessonDone = (c, l) => !!((c.tutorial || {}).doneIds || {})[l.id];
+// A gate may be a function so it can read a constant declared further down this file rather than
+// restating the number. Duplicated constants drifting apart is the bug this codebase keeps finding.
+const lessonLevel = (l) => (typeof l.level === "function" ? l.level() : l.level);
+const activeLesson = (c) => {
+  if (!c) return null;
+  const lvl = c.level || 1;
+  return LESSONS.find((l) => lessonLevel(l) <= lvl && !lessonDone(c, l)) || null;
+};
+const lessonsComplete = (c) => LESSONS.filter((l) => lessonDone(c, l)).length;
+const tutorialStep = activeLesson;
+const tutorialHighlight = (c) => { const s = activeLesson(c); return s ? s.highlight : null; };
 
 
 // ---------- PROFESSIONS ----------
@@ -2576,7 +2645,16 @@ function TownHub({ onEnter, highlight, charLevel = 1 }) {
 }
 function GameScreen({ character: initChar, onSave, onBack }) {
   const [char, setChar] = useState(() => normalizeChar(initChar));
-  const [tab, setTab] = useState("town");
+  const [tab, setTabRaw] = useState("town");
+  // Every panel the player opens is recorded once, on `c.seen`. Lessons that only ask a player to
+  // LOOK at a system read this, so a new lesson costs one line in the table rather than a flag
+  // threaded through its screen — the old tutorial needed a bespoke field per step, which is why
+  // it only ever covered six of them.
+  const setTab = useCallback((t) => {
+    setTabRaw(t);
+    const c = charRef.current;
+    if (c && t && !(c.seen || {})[t]) commitChar({ ...c, seen: { ...(c.seen || {}), [t]: true } });
+  }, []);
   const navHistory = useRef([]);      // screen history for the back arrow
   const backNav = useRef(false);      // true while a back-navigation is in progress
   const lastTabRef = useRef("town");
@@ -2584,7 +2662,14 @@ function GameScreen({ character: initChar, onSave, onBack }) {
   const [showSettings, setShowSettings] = useState(false);
   const [worldTab, setWorldTab] = useState("zones");
   const [heroTab, setHeroTab] = useState("stats");
-  const [bagTab, setBagTab] = useState("equipment");
+  const [bagTab, setBagTabRaw] = useState("equipment");
+  // The Bank's sub-tabs are panels too — Gems in particular is a whole system that has no top-level
+  // tab, so a lesson keyed on it would otherwise never be satisfiable. Same recorder as setTab.
+  const setBagTab = useCallback((t) => {
+    setBagTabRaw(t);
+    const c = charRef.current;
+    if (c && t && !(c.seen || {})[t]) commitChar({ ...c, seen: { ...(c.seen || {}), [t]: true } });
+  }, []);
   // Track screen history so the back arrow returns to the previous screen (not always Town)
   useEffect(() => {
     if (lastTabRef.current !== tab) {
@@ -2962,27 +3047,35 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     showNotif(`${opt.icon} ${opt.name} learned!`);
     addLog(`🌟 Talent path chosen: ${opt.name}. Manage talents under the Hero's Statue.`, "#f0b429");
   };
-  // Tutorial auto-completes each objective once its condition is met, granting XP up to the stage's target level.
+  // A lesson completes the moment its condition is met. This used to watch three fields, which was
+  // enough for six steps keyed on kills and professions; the lessons now key on gear, upgrades,
+  // spec, talents and panels visited, so it watches the whole character instead. commitChar hands
+  // back a new object, so this runs once per change and settles.
   useEffect(() => {
     const c = charRef.current;
-    if (!c || !c.tutorial || c.tutorial.done) return;
-    const idx = Math.min(c.tutorial.step || 0, TUTORIAL_STEPS.length - 1);
-    const step = TUTORIAL_STEPS[idx];
-    if (!step || !step.done(c)) return;
-    // grant the XP for that level band (0 = none) and any item reward
-    let nc = step.forLevel ? applyXp({ ...c }, xpForLevel(step.forLevel)) : { ...c };
-    let rewardMsg = step.forLevel ? `+${xpForLevel(step.forLevel)} XP` : "";
-    if (step.reward?.heal) {
+    if (!c) return;
+    const lesson = activeLesson(c);
+    if (!lesson || !lesson.done(c)) return;
+    // The opening six carry their original level-band XP and item rewards. Later lessons pay a
+    // fifth of a level — a nudge for detouring, deliberately too small to move the levelling curve
+    // the 704-run sweep measured.
+    const xp = lesson.forLevel != null ? (lesson.forLevel ? xpForLevel(lesson.forLevel) : 0)
+                                       : Math.floor(xpForLevel(lessonLevel(lesson)) * 0.2);
+    let nc = xp ? applyXp({ ...c }, xp) : { ...c };
+    let rewardMsg = xp ? `+${xp.toLocaleString()} XP` : "";
+    if (lesson.reward?.heal) {
       const key = conKey("heal", 0);
-      nc = { ...nc, consumables: { ...nc.consumables, [key]: (nc.consumables[key] || 0) + step.reward.heal } };
-      rewardMsg = `+${step.reward.heal} Healing Potion I`;
+      nc = { ...nc, consumables: { ...nc.consumables, [key]: (nc.consumables[key] || 0) + lesson.reward.heal } };
+      rewardMsg = `+${lesson.reward.heal} Healing Potion I`;
     }
-    const next = (c.tutorial.step || 0) + 1;
-    nc = { ...nc, tutorial: { ...nc.tutorial, step: next, done: next >= TUTORIAL_STEPS.length } };
+    const doneIds = { ...((nc.tutorial || {}).doneIds || {}), [lesson.id]: true };
+    const allDone = LESSONS.every((l) => doneIds[l.id]);
+    nc = { ...nc, tutorial: { ...nc.tutorial, doneIds, step: Object.keys(doneIds).length, done: allDone } };
     commitChar(nc);
-    addLog(`✅ ${step.title} complete — ${rewardMsg}!`, "#f0b429");
-    showNotif(`✅ ${step.title}! ${rewardMsg}${next >= TUTORIAL_STEPS.length ? " · Tutorial complete!" : ""}`);
-  }, [char.kills, char.tutorial, char.professions]);
+    addLog(`✅ ${lesson.title} complete${rewardMsg ? " — " + rewardMsg : ""}!`, "#f0b429");
+    showNotif(`✅ ${lesson.title}!${rewardMsg ? " " + rewardMsg : ""}${allDone ? " · Every system learned!" : ""}`);
+  }, [char]);
+
   const [gatherTapCd, setGatherTapCd] = useState(0); // timestamp the manual swing is ready again
   const [, setGatherTick] = useState(0);             // forces re-render for the live cooldown countdown
   const setNode = (n) => { gatherNodeRef.current = n; setGatherNode(n); };
@@ -4358,6 +4451,32 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     addLog("⏸ Retreated from combat.", "#888");
     commitBattle(null);
   };
+  // AUTO-RETREAT. Being handed a new lesson mid-fight used to mean reading it while something was
+  // hitting you. Levelling past a gate steps the player out of a solo fight first, keeping their
+  // current health, so the interruption can never cost a death.
+  // `undefined` means "not looked yet"; `null` means "looked, and there is no lesson open". They
+  // have to be distinguishable: a caught-up player sits on null, and null -> a new lesson is the
+  // single most common way a lesson arrives. Collapsing the two skipped exactly that case.
+  const lastLessonRef = useRef(undefined);
+  useEffect(() => {
+    const c = charRef.current;
+    const lesson = activeLesson(c);
+    const id = lesson ? lesson.id : null;
+    const prev = lastLessonRef.current;
+    lastLessonRef.current = id;
+    if (!id || prev === undefined || prev === id) return;   // first look, or the same lesson still open
+    if (COMBAT_TUTORIAL_IDS.includes(id)) return;          // this lesson IS the fight — do not yank them out
+    const b = battleRef.current;
+    if (!b) return;
+    // Never abandon group or instanced content on the player's behalf: a dungeon, raid or Guild run
+    // cannot be resumed where it left off, so retreating from one would cost far more than a death.
+    if (groupParty || guildRunRef.current || b.mode === "dungeon" || b.mode === "raid" || b.mode === "hard") return;
+    stopCombat();
+    setTab("town");
+    showNotif(`📜 New lesson: ${lesson.title} — withdrawn from combat`);
+    addLog(`📜 You withdraw to town: ${lesson.title}.`, "#f0b429");
+  }, [char, groupParty]);
+
   // can the remembered dungeon/raid be run right now (not locked out)?
   const instanceRunnable = (c, id) => { const inst = instanceById(id); if (!inst) return false; return inst.raid ? raidCooldownLeft(c, id) <= 0 : dungeonRunsLeft(c, id) > 0; };
   const reEnterInstance = () => { const inst = instanceById(lastDungeonId); if (!inst) return; if (inst.raid) startRaid(inst); else startDungeon(inst); };
@@ -4392,7 +4511,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
   };
   // use one consumable of a specific tier (defaults to the best tier you own)
   const useConsumable = (def, tier) => {
-    const c = charRef.current;
+    let c = charRef.current;
     const t = (tier == null) ? bestTier(c, def.id) : tier;
     if (t < 0 || conCount(c, def.id, t) <= 0) { showNotif("None left — brew or buy it"); return; }
     const key = conKey(def.id, t);
@@ -4413,6 +4532,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       if (cur >= mx) { showNotif("Already at full health"); return; }
       const healed = Math.min(mx, cur + Math.round(tierHeal(t) * gemPotionMult(c)));
       if (b) commitBattle({ ...b, hp: healed });
+      if (!c.tutorial?.drankPotion) c = { ...c, tutorial: { ...(c.tutorial || {}), drankPotion: true } };
       commitChar({ ...c, hp: healed, consumables: { ...c.consumables, [key]: c.consumables[key] - 1 } });
       setLastPotion(Date.now()); lastPotionRef.current = Date.now();
       addLog(`🧪 Drank ${def.name} ${roman} (+${healed - cur} HP)`, "#ff7766");
@@ -5238,20 +5358,25 @@ function GameScreen({ character: initChar, onSave, onBack }) {
 
         {/* ============ TOWN HUB ============ */}
         {/* Tutorial quest banner — follows the player across every screen while active */}
-        {!char.tutorial?.done && (() => {
-          const tut = char.tutorial || { step: 0, done: false };
-          const step = TUTORIAL_STEPS[Math.min(tut.step || 0, TUTORIAL_STEPS.length - 1)];
+        {(() => {
+          const step = activeLesson(char);
           if (!step) return null;
+          const doneN = lessonsComplete(char);
+          const xp = step.forLevel != null ? (step.forLevel ? xpForLevel(step.forLevel) : 0)
+                                           : Math.floor(xpForLevel(lessonLevel(step)) * 0.2);
           return (
             <div style={{ background: "linear-gradient(135deg,#1a1535,#120f28)", border: "1.5px solid #f0b429", borderRadius: 12, padding: "12px 14px", marginBottom: 12, boxShadow: "0 0 14px #f0b42933" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
-                <span style={{ color: "#f0b429", fontFamily: "Georgia, serif", fontSize: 14, fontWeight: 700 }}>📜 Quest {(tut.step || 0) + 1}: {step.title}</span>
-                <span style={{ color: "#8a83b8", fontSize: 10 }}>{(tut.step || 0) + 1}/{TUTORIAL_STEPS.length}</span>
+                <span style={{ color: "#f0b429", fontFamily: "Georgia, serif", fontSize: 14, fontWeight: 700 }}>📜 Lesson {doneN + 1}: {step.title}</span>
+                <span style={{ color: "#8a83b8", fontSize: 10 }}>{doneN}/{LESSONS.length} · Lv {lessonLevel(step)}</span>
               </div>
               <div style={{ color: "#cbd3ea", fontSize: 12, lineHeight: 1.5, marginBottom: 8 }}>{step.body}</div>
+              <div style={{ height: 3, background: "#241c40", borderRadius: 2, overflow: "hidden", marginBottom: 8 }}>
+                <div style={{ width: `${Math.round((doneN / LESSONS.length) * 100)}%`, height: "100%", background: "linear-gradient(90deg,#8a6a1a,#f0b429)" }} />
+              </div>
               <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#f0d98a", fontSize: 11 }}>
                 <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "#f0b429", animation: "tutflash-sm 1.1s ease-in-out infinite" }} />
-                {tab === "town" ? "Follow the glowing signpost" : "🏰 Return to Town to find the glowing signpost"} · reward: {step.reward?.heal ? `${step.reward.heal} Healing Potion I` : `${xpForLevel(step.forLevel)} XP`}
+                {tab === "town" ? "Follow the glowing signpost" : "🏰 Return to Town to find the glowing signpost"} · reward: {step.reward?.heal ? `${step.reward.heal} Healing Potion I` : `${xp.toLocaleString()} XP`}
               </div>
             </div>
           );

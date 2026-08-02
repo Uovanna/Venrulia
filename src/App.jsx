@@ -681,7 +681,7 @@ const LESSONS = [
 
   // --- staying alive. The measured difference between finishing and walling at 39 ---------------
   { id: "potion", level: 6, title: "Field Medicine", body: "Drink a Healing Potion. Open 🎒 the Bank's Items tab and use one — health does not come back on its own.", highlight: "bag", done: (c) => !!c.tutorial?.drankPotion },
-  { id: "autopot", level: 7, title: "The Draught Belt", body: "Buy the Auto-Potion upgrade at the 🏪 Market. It drinks for you below 30% health — a parked hero without it stops progressing entirely.", highlight: "market", done: (c) => !!c.upgrades?.autoPotion },
+  { id: "autopot", level: 7, title: "The Draught Belt", body: "Buy the Draught Belt from the 🏪 Market's Vendor, under Permanent Upgrades. It drinks for you at 15% health — the last line before you fall, under anything your own gambits do. A parked hero without one stops progressing entirely.", highlight: "market", done: (c) => !!c.upgrades?.autoPotion },
 
   // --- fighting properly ------------------------------------------------------------------------
   { id: "skills", level: 8, title: "Know Your Kit", body: "Open the flashing 🛡️ Armory and look over your skills. Which five you carry is the whole of your damage.", highlight: "gear", done: (c) => !!c.seen?.gear },
@@ -1331,7 +1331,10 @@ const autoGambitPlan = (c) => {
   const general = [];
   const healCon = CONSUMABLE_DEFS.find((d) => d.id === "heal");
   const potThen = healCon ? "then_con_" + healCon.id : null;
-  const potIf = pick("if_selfhp30", "if_selfhp50", "if_selfhp20");
+  // 50%, not a roll across 50/30/20. The Draught Belt already drinks at 30%, so a generated rule at
+  // 30 or 20 duplicates it and teaches nothing; at 50 the gambit catches the dip EARLIER than the
+  // belt, which is the reason to hold one. A player can still set 30 or 20 by hand.
+  const potIf = "if_selfhp50";
   if (potThen && has(potThen) && potIf) general.push({ if: potIf, then: potThen });
   return { rules, general };
 };
@@ -1358,6 +1361,22 @@ const conKey = (id, tier) => `${id}@${tier}`;
 // player's potion stock, and a second copy inside the component is how the two drift apart.
 const conCount = (c, id, tier) => ((c && c.consumables) || {})[conKey(id, tier)] || 0;
 const conTotal = (c, id) => { let s = 0; for (let t = 0; t <= 6; t++) s += conCount(c, id, t); return s; };
+// PERMANENT VENDOR UPGRADES — bought once, with gold.
+//
+// `upgrades.autoPotion` was READ in three places (the live tick, simulateOffline and the lesson) and
+// WRITTEN in none, so no player could ever own it. That is not a cosmetic gap: the 704-playthrough
+// sweep in game-core/levelling-sim.cjs measured it as the difference between reaching 60 and walling
+// at level 39 — without it, 0 of 176 parked runs finished. It is deliberately GOLD and not Ven: the
+// one mechanic a character cannot progress without must not sit behind the premium currency.
+const VENDOR_UPGRADES = [
+  // 400g, not the 2,500 first written. Measured: a character reaching level 7 — where its lesson
+  // opens — holds a median of 610 gold, and is still on only 1,395 by level 20. At 2,500 the lesson
+  // would have stalled for most of the levelling game asking for something unaffordable. The gate
+  // on this is meant to be knowing it exists, not grinding for it.
+  { id: "autoPotion", name: "Draught Belt", icon: "\u{1F9EA}", cost: 400,
+    desc: "Drinks your best healing potion automatically at 15% health — a backstop beneath your own potion gambits, in combat and while parked offline." },
+];
+const vendorUpgradeOwned = (c, id) => !!((c && c.upgrades) || {})[id];
 const bestTier = (c, id) => { for (let t = 6; t >= 0; t--) if (conCount(c, id, t) > 0) return t; return -1; };
 
 const potionHeal = (level) => tierHeal(tierForLevel(level));         // HP restored (static within a tier)
@@ -1380,6 +1399,16 @@ const tieredName = (def, level) => `${def.name} ${POTION_TIER_ROMAN[tierForLevel
 const BUFF_DURATION = 3600000; // 1 hour (scrolls)
 const POTION_BUFF_DURATION = 300000; // 5 min (combat potions)
 const POTION_CD = 5000; // 5 second potion-use cooldown
+// The Draught Belt drinks at 15%, BELOW every threshold a gambit can be set to (50 / 30 / 20). It
+// is a last-resort backstop, not the primary: at 30% it fired on the same dip a player's own potion
+// gambit was watching for, which left the gambit with nothing to do at 30 or 20 and made the two
+// systems compete for one stock. Sitting under all of them gives the gambit a real job at every
+// threshold and leaves the belt as the net that catches what the gambit missed.
+//
+// ONE constant, because this number was written out three times — twice inside simulateOffline and
+// once in the live tick — and a parked character healing on a different rule from a live one is the
+// exact drift the offline-parity suite exists to catch.
+const AUTO_POTION_HP = 0.15;
 // ---- enemy skill casting (makes combat deadlier) ----
 const ENEMY_SKILL_SCALE = 0.55;   // enemy skill damage vs their normal hit
 const ENEMY_CAST_CD = 4200;       // ms between enemy skill casts
@@ -2178,15 +2207,15 @@ const simulateOffline = (char, elapsedMs) => {
     const incoming = Math.floor(ktime * eDps(isBoss));
     const leechHeal = leechPct > 0 ? Math.floor(leechPct * ehp) : 0;
     let hpAfter = hp - incoming + leechHeal;
-    // Auto-potion, exactly as the live tick runs it: while below 30% health, drink the best potion
+    // Auto-potion, exactly as the live tick runs it: below AUTO_POTION_HP, drink the best potion
     // owned, at most once every POTION_CD. Offline ignored this entirely, which mattered far more
     // once offline stopped under-reporting enemy damage — a player who survives live on potions was
     // dying offline for want of a mechanic they had already bought.
     // The cooldown runs on wall-clock, not per fight: at ~1.6s a kill, a per-kill budget would
     // round every sip away and the upgrade would do nothing.
-    if (autoPot && hpAfter < maxHp0 * 0.3) {
+    if (autoPot && hpAfter < maxHp0 * AUTO_POTION_HP) {
       let at = Math.max(lastPotionAt + POTION_CD / 1000, timeUsed);
-      while (hpAfter < maxHp0 * 0.3 && at <= timeUsed + ktime) {
+      while (hpAfter < maxHp0 * AUTO_POTION_HP && at <= timeUsed + ktime) {
         const t = bestTier(c, "heal");
         if (t < 0) break;
         const key = conKey("heal", t);
@@ -3809,8 +3838,15 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           const key = conKey(def.id, t);
           if (def.kind === "heal") {
             const ck = "gcd_" + def.id;
+            // The Draught Belt and this gambit drink from ONE potion stock but used to keep two
+            // separate clocks, so a single dip below 30% fired both and spent two potions where one
+            // would do. A potion restores 53-58% of the bar, so the second lands on a character
+            // already back at ~87% and throws most of itself away. The manual/belt cooldown is
+            // honoured here as well, and taking a drink starts it — one shared clock, three sources.
+            if (Date.now() - lastPotionRef.current < POTION_CD) return;
             if (w.hp >= gMaxHp || (w.cooldowns?.[ck] || 0) > now) return;
             w.hp = Math.min(gMaxHp, w.hp + Math.round(tierHeal(t) * gemPotionMult(cc))); w.cooldowns = { ...(w.cooldowns || {}), [ck]: now + 8000 };
+            lastPotionRef.current = Date.now(); setLastPotion(Date.now());
             commitChar({ ...cc, consumables: { ...cc.consumables, [key]: cc.consumables[key] - 1 } });
             addLog(`🧪 Gambit: ${def.name} (+HP)`, "#7CFC9E"); dirty = true;
           } else if (def.kind === "dmgbuff" || def.kind === "reducebuff") {
@@ -3958,10 +3994,10 @@ function GameScreen({ character: initChar, onSave, onBack }) {
   useEffect(() => {
     const iv = setInterval(() => {
       const c = charRef.current; const b = battleRef.current;
-      // auto-potion upgrade: drink a heal when below 30% HP
+      // auto-potion upgrade: drink a heal below AUTO_POTION_HP — a backstop under every gambit
       if (b && b.enemy.hp > 0 && c.upgrades?.autoPotion && conTotal(c, "heal") > 0 && Date.now() - lastPotionRef.current >= POTION_CD) {
         const bt = bestTier(c, "heal");
-        if (bt >= 0 && b.hp < maxHpFor(c) * 0.3 && b.hp < maxHpFor(c)) {
+        if (bt >= 0 && b.hp < maxHpFor(c) * AUTO_POTION_HP && b.hp < maxHpFor(c)) {
           const healed = Math.min(maxHpFor(c), b.hp + tierHeal(bt));
           const key = conKey("heal", bt);
           commitBattle({ ...b, hp: healed });
@@ -4571,6 +4607,14 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     const price = consumableSellPrice(def, tier);
     commitChar({ ...c, gold: c.gold + price, consumables: { ...c.consumables, [key]: c.consumables[key] - 1 } });
     showNotif(`💰 Sold ${def.name} ${POTION_TIER_ROMAN[tier]} for ${price}g`);
+  };
+  const buyVendorUpgrade = (up) => {
+    const c = charRef.current;
+    if (vendorUpgradeOwned(c, up.id)) { showNotif("Already owned"); return; }
+    if ((c.gold || 0) < up.cost) { showNotif(`Need ${up.cost.toLocaleString()}g`); return; }
+    commitChar({ ...c, gold: c.gold - up.cost, upgrades: { ...(c.upgrades || {}), [up.id]: true } });
+    showNotif(`${up.icon} ${up.name} purchased!`);
+    addLog(`${up.icon} ${up.name} — ${up.desc}`, "#7CFC9E");
   };
   // use one consumable of a specific tier (defaults to the best tier you own)
   const useConsumable = (def, tier) => {
@@ -6997,6 +7041,32 @@ function GameScreen({ character: initChar, onSave, onBack }) {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
               <div style={{ color: "#f0b429", fontWeight: 700, fontSize: 15, fontFamily: "Georgia, serif" }}>🛒 Vendor</div>
               <div style={{ color: "#888", fontSize: 11 }}>💰 {char.gold}g</div>
+            </div>
+
+            {/* Permanent upgrades first: the Draught Belt is the one purchase a character cannot
+                progress without, so it must not be buried under the consumable list. */}
+            <div style={{ color: "#aaa", fontSize: 11, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Permanent Upgrades</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 7, marginBottom: 18 }}>
+              {VENDOR_UPGRADES.map((up) => {
+                const owned = vendorUpgradeOwned(char, up.id);
+                const canBuy = (char.gold || 0) >= up.cost;
+                const wanted = (activeLesson(char) || {}).id === "autopot" && up.id === "autoPotion";
+                return (
+                  <div key={up.id} style={{ background: "#100e1c", border: `1px solid ${owned ? "#2e5a3a" : wanted ? "#f0b429" : "#2a2740"}`,
+                    borderLeft: `3px solid ${owned ? "#7CFC9E" : "#f0b429"}`, borderRadius: 8, padding: "10px 11px",
+                    display: "flex", alignItems: "center", gap: 10,
+                    animation: wanted && !owned ? "tutflash 1.4s ease-in-out infinite" : "none" }}>
+                    <div style={{ fontSize: 22 }}>{up.icon}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ color: owned ? "#7CFC9E" : "#f0b429", fontWeight: 700, fontSize: 12.5 }}>{up.name}{owned ? " \u2713" : ""}</div>
+                      <div style={{ color: "#9a93b3", fontSize: 10.5, lineHeight: 1.4 }}>{up.desc}</div>
+                    </div>
+                    {owned
+                      ? <span style={{ color: "#7CFC9E", fontSize: 11, fontWeight: 700 }}>Owned</span>
+                      : <MiniBtn onClick={() => buyVendorUpgrade(up)} color={canBuy ? "#FFD700" : "#666"} bg={canBuy ? "#1a1830" : "#15131f"}>{up.cost.toLocaleString()}g</MiniBtn>}
+                  </div>
+                );
+              })}
             </div>
 
             {/* Buy consumables */}

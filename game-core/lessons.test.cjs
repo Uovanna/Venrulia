@@ -29,6 +29,7 @@ js = js.replace(/import\.meta\.env/g, '({})');
 js += `
 ;(function(){
   const core = require("${path.join(__dirname, 'combat.mjs').replace(/\\/g, '/')}");
+  const rngm = require("${path.join(__dirname, 'rng.mjs').replace(/\\/g, '/')}");
   let fail = 0;
   const ok = (c, m) => { console.log("  " + (c ? "\\u2713" : "\\u2717") + " " + m); if (!c) fail++; };
   const lvlOf = (l) => (typeof l.level === "function" ? l.level() : l.level);
@@ -222,6 +223,145 @@ js += `
        "losing the practice duel still teaches it — the lesson is the fight, not the result");
     // And a lesson arriving mid-bout must not yank the player out of one.
     ok(src.includes('b.pvp || b.mode === "dungeon"'), "auto-retreat never abandons an arena bout");
+  }
+
+  // --- COMPLETABILITY: every lesson condition must have something that can SET it ------------------
+  //
+  // This is the check that was missing. upgrades.autoPotion was READ in three places — the live
+  // combat tick, simulateOffline and the autopot lesson — and WRITTEN in none, so no player could
+  // ever own it and that lesson could never be finished. Worse, the 704-run sweep had already
+  // measured that upgrade as the difference between reaching 60 and walling at level 39.
+  //
+  // Reading each lesson predicate and proving a writer exists is the general form of that bug.
+  {
+    const src = require("fs").readFileSync("${SRC.replace(/\\/g, '/')}", "utf8");
+    // Everything OUTSIDE the lesson table. A lesson mentioning its own key proves nothing.
+    const li = src.indexOf("const LESSONS = ["), le = src.indexOf("\\n];", li);
+    const outside = src.slice(0, li) + src.slice(le);
+    const townDests = new Set(TOWN_SPOTS.map((sp) => sp.dest));
+    // Literal search rather than a built regex: escaping one through this harness is what produced
+    // three broken patterns before this settled.
+    const seenWriter = (k) => outside.indexOf('setTab("' + k + '")') > 0
+      || outside.indexOf('setBagTab("' + k + '")') > 0
+      || outside.indexOf('bagTab === "' + k + '"') > 0
+      || townDests.has(k);
+    const fieldWriter = (k) => new RegExp("\\\\b" + k + ":\\\\s*true").test(outside)
+      || new RegExp("\\\\[" + k + "\\\\]:\\\\s*true").test(outside)
+      || new RegExp("\\\\." + k + "\\\\s*=[^=]").test(outside)
+      || new RegExp("\\\\b" + k + ":\\\\s*[A-Za-z0-9_.({\\\\[]").test(outside);
+
+    // An upgrade is bought through a table, so the write is a DYNAMIC key — [up.id]: true — which
+    // no literal search for "autoPotion: true" can see. It counts as a writer only when the id is
+    // actually in the purchasable table AND that dynamic write exists AND the row is rendered;
+    // a definition nobody can click is exactly the bug this section was added for.
+    const upgradeWriter = (k) => (typeof VENDOR_UPGRADES !== "undefined")
+      && VENDOR_UPGRADES.some((u) => u.id === k)
+      && outside.indexOf("[up.id]: true") > 0
+      && src.indexOf("VENDOR_UPGRADES.map") > 0;
+
+    let unreachable = 0;
+    for (const l of LESSONS) {
+      const body = String(l.done);
+      const keys = [];
+      for (const m of body.matchAll(/c\\.seen(\\?)?\\.([A-Za-z0-9_]+)/g)) keys.push(["seen", m[2]]);
+      for (const m of body.matchAll(/c\\.tutorial(\\?)?\\.([A-Za-z0-9_]+)/g)) keys.push(["tutorial", m[2]]);
+      for (const m of body.matchAll(/c\\.upgrades(\\?)?\\.([A-Za-z0-9_]+)/g)) keys.push(["upgrades", m[2]]);
+      for (const m of body.matchAll(/c\\.([A-Za-z0-9_]+)/g)) {
+        const k = m[1];
+        if (k === "seen" || k === "tutorial" || k === "upgrades" || k === "level") continue;
+        keys.push(["char", k]);
+      }
+      if (!keys.length) { ok(false, l.id + " reads no character state at all — it can never complete"); unreachable++; continue; }
+      // ANY one satisfiable path is enough: several lessons accept a legacy flag OR a panel visit.
+      const reach = keys.map((kv) => (kv[0] === "seen" ? seenWriter(kv[1])
+        : kv[0] === "upgrades" ? upgradeWriter(kv[1]) : fieldWriter(kv[1])));
+      const good = reach.some(Boolean);
+      if (!good) unreachable++;
+      ok(good, l.id + " completable via " + keys.map((kv, i) =>
+        (kv[0] === "char" ? "" : kv[0] + ".") + kv[1] + (reach[i] ? "" : " <NO WRITER>")).join(" / "));
+    }
+    ok(unreachable === 0, unreachable === 0
+      ? "all " + LESSONS.length + " lessons are completable"
+      : unreachable + " lesson(s) CANNOT be completed by any code path");
+
+    // AFFORDABILITY. A lesson that asks for something the player cannot buy at its own level is
+    // still uncompletable, just slowly. The first price written here was 2,500g against a measured
+    // median purse of 610g at level 7 — the lesson would have stalled for most of the levelling
+    // game. Measured from the shipped offline loop rather than pinned to a remembered number.
+    {
+      const beltLvl = lvlOf(byId("autopot"));
+      const purses = [];
+      for (let sd = 0; sd < 6; sd++) {
+        const gold = rngm.withRng(rngm.makeRng(sd * 131 + 7), () => {
+          let ch = core.normalizeChar(core.createCharacter("A", "warrior", "human"));
+          let guard = 0;
+          while (ch.level < beltLvl && guard++ < 600) {
+            ch.autoSkillsOwned = {}; ch.autoSkills = {};
+            for (const n of (ch.selectedSkills || [])) { ch.autoSkillsOwned[n] = true; ch.autoSkills[n] = true; }
+            ch.consumables = { [conKey("heal", core.tierForLevel(ch.level))]: 500 };
+            ch.offlineZoneId = getZoneForLevel(ch.level).id;
+            ch.hp = core.maxHpFor(ch);
+            const r = simulateOffline(ch, 6 * 60 * 1000);
+            if (!r) break;
+            ch = r.char;
+          }
+          return ch.gold;
+        });
+        purses.push(gold);
+      }
+      purses.sort((a, b) => a - b);
+      const poor = purses[0];
+      const cost = VENDOR_UPGRADES.find((u) => u.id === "autoPotion").cost;
+      ok(cost <= poor, "the Draught Belt (" + cost.toLocaleString() + "g) is affordable at level "
+        + beltLvl + " — the poorest of " + purses.length + " runs holds " + poor.toLocaleString() + "g");
+    }
+
+    // The Draught Belt specifically: purchasable, with gold, and actually rendered.
+    const belt = VENDOR_UPGRADES.find((u) => u.id === "autoPotion");
+    ok(!!belt, "the Draught Belt exists as a vendor upgrade");
+    ok(!!belt && belt.cost > 0, "…and costs gold (" + (belt ? belt.cost.toLocaleString() : "?") + "g)");
+    ok(!PREMIUM_ITEMS.some((it) => it.id === "autoPotion"),
+       "…and is NOT a Ven purchase — the one upgrade a character cannot progress without must not sit behind the premium currency");
+    ok(outside.indexOf("[up.id]: true") > 0, "…and buying it writes the flag the lesson and the combat tick both read");
+    ok(src.indexOf("VENDOR_UPGRADES.map") > 0, "…and it is rendered in the vendor, not merely defined");
+  }
+
+  // --- the Draught Belt and the potion gambit must not fight over one stock --------------------------
+  // Both drink from c.consumables. They used to keep SEPARATE clocks — the belt on POTION_CD, the
+  // gambit on its own 8s key — so one dip below 30% fired both and spent two potions where one
+  // would do. A potion restores 53-58% of the bar, so the second lands on a character already back
+  // near 87% and throws most of itself away.
+  {
+    const src = require("fs").readFileSync("${SRC.replace(/\\/g, '/')}", "utf8");
+    const fire = src.slice(src.indexOf("const fireConsumable"), src.indexOf("const fireConsumable") + 1600);
+    // The belt is a BACKSTOP, so its trigger must sit under every threshold a gambit can be set to.
+    // At 30% it fired on the same dip the player's own potion gambit was watching for, which left
+    // the gambit nothing to do at 30 or 20 and made the two compete for one stock.
+    {
+      const gambitHps = GAMBIT_IFS.filter((x) => /selfhp/.test(x.id))
+        .map((x) => Number(String(x.id).replace(/[^0-9]/g, "")) / 100).filter((n) => n > 0);
+      ok(gambitHps.length >= 3, "there are " + gambitHps.length + " health thresholds a gambit can use ("
+        + gambitHps.map((h) => (h * 100) + "%").join(", ") + ")");
+      ok(AUTO_POTION_HP < Math.min(...gambitHps),
+        "the belt fires at " + (AUTO_POTION_HP * 100) + "%, BELOW the lowest gambit threshold ("
+        + (Math.min(...gambitHps) * 100) + "%) — a backstop, not a competitor");
+      // Three hardcoded copies of this number is how it started: twice in simulateOffline, once in
+      // the live tick. A parked character healing on a different rule from a live one is drift.
+      const refs = src.split("AUTO_POTION_HP").length - 1;
+      ok(refs >= 5, "every auto-potion site reads the one constant (" + refs + " references)");
+      ok(src.indexOf("maxHp0 * 0.3") < 0 && src.indexOf("maxHpFor(c) * 0.3") < 0,
+        "…and no site still carries its own hardcoded 30%");
+    }
+
+    // Literal search: escaping a regex through this harness silently dropped a backslash level and
+    // turned "Date\\.now\\(\\)" into a pattern with an empty capture group that matched the wrong text.
+    ok(fire.indexOf("Date.now() - lastPotionRef.current < POTION_CD") > 0,
+       "the potion gambit honours the same cooldown the belt and the manual button use");
+    ok(fire.indexOf("lastPotionRef.current = Date.now()") > 0,
+       "…and taking a drink through a gambit starts that shared clock");
+    // Auto Gambit used to roll across 50/30/20, so one bar in three duplicated the belt exactly.
+    ok(src.indexOf('const potIf = "if_selfhp50"') > 0,
+       "Auto Gambit writes its potion rule at 50%, ABOVE the belt's 30% — it catches the dip earlier rather than duplicating it");
   }
 
   // --- coverage: the systems the sweep named are all present ----------------------------------------

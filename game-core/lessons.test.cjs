@@ -334,6 +334,25 @@ js += `
   {
     const src = require("fs").readFileSync("${SRC.replace(/\\/g, '/')}", "utf8");
     const fire = src.slice(src.indexOf("const fireConsumable"), src.indexOf("const fireConsumable") + 1600);
+    // The belt is a BACKSTOP, so its trigger must sit under every threshold a gambit can be set to.
+    // At 30% it fired on the same dip the player's own potion gambit was watching for, which left
+    // the gambit nothing to do at 30 or 20 and made the two compete for one stock.
+    {
+      const gambitHps = GAMBIT_IFS.filter((x) => /selfhp/.test(x.id))
+        .map((x) => Number(String(x.id).replace(/[^0-9]/g, "")) / 100).filter((n) => n > 0);
+      ok(gambitHps.length >= 3, "there are " + gambitHps.length + " health thresholds a gambit can use ("
+        + gambitHps.map((h) => (h * 100) + "%").join(", ") + ")");
+      ok(AUTO_POTION_HP < Math.min(...gambitHps),
+        "the belt fires at " + (AUTO_POTION_HP * 100) + "%, BELOW the lowest gambit threshold ("
+        + (Math.min(...gambitHps) * 100) + "%) — a backstop, not a competitor");
+      // Three hardcoded copies of this number is how it started: twice in simulateOffline, once in
+      // the live tick. A parked character healing on a different rule from a live one is drift.
+      const refs = src.split("AUTO_POTION_HP").length - 1;
+      ok(refs >= 5, "every auto-potion site reads the one constant (" + refs + " references)");
+      ok(src.indexOf("maxHp0 * 0.3") < 0 && src.indexOf("maxHpFor(c) * 0.3") < 0,
+        "…and no site still carries its own hardcoded 30%");
+    }
+
     // Literal search: escaping a regex through this harness silently dropped a backslash level and
     // turned "Date\\.now\\(\\)" into a pattern with an empty capture group that matched the wrong text.
     ok(fire.indexOf("Date.now() - lastPotionRef.current < POTION_CD") > 0,

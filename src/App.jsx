@@ -681,7 +681,7 @@ const LESSONS = [
 
   // --- staying alive. The measured difference between finishing and walling at 39 ---------------
   { id: "potion", level: 6, title: "Field Medicine", body: "Drink a Healing Potion. Open 🎒 the Bank's Items tab and use one — health does not come back on its own.", highlight: "bag", done: (c) => !!c.tutorial?.drankPotion },
-  { id: "autopot", level: 7, title: "The Draught Belt", body: "Buy the Draught Belt from the 🏪 Market's Vendor, under Permanent Upgrades. It drinks for you below 30% health — a parked hero without one stops progressing entirely.", highlight: "market", done: (c) => !!c.upgrades?.autoPotion },
+  { id: "autopot", level: 7, title: "The Draught Belt", body: "Buy the Draught Belt from the 🏪 Market's Vendor, under Permanent Upgrades. It drinks for you at 15% health — the last line before you fall, under anything your own gambits do. A parked hero without one stops progressing entirely.", highlight: "market", done: (c) => !!c.upgrades?.autoPotion },
 
   // --- fighting properly ------------------------------------------------------------------------
   { id: "skills", level: 8, title: "Know Your Kit", body: "Open the flashing 🛡️ Armory and look over your skills. Which five you carry is the whole of your damage.", highlight: "gear", done: (c) => !!c.seen?.gear },
@@ -1374,7 +1374,7 @@ const VENDOR_UPGRADES = [
   // would have stalled for most of the levelling game asking for something unaffordable. The gate
   // on this is meant to be knowing it exists, not grinding for it.
   { id: "autoPotion", name: "Draught Belt", icon: "\u{1F9EA}", cost: 400,
-    desc: "Drinks your best healing potion automatically when you drop below 30% health — in combat and while parked offline." },
+    desc: "Drinks your best healing potion automatically at 15% health — a backstop beneath your own potion gambits, in combat and while parked offline." },
 ];
 const vendorUpgradeOwned = (c, id) => !!((c && c.upgrades) || {})[id];
 const bestTier = (c, id) => { for (let t = 6; t >= 0; t--) if (conCount(c, id, t) > 0) return t; return -1; };
@@ -1399,6 +1399,16 @@ const tieredName = (def, level) => `${def.name} ${POTION_TIER_ROMAN[tierForLevel
 const BUFF_DURATION = 3600000; // 1 hour (scrolls)
 const POTION_BUFF_DURATION = 300000; // 5 min (combat potions)
 const POTION_CD = 5000; // 5 second potion-use cooldown
+// The Draught Belt drinks at 15%, BELOW every threshold a gambit can be set to (50 / 30 / 20). It
+// is a last-resort backstop, not the primary: at 30% it fired on the same dip a player's own potion
+// gambit was watching for, which left the gambit with nothing to do at 30 or 20 and made the two
+// systems compete for one stock. Sitting under all of them gives the gambit a real job at every
+// threshold and leaves the belt as the net that catches what the gambit missed.
+//
+// ONE constant, because this number was written out three times — twice inside simulateOffline and
+// once in the live tick — and a parked character healing on a different rule from a live one is the
+// exact drift the offline-parity suite exists to catch.
+const AUTO_POTION_HP = 0.15;
 // ---- enemy skill casting (makes combat deadlier) ----
 const ENEMY_SKILL_SCALE = 0.55;   // enemy skill damage vs their normal hit
 const ENEMY_CAST_CD = 4200;       // ms between enemy skill casts
@@ -2197,15 +2207,15 @@ const simulateOffline = (char, elapsedMs) => {
     const incoming = Math.floor(ktime * eDps(isBoss));
     const leechHeal = leechPct > 0 ? Math.floor(leechPct * ehp) : 0;
     let hpAfter = hp - incoming + leechHeal;
-    // Auto-potion, exactly as the live tick runs it: while below 30% health, drink the best potion
+    // Auto-potion, exactly as the live tick runs it: below AUTO_POTION_HP, drink the best potion
     // owned, at most once every POTION_CD. Offline ignored this entirely, which mattered far more
     // once offline stopped under-reporting enemy damage — a player who survives live on potions was
     // dying offline for want of a mechanic they had already bought.
     // The cooldown runs on wall-clock, not per fight: at ~1.6s a kill, a per-kill budget would
     // round every sip away and the upgrade would do nothing.
-    if (autoPot && hpAfter < maxHp0 * 0.3) {
+    if (autoPot && hpAfter < maxHp0 * AUTO_POTION_HP) {
       let at = Math.max(lastPotionAt + POTION_CD / 1000, timeUsed);
-      while (hpAfter < maxHp0 * 0.3 && at <= timeUsed + ktime) {
+      while (hpAfter < maxHp0 * AUTO_POTION_HP && at <= timeUsed + ktime) {
         const t = bestTier(c, "heal");
         if (t < 0) break;
         const key = conKey("heal", t);
@@ -3984,10 +3994,10 @@ function GameScreen({ character: initChar, onSave, onBack }) {
   useEffect(() => {
     const iv = setInterval(() => {
       const c = charRef.current; const b = battleRef.current;
-      // auto-potion upgrade: drink a heal when below 30% HP
+      // auto-potion upgrade: drink a heal below AUTO_POTION_HP — a backstop under every gambit
       if (b && b.enemy.hp > 0 && c.upgrades?.autoPotion && conTotal(c, "heal") > 0 && Date.now() - lastPotionRef.current >= POTION_CD) {
         const bt = bestTier(c, "heal");
-        if (bt >= 0 && b.hp < maxHpFor(c) * 0.3 && b.hp < maxHpFor(c)) {
+        if (bt >= 0 && b.hp < maxHpFor(c) * AUTO_POTION_HP && b.hp < maxHpFor(c)) {
           const healed = Math.min(maxHpFor(c), b.hp + tierHeal(bt));
           const key = conKey("heal", bt);
           commitBattle({ ...b, hp: healed });

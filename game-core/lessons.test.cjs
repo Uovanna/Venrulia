@@ -29,6 +29,7 @@ js = js.replace(/import\.meta\.env/g, '({})');
 js += `
 ;(function(){
   const core = require("${path.join(__dirname, 'combat.mjs').replace(/\\/g, '/')}");
+  const rngm = require("${path.join(__dirname, 'rng.mjs').replace(/\\/g, '/')}");
   let fail = 0;
   const ok = (c, m) => { console.log("  " + (c ? "\\u2713" : "\\u2717") + " " + m); if (!c) fail++; };
   const lvlOf = (l) => (typeof l.level === "function" ? l.level() : l.level);
@@ -283,6 +284,38 @@ js += `
       ? "all " + LESSONS.length + " lessons are completable"
       : unreachable + " lesson(s) CANNOT be completed by any code path");
 
+    // AFFORDABILITY. A lesson that asks for something the player cannot buy at its own level is
+    // still uncompletable, just slowly. The first price written here was 2,500g against a measured
+    // median purse of 610g at level 7 — the lesson would have stalled for most of the levelling
+    // game. Measured from the shipped offline loop rather than pinned to a remembered number.
+    {
+      const beltLvl = lvlOf(byId("autopot"));
+      const purses = [];
+      for (let sd = 0; sd < 6; sd++) {
+        const gold = rngm.withRng(rngm.makeRng(sd * 131 + 7), () => {
+          let ch = core.normalizeChar(core.createCharacter("A", "warrior", "human"));
+          let guard = 0;
+          while (ch.level < beltLvl && guard++ < 600) {
+            ch.autoSkillsOwned = {}; ch.autoSkills = {};
+            for (const n of (ch.selectedSkills || [])) { ch.autoSkillsOwned[n] = true; ch.autoSkills[n] = true; }
+            ch.consumables = { [conKey("heal", core.tierForLevel(ch.level))]: 500 };
+            ch.offlineZoneId = getZoneForLevel(ch.level).id;
+            ch.hp = core.maxHpFor(ch);
+            const r = simulateOffline(ch, 6 * 60 * 1000);
+            if (!r) break;
+            ch = r.char;
+          }
+          return ch.gold;
+        });
+        purses.push(gold);
+      }
+      purses.sort((a, b) => a - b);
+      const poor = purses[0];
+      const cost = VENDOR_UPGRADES.find((u) => u.id === "autoPotion").cost;
+      ok(cost <= poor, "the Draught Belt (" + cost.toLocaleString() + "g) is affordable at level "
+        + beltLvl + " — the poorest of " + purses.length + " runs holds " + poor.toLocaleString() + "g");
+    }
+
     // The Draught Belt specifically: purchasable, with gold, and actually rendered.
     const belt = VENDOR_UPGRADES.find((u) => u.id === "autoPotion");
     ok(!!belt, "the Draught Belt exists as a vendor upgrade");
@@ -291,6 +324,25 @@ js += `
        "…and is NOT a Ven purchase — the one upgrade a character cannot progress without must not sit behind the premium currency");
     ok(outside.indexOf("[up.id]: true") > 0, "…and buying it writes the flag the lesson and the combat tick both read");
     ok(src.indexOf("VENDOR_UPGRADES.map") > 0, "…and it is rendered in the vendor, not merely defined");
+  }
+
+  // --- the Draught Belt and the potion gambit must not fight over one stock --------------------------
+  // Both drink from c.consumables. They used to keep SEPARATE clocks — the belt on POTION_CD, the
+  // gambit on its own 8s key — so one dip below 30% fired both and spent two potions where one
+  // would do. A potion restores 53-58% of the bar, so the second lands on a character already back
+  // near 87% and throws most of itself away.
+  {
+    const src = require("fs").readFileSync("${SRC.replace(/\\/g, '/')}", "utf8");
+    const fire = src.slice(src.indexOf("const fireConsumable"), src.indexOf("const fireConsumable") + 1600);
+    // Literal search: escaping a regex through this harness silently dropped a backslash level and
+    // turned "Date\\.now\\(\\)" into a pattern with an empty capture group that matched the wrong text.
+    ok(fire.indexOf("Date.now() - lastPotionRef.current < POTION_CD") > 0,
+       "the potion gambit honours the same cooldown the belt and the manual button use");
+    ok(fire.indexOf("lastPotionRef.current = Date.now()") > 0,
+       "…and taking a drink through a gambit starts that shared clock");
+    // Auto Gambit used to roll across 50/30/20, so one bar in three duplicated the belt exactly.
+    ok(src.indexOf('const potIf = "if_selfhp50"') > 0,
+       "Auto Gambit writes its potion rule at 50%, ABOVE the belt's 30% — it catches the dip earlier rather than duplicating it");
   }
 
   // --- coverage: the systems the sweep named are all present ----------------------------------------

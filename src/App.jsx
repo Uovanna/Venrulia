@@ -1331,7 +1331,10 @@ const autoGambitPlan = (c) => {
   const general = [];
   const healCon = CONSUMABLE_DEFS.find((d) => d.id === "heal");
   const potThen = healCon ? "then_con_" + healCon.id : null;
-  const potIf = pick("if_selfhp30", "if_selfhp50", "if_selfhp20");
+  // 50%, not a roll across 50/30/20. The Draught Belt already drinks at 30%, so a generated rule at
+  // 30 or 20 duplicates it and teaches nothing; at 50 the gambit catches the dip EARLIER than the
+  // belt, which is the reason to hold one. A player can still set 30 or 20 by hand.
+  const potIf = "if_selfhp50";
   if (potThen && has(potThen) && potIf) general.push({ if: potIf, then: potThen });
   return { rules, general };
 };
@@ -1366,7 +1369,11 @@ const conTotal = (c, id) => { let s = 0; for (let t = 0; t <= 6; t++) s += conCo
 // at level 39 — without it, 0 of 176 parked runs finished. It is deliberately GOLD and not Ven: the
 // one mechanic a character cannot progress without must not sit behind the premium currency.
 const VENDOR_UPGRADES = [
-  { id: "autoPotion", name: "Draught Belt", icon: "\u{1F9EA}", cost: 2500,
+  // 400g, not the 2,500 first written. Measured: a character reaching level 7 — where its lesson
+  // opens — holds a median of 610 gold, and is still on only 1,395 by level 20. At 2,500 the lesson
+  // would have stalled for most of the levelling game asking for something unaffordable. The gate
+  // on this is meant to be knowing it exists, not grinding for it.
+  { id: "autoPotion", name: "Draught Belt", icon: "\u{1F9EA}", cost: 400,
     desc: "Drinks your best healing potion automatically when you drop below 30% health — in combat and while parked offline." },
 ];
 const vendorUpgradeOwned = (c, id) => !!((c && c.upgrades) || {})[id];
@@ -3821,8 +3828,15 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           const key = conKey(def.id, t);
           if (def.kind === "heal") {
             const ck = "gcd_" + def.id;
+            // The Draught Belt and this gambit drink from ONE potion stock but used to keep two
+            // separate clocks, so a single dip below 30% fired both and spent two potions where one
+            // would do. A potion restores 53-58% of the bar, so the second lands on a character
+            // already back at ~87% and throws most of itself away. The manual/belt cooldown is
+            // honoured here as well, and taking a drink starts it — one shared clock, three sources.
+            if (Date.now() - lastPotionRef.current < POTION_CD) return;
             if (w.hp >= gMaxHp || (w.cooldowns?.[ck] || 0) > now) return;
             w.hp = Math.min(gMaxHp, w.hp + Math.round(tierHeal(t) * gemPotionMult(cc))); w.cooldowns = { ...(w.cooldowns || {}), [ck]: now + 8000 };
+            lastPotionRef.current = Date.now(); setLastPotion(Date.now());
             commitChar({ ...cc, consumables: { ...cc.consumables, [key]: cc.consumables[key] - 1 } });
             addLog(`🧪 Gambit: ${def.name} (+HP)`, "#7CFC9E"); dirty = true;
           } else if (def.kind === "dmgbuff" || def.kind === "reducebuff") {

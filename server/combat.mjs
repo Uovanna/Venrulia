@@ -1750,6 +1750,8 @@ const createCharacter = (name, cls, race) => {
     quests: { board: [] },
     tutorial: { step: 0, done: false, doneIds: {} },
     seen: {},
+    daily: { lastDay: null, streak: 0, history: [] },
+    offer: { seenAt: 0, taken: false, pick: null },
     buffs: {},
     hp: 0,
     createdAt: Date.now(),
@@ -1944,6 +1946,17 @@ const normalizeChar = (c) => ({
   quests: { board: (c.quests && c.quests.board) || [] },
   tutorial: normalizeTutorial(c),
   seen: (c.seen && typeof c.seen === "object" && !Array.isArray(c.seen)) ? c.seen : {},
+  // Daily sign-in. The SERVER holds the authoritative record; this is only what the client caches
+  // to render the calendar and to know whether the icon needs a badge.
+  daily: (c.daily && typeof c.daily === "object" && !Array.isArray(c.daily))
+    ? { lastDay: c.daily.lastDay || null, streak: Number(c.daily.streak) || 0,
+        history: Array.isArray(c.daily.history) ? c.daily.history : [] }
+    : { lastDay: null, streak: 0, history: [] },
+  // The level-10 first-purchase offer: when the player first SAW it, so the 24 hours cannot run
+  // down while they are logged out, and whether they have taken it.
+  offer: (c.offer && typeof c.offer === "object" && !Array.isArray(c.offer))
+    ? { seenAt: Number(c.offer.seenAt) || 0, taken: !!c.offer.taken, pick: c.offer.pick || null }
+    : { seenAt: 0, taken: false, pick: null },
   consumables: (() => { const src = c.consumables || {}; const out = {}; const t = Math.min(6, Math.max(0, Math.floor((c.level || 1) / 10))); for (const k in src) { const v = src[k]; if (!v) continue; if (k.includes("@")) out[k] = (out[k] || 0) + v; else out[k + "@" + t] = (out[k + "@" + t] || 0) + v; } return out; })(),
   buffs: c.buffs || {},
   hp: typeof c.hp === "number" ? c.hp : maxHpFor(c),

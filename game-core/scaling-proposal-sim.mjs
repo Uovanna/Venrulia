@@ -13,16 +13,15 @@
 //
 // Measures and models; changes nothing.
 import { buildBotChar, offlinePlayerDps, grpEstDps, critChanceFor, effectiveStats,
-         maxHpFor, createCharacter, CRIT_SOFT_CAP } from "./combat.mjs";
+         maxHpFor, createCharacter, CRIT_SOFT_CAP, armGambits } from "./combat.mjs";
 import { runEncounter } from "../server/sim.mjs";
 import { withRng, makeRng } from "./rng.mjs";
 
 const pad = (s, n) => String(s).padEnd(n), rp = (s, n) => String(s).padStart(n);
 const SEEDS = [11, 22, 33, 44, 55, 66, 77, 88];
 const armed = (cls, spec, seed, ilvl = 63) => withRng(makeRng(seed), () => {
-  const c = buildBotChar(cls, spec, 60, ilvl); c.spec = spec;
-  c.autoSkillsOwned = {}; c.autoSkills = {};
-  for (const n of (c.selectedSkills || [])) { c.autoSkillsOwned[n] = true; c.autoSkills[n] = true; }
+  let c = buildBotChar(cls, spec, 60, ilvl); c.spec = spec;
+  c = armGambits(c);   // gambits, not the dead auto-skill flag
   return c;
 });
 const mean = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
@@ -139,7 +138,7 @@ for (const [cls, spec] of [["rogue", "r_ambush"], ["hunter", "h_snipe"], ["warri
     const base = armed(cls, spec, sd);
     const d0 = offlinePlayerDps(base);
     const bump = (over) => {
-      const c = JSON.parse(JSON.stringify(base));
+      let c = JSON.parse(JSON.stringify(base));
       c.equipment.chest = { ...c.equipment.chest, stats: { ...c.equipment.chest.stats, ...over } };
       return offlinePlayerDps(c) / d0 - 1;
     };

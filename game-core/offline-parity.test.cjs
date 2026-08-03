@@ -43,10 +43,9 @@ js += `
   // One character definition, cloned per case, so a difference between runs is the thing under
   // test and never a different randomly-rolled character.
   const bench = (level, opts) => rngm.withRng(rngm.makeRng(4242), () => {
-    const c = core.buildBotChar("warrior", "w_berserk", level, 60);
+    let c = core.buildBotChar("warrior", "w_berserk", level, 60);
     c.level = level; c.spec = "w_berserk"; c.gold = 0; c.race = "human";
-    c.autoSkillsOwned = {}; c.autoSkills = {};
-    for (const n of (c.selectedSkills || [])) { c.autoSkillsOwned[n] = true; c.autoSkills[n] = true; }
+    c = core.armGambits(c);   // a bar a player can actually build: gambits, not the dead auto-skill flag
     c.offlineZoneId = getZoneForLevel(level).id;
     c.upgrades = { autoPotion: !!(opts && opts.pots) };
     c.consumables = (opts && opts.pots) ? { [conKey("heal", 6)]: 100000 } : {};
@@ -107,7 +106,7 @@ js += `
     // simulateOffline uses it — an earlier version of this test passed happily with the loop still
     // running the legacy curve. Tie the two together: predict the run's kill count from the
     // profile, and require the real run to match.
-    const c = bench(60, { pots: true });
+    let c = bench(60, { pots: true });
     const lvl = Math.max(zone.minLevel, Math.min(60, zone.maxLevel));
     const p2 = zoneEnemyProfile(zone, lvl);
     const nHp = (lvl * 26 + 50) * p2.hpMult + 10;
@@ -144,7 +143,7 @@ js += `
 
   // --- 4. running dry is fatal, so the stock genuinely matters ------------------------------------
   {
-    const c = bench(60, { pots: true });
+    let c = bench(60, { pots: true });
     c.consumables = { [conKey("heal", 6)]: 3 };   // barely any
     const r = run(c, 10);
     ok(!!r && (r.potionsDrunk || 0) <= 3, "a player can only drink the potions they own");
@@ -158,7 +157,7 @@ js += `
   {
     ok(typeof conCount === "function" && typeof conTotal === "function" && typeof bestTier === "function",
        "the consumable helpers are module-scope, so live combat and offline read one stock");
-    const c = { consumables: { [conKey("heal", 2)]: 4, [conKey("heal", 5)]: 1 } };
+    let c = { consumables: { [conKey("heal", 2)]: 4, [conKey("heal", 5)]: 1 } };
     ok(conTotal(c, "heal") === 5, "conTotal counts every tier");
     ok(bestTier(c, "heal") === 5, "bestTier picks the strongest potion owned");
     ok(bestTier({ consumables: {} }, "heal") === -1, "…and reports -1 when there is nothing to drink");

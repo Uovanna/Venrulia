@@ -35,9 +35,8 @@ js += `
   // reads as "Intellect is worth nothing to a mage", which is an artifact of the harness rather
   // than a fact about the game. Turn the rotation on so the numbers describe a real player.
   const armed = (cls, spec, ilvl) => {
-    const c = buildBotChar(cls, spec, 60, ilvl); c.spec = spec;
-    c.autoSkillsOwned = {}; c.autoSkills = {};
-    for (const n of (c.selectedSkills || [])) { c.autoSkillsOwned[n] = true; c.autoSkills[n] = true; }
+    let c = buildBotChar(cls, spec, 60, ilvl); c.spec = spec;
+    c = core.armGambits(c);   // a bar a player can actually build: gambits, not the dead auto-skill flag
     return c;
   };
 
@@ -92,7 +91,7 @@ js += `
     console.log("    " + pad("piece", 42) + rpad("itemScore", 11) + rpad("real dps", 11) + rpad("real hp", 10));
     const measured = [];
     for (const [label, item] of rows) {
-      const c = JSON.parse(JSON.stringify(base));
+      let c = JSON.parse(JSON.stringify(base));
       c.equipment.chest = item; c.spec = spec;
       const sc = itemScore(item, cls);
       const dps = offlinePlayerDps(c), hp = maxHpFor(c);
@@ -130,7 +129,7 @@ js += `
   for (const [cls, spec, mainOf] of subjects) {
     const base = armed(cls, spec, ILVL);
     const dpsWith = (stat) => {
-      const c = JSON.parse(JSON.stringify(base));
+      let c = JSON.parse(JSON.stringify(base));
       c.equipment.chest = mk([], null);
       if (stat) c.equipment.chest.stats[stat] = 30;
       return offlinePlayerDps(c);

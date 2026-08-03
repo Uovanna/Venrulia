@@ -14,7 +14,7 @@
 //     in offline farming, in its multiplayer power rating, and in every group dps estimate.
 import { SPEC_SKILLS, SPEC_AUTOGRANT, specSkillNames, specGrantedSkills, specRole, specById,
          normalizeChar, createCharacter, buildBotChar, unlockedSlotCount, skillByName, skillPool,
-         offlinePlayerDps, isMagicSkill, talentFlag, SKILLS } from "./combat.mjs";
+         offlinePlayerDps, isMagicSkill, talentFlag, SKILLS, armGambits } from "./combat.mjs";
 import { withRng, makeRng } from "./rng.mjs";
 
 let fail = 0;
@@ -80,7 +80,7 @@ const ALL = Object.keys(SPEC_SKILLS).filter((s) => clsOf(s) && specById(s));
 {
   const spec = "w_prot", cls = "warrior";
   const kit = specSkillNames(spec);
-  const c = { ...createCharacter("T", cls, "human"), level: 60, spec, selectedSkills: [...kit] };
+  let c = { ...createCharacter("T", cls, "human"), level: 60, spec, selectedSkills: [...kit] };
   const loaded = normalizeChar(c);
   ok(JSON.stringify(loaded.selectedSkills) === JSON.stringify(kit),
      "a tank who already carries all five signatures keeps all five across a reload");
@@ -119,10 +119,9 @@ const ALL = Object.keys(SPEC_SKILLS).filter((s) => clsOf(s) && specById(s));
 // --- Wild Magic is credited by the damage estimate --------------------------------------------------
 {
   const mk = (spec) => withRng(makeRng(77), () => {
-    const c = buildBotChar("mage", spec, 60, 64); c.spec = spec;
+    let c = buildBotChar("mage", spec, 60, 64); c.spec = spec;
     c.selectedSkills = defaultBar(spec);
-    c.autoSkillsOwned = {}; c.autoSkills = {};
-    for (const n of c.selectedSkills) { c.autoSkillsOwned[n] = true; c.autoSkills[n] = true; }
+    c = armGambits(c);   // gambits, not the dead auto-skill flag
     return c;
   });
   const wild = mk("m_wild");
@@ -135,10 +134,9 @@ const ALL = Object.keys(SPEC_SKILLS).filter((s) => clsOf(s) && specById(s));
   ok(dps > 955 * 1.05,
      `its measured dps is ${Math.round(dps)}, above the ${955} it read when Wild Magic was ignored`);
   // The credit must be confined to magic skills — a physical bar cannot benefit from it.
-  const physOnly = { ...wild };
+  let physOnly = { ...wild };
   physOnly.selectedSkills = skillPool(wild).filter((s) => s.unlockLevel <= 60 && !isMagicSkill(s) && s.mult > 0).slice(0, CAP).map((s) => s.name);
-  physOnly.autoSkillsOwned = {}; physOnly.autoSkills = {};
-  for (const n of physOnly.selectedSkills) { physOnly.autoSkillsOwned[n] = true; physOnly.autoSkills[n] = true; }
+  physOnly = armGambits(physOnly);   // gambits, not the dead auto-skill flag
   ok(physOnly.selectedSkills.length === 0 || offlinePlayerDps(physOnly) < dps,
      "…and a physical-only bar gets no Wild Magic credit");
 }

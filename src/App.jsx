@@ -166,6 +166,7 @@ import {
   guildBossDef,
   HUNTER_WEAPONS,
   gambitCondMet,
+  gambitFiresSkill,
   executeThreshold,
   intentRejection,
   potionRejection,
@@ -684,24 +685,29 @@ const LESSONS = [
   { id: "autopot", level: 7, title: "The Draught Belt", body: "Buy the Draught Belt from the 🏪 Market's Vendor, under Permanent Upgrades. It drinks for you at 15% health — the last line before you fall, under anything your own gambits do. A parked hero without one stops progressing entirely.", highlight: "market", done: (c) => !!c.upgrades?.autoPotion },
 
   // --- fighting properly ------------------------------------------------------------------------
-  { id: "skills", level: 8, title: "Know Your Kit", body: "Open the flashing 🛡️ Armory and look over your skills. Which five you carry is the whole of your damage.", highlight: "gear", done: (c) => !!c.seen?.gear },
-  { id: "autoskill", level: 9, title: "Muscle Memory", body: "Buy an Auto-Skill from the Armory's trainer so a skill fires on its own. Fighting with auto-attacks alone is 2.6x slower.", highlight: "gear", done: (c) => Object.keys(c.autoSkillsOwned || {}).length > 0 },
+  { id: "skills", level: 8, title: "Know Your Kit", body: "Open the flashing 🗿 Hero\u2019s Statue and look over your Ability Slots. Which five you carry is the whole of your damage — tap a skill to slot it.", highlight: "hero", done: (c) => !!c.seen?.hero },
+  // "Muscle Memory" stood here and asked the player to buy an Auto-Skill from a trainer. There is no
+  // trainer: that system was removed when automation became gambits-only, and its handlers were left
+  // uncalled, so the lesson could NEVER complete. Since activeLesson serves the earliest unfinished
+  // lesson, it walled the tutorial — a player who did everything the UI allows finished 9 of 30 and
+  // was stuck here forever. There is nothing to teach at level 9; automation arrives with gambits at
+  // 20 and has its own lesson there.
   { id: "spec", level: 10, title: "Choose a Path", body: "Visit the flashing ⛪ Class Hall and pick a Specialization. It grants three signature skills and reshapes how you fight.", highlight: "classhall", done: (c) => !!c.spec },
-  { id: "talent", level: 11, title: "The First Talent", body: "Open the flashing 🗿 Hero's Statue and spend your talent point.", highlight: "hero", done: (c) => !!(c.talents || {})[10] || !!c.talentTutorialDone },
+  { id: "talent", level: 11, title: "The First Talent", body: "Open the flashing 🎓 Class Hall, choose \u{1F31F} Talents, and spend your point. New rows open at 20, 30, 40 and 50.", highlight: "classhall", done: (c) => !!(c.talents || {})[10] || !!c.talentTutorialDone },
   { id: "attrs", level: 12, title: "Raw Potential", body: "Spend an attribute point at the 🗿 Hero's Statue. Points are yours to place every level.", highlight: "hero", done: (c) => Object.values(c.allocated || {}).some((v) => v > 0) },
 
   // --- the economy ------------------------------------------------------------------------------
   { id: "auction", level: () => AH_ECON.unlockLevel, title: "The Trading Floor", body: "The 🏛️ Auction House is open. Visit it — gear you cannot use is worth more to another player than to a vendor.", highlight: "auction", done: (c) => !!c.seen?.auction },
   { id: "dungeon", level: 15, title: "Into the Dark", body: "Run a Dungeon from the ⚔️ Adventure Gate. Bosses drop the gear the open world will not.", highlight: "world", done: (c) => (c.dungeonClears || 0) >= 1 },
-  { id: "salvage", level: 17, title: "Nothing Wasted", body: "Visit the 🏪 Market's Salvage bench and break down a piece you will never wear.", highlight: "market", done: (c) => !!c.seen?.salvage },
+  { id: "salvage", level: 17, title: "Nothing Wasted", body: "Open the \u2692\uFE0F Crafting Hall and tap your Salvage profession. Break down a piece you will never wear.", highlight: "prof", done: (c) => !!c.seen?.salvage },
   { id: "gems", level: 18, title: "Set in Stone", body: "Open the 🏦 Bank's Gems tab. Sockets turn a good piece into your best one.", highlight: "bag", done: (c) => !!c.seen?.bag && !!c.seen?.gems },
 
   // --- automation and depth ---------------------------------------------------------------------
-  { id: "gambit", level: () => GAMBIT_UNLOCK_LEVEL, title: "Standing Orders", body: "Gambits are open. Visit the ⛪ Class Hall's Gambit panel and set one rule — or use Auto Gambit for a working default.", highlight: "classhall", done: (c) => !!c.seen?.gambits || !!c.seen?.gambitshop },
-  { id: "town", level: 22, title: "Build the Town", body: "Open City Management from the 🗿 Hero's Statue. Town buildings pay a permanent bonus to everything you do.", highlight: "hero", done: (c) => !!c.seen?.citymgmt },
+  { id: "gambit", level: () => GAMBIT_UNLOCK_LEVEL, title: "Standing Orders", body: "Gambits are open — and they are the ONLY thing that casts a skill without you tapping it. Open the \u{1F6E1}\uFE0F Armory, tap Equip Gambits, and set a rule (or press Auto Gambit). Buy more at the \u{1F3EA} Market\u2019s Gambit Shop.", highlight: "gear", done: (c) => !!c.seen?.gambits || !!c.seen?.gambitshop },
+  { id: "town", level: 22, title: "Build the Town", body: "Open the \u{1F37A} Tavern and choose City Management. Town buildings pay a permanent bonus to everything you do.", highlight: "quests", done: (c) => !!c.seen?.citymgmt },
   { id: "craft", level: 24, title: "The Anvil", body: "Craft a piece of armour in the ⚒️ Crafting Hall's Forge, using ore you have mined.", highlight: "prof", done: (c) => !!c.seen?.forge },
   { id: "brew", level: 26, title: "Better Draughts", body: "Visit the ⚒️ Crafting Hall's Brewery. Stronger potions are the difference in a long fight.", highlight: "prof", done: (c) => !!c.seen?.brewery },
-  { id: "enchant", level: 30, title: "Bound in Runes", body: "Visit the 🏪 Market's Enchanting bench and put an enchant on a piece you intend to keep.", highlight: "market", done: (c) => !!c.seen?.enchanting },
+  { id: "enchant", level: 30, title: "Bound in Runes", body: "Open the \u2692\uFE0F Crafting Hall and tap your Enchanting profession. Put an enchant on a piece you intend to keep.", highlight: "prof", done: (c) => !!c.seen?.enchanting },
   { id: "bestiary", level: 32, title: "Know the Enemy", body: "Open the Bestiary in the 🍺 Tavern. What you have killed is recorded, and what it drops with it.", highlight: "quests", done: (c) => !!c.seen?.bestiary },
   { id: "skillmod", level: 35, title: "Reshape a Skill", body: "Visit the ⛪ Class Hall's Skill Mods and change what one of your abilities does.", highlight: "classhall", done: (c) => !!c.seen?.skillmods },
   { id: "temper", level: 38, title: "The Forge Heat", body: "Visit the 🏪 Market's Tempering Forge. Every failure raises the next attempt until the rank is guaranteed — read the odds before you spend.", highlight: "market", done: (c) => !!c.seen?.temper },
@@ -709,10 +715,10 @@ const LESSONS = [
   // --- other people. Visiting only: none of these lessons queues the player for anything. -------
   { id: "guild", level: 40, title: "Not Alone", body: "Run the Training Delve at 🏛️ The Guild. A practice party of four, no lockout and nothing at stake — learn to interrupt, hold a role and survive a boss before a real group depends on you.", highlight: "guild", done: (c) => !!c.tutorial?.delveCleared },
   { id: "arena", level: 45, title: "The Sands", body: "Fight a Practice Duel at the ⚔️ Arena. An unranked bout against a training partner — nothing is recorded, win or lose.", highlight: "arena", done: (c) => !!c.tutorial?.duelDone },
-  { id: "mail", level: 48, title: "The Courier", body: "Check your 📬 Mail. Auction sales and overflow from a full bank arrive here.", highlight: "auction", done: (c) => !!c.seen?.mail },
+  { id: "mail", level: 48, title: "The Courier", body: "Tap the \u{1F4EC} Mail button in the bottom bar \u2014 it is there from any screen, not inside a building. Auction sales and overflow from a full bank arrive here.", highlight: null, done: (c) => !!c.seen?.mail },
 
   // --- the handover to Hard Mode ------------------------------------------------------------------
-  { id: "supply", level: 52, title: "Lay In Supplies", body: "Visit the 🍺 Tavern's Supply Run. Consumables are no longer optional from here on.", highlight: "quests", done: (c) => !!c.seen?.supply },
+  { id: "supply", level: 52, title: "Lay In Supplies", body: "Open the \u{1F3EA} Market and visit the Supply Master \u2014 bottles, flasks and blank scrolls. Consumables are no longer optional from here on.", highlight: "market", done: (c) => !!c.seen?.supply },
   { id: "hardprep", level: 58, title: "Before the Threshold", body: "Hard Mode judges item level, your rotation and your potions — all three. Check your 🛡️ Armory and make sure every slot is filled before you cross.", highlight: "gear", done: (c) => !!c.seen?.gear && (c.level || 1) >= 59 },
 ];
 // Kept as the old name so nothing that referenced the opening run breaks.
@@ -5044,19 +5050,12 @@ function GameScreen({ character: initChar, onSave, onBack }) {
   };
 
   // ---------- auto-skill actions ----------
-  const autoSkillCost = (c) => 10000 + 5000 * Object.keys(c.autoSkillsOwned || {}).filter((k) => c.autoSkillsOwned[k]).length;
-  const buyAutoSkill = (name) => {
-    const c = charRef.current;
-    const cost = autoSkillCost(c);
-    if (c.gold < cost) { showNotif(`Need ${cost.toLocaleString()}g`); return; }
-    commitChar({ ...c, gold: c.gold - cost, autoSkillsOwned: { ...c.autoSkillsOwned, [name]: true }, autoSkills: { ...c.autoSkills, [name]: true } });
-    showNotif(`Auto-cast unlocked: ${name}`);
-  };
-  const toggleAutoSkill = (name) => {
-    const c = charRef.current;
-    const currentlyOn = c.autoSkills?.[name] !== false; // slotted skills auto-cast by default
-    commitChar({ ...c, autoSkills: { ...c.autoSkills, [name]: !currentlyOn } });
-  };
+  // The per-skill Auto-Cast purchase (autoSkillCost / buyAutoSkill / toggleAutoSkill) lived here and
+  // was DELETED. Its UI was removed when the live tick moved to "Skill automation is handled
+  // exclusively by the Gambit system (no free auto-cast)", but the three handlers stayed behind with
+  // nothing calling them — so char.autoSkillsOwned could never be set by anyone. That dead flag was
+  // still load-bearing in offlinePlayerDps, which meant parked characters counted auto-attacks only,
+  // and a tutorial lesson asked players to buy from a trainer that does not exist.
 
   // ---------- profession actions ----------
   const learnProfession = (pid) => {
@@ -5620,7 +5619,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                 const onCd = cdEnd > nowMs;
                 const effCd = Math.max(1, Math.round(sk.cd * (1 - cdrFracFor(char)) - gemFlatCd(char))); // cooldown after CDR + power gems
                 const remain = onCd ? Math.min(effCd, Math.max(1, Math.ceil((cdEnd - nowMs) / 1000))) : 0;
-                const auto = char.autoSkills?.[sk.name];
+                const auto = gambitFiresSkill(char, sk.name); // a gambit rule casts this without a tap
                 return (
                   <button key={sk.name} onClick={() => useSkill(sk)} disabled={!battle || onCd} title={sk.desc}
                     style={{ flex: "1 1 30%", minWidth: 92, background: onCd ? "#0d0b16" : "#1a1530", border: `1.5px solid ${onCd ? "#333" : cls?.color || "#f0b429"}`, borderRadius: 9, padding: "8px 6px", cursor: battle && !onCd ? "pointer" : "default", opacity: !battle ? 0.5 : 1, textAlign: "center", position: "relative" }}>
@@ -8097,8 +8096,6 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                     const selected = sel.includes(skill.name);
                     const fromSpec = !!skill.spec; // a signature skill of the active spec
                     const srcColor = cls?.color || "#888";
-                    const owned = char.autoSkillsOwned?.[skill.name];
-                    const on = char.autoSkills?.[skill.name];
                     const canAdd = selected || sel.length < cap;
                     return (
                       <div key={skill.name} onClick={() => toggleSelectedSkill(skill.name)} style={{ background: selected ? "#171335" : "#0c0a18", border: `1.5px solid ${selected ? srcColor : "#241f3c"}`, borderRadius: 8, padding: "11px 13px", marginBottom: 8, cursor: "pointer", opacity: canAdd ? 1 : 0.5 }}>

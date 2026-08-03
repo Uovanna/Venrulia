@@ -20,10 +20,15 @@
  *         roll is DISCARDED, since the offline loop already paid for it.
  *
  * A FIRST PASS OF THIS MEASURED ZERO DEATHS ACROSS ALL 22 SPECS. That is not a difficulty reading,
- * it is a reading of one very well-equipped player: rotation bought, auto-potion bought, potions
- * stocked, gear current. So the run is repeated across four profiles instead, because "who dies"
- * turns out to be a question about which systems a player has found rather than which spec they
- * picked. The profiles are the real output of this file.
+ * it is a reading of one very well-equipped player. So the run is repeated across four profiles
+ * instead, because "who dies" turns out to be a question about which systems a player has found
+ * rather than which spec they picked. The profiles are the real output of this file.
+ *
+ * AUTOMATION IS GAMBITS. An earlier version of this file armed its "rotation" profile by setting
+ * char.autoSkillsOwned — a per-skill purchase whose UI had been removed, so nothing could set it and
+ * the profile described a character nobody could build. Skills are armed through armGambits now, and
+ * only from GAMBIT_UNLOCK_LEVEL, because below that a parked hero genuinely has no automation: there
+ * is nobody at the screen to tap a button. That correction moved the no-potion wall from 39 to 28.
  *
  *   node game-core/levelling-sim.cjs [seedsPerSpec]
  *
@@ -54,10 +59,10 @@ js += `
 
   // Four players, differing only in which systems they have found. Everything else is identical.
   const PROFILES = [
-    { id: "engaged",  label: "rotation + potions + gear", rotation: true,  potions: true,  gear: true  },
-    { id: "nopots",   label: "rotation + gear, NO potions", rotation: true, potions: false, gear: true  },
-    { id: "autos",    label: "gear only, NO rotation",    rotation: false, potions: true,  gear: true  },
-    { id: "nogear",   label: "rotation + potions, NO gear upgrades", rotation: true, potions: true, gear: false },
+    { id: "engaged",  label: "gambits + potions + gear",  rotation: true,  potions: true,  gear: true  },
+    { id: "nopots",   label: "gambits + gear, NO potions",  rotation: true, potions: false, gear: true  },
+    { id: "autos",    label: "gear only, NO gambits",     rotation: false, potions: true,  gear: true  },
+    { id: "nogear",   label: "gambits + potions, NO gear upgrades", rotation: true, potions: true, gear: false },
   ];
 
   const runOne = (cls, spec, P) => {
@@ -72,8 +77,12 @@ js += `
         c.spec = spec; c.selectedSkills = []; c = normalizeChar(c); specSet = true;
       }
       c.upgrades = { ...(c.upgrades || {}), autoPotion: !!P.potions };
-      c.autoSkillsOwned = {}; c.autoSkills = {};
-      if (P.rotation) for (const n of (c.selectedSkills || [])) { c.autoSkillsOwned[n] = true; c.autoSkills[n] = true; }
+      // Automation is gambits — the auto-skill flag this used to set has no UI behind it, so a
+      // "rotation" profile built that way described a character nobody could make. Gambits do not
+      // exist before their unlock, so below it even the engaged profile swings and nothing else:
+      // there is nobody parked at the screen to tap a button.
+      c = (P.rotation && (c.level || 1) >= GAMBIT_UNLOCK_LEVEL)
+        ? core.armGambits(c) : { ...c, gambits: { ...(c.gambits || {}), rules: {} } };
       c.consumables = P.potions ? { [conKey("heal", tierForLevel(c.level))]: 500 } : {};
       c.offlineZoneId = getZoneForLevel(c.level).id;    // death nulls this; re-park each slice
       c.hp = maxHpFor(c);

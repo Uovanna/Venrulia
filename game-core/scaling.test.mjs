@@ -3,7 +3,7 @@
 // hands back attribute points the change made inert.
 import { physScalingStat, STAT_DMG_RATE, CRIT_BASE, CRIT_ROGUE_BONUS, CLASSES,
          critChanceFor, createCharacter, buildBotChar, offlinePlayerDps,
-         refundStrayScalingPoints, normalizeChar, CRIT_SOFT_CAP } from "./combat.mjs";
+         refundStrayScalingPoints, normalizeChar, CRIT_SOFT_CAP, armGambits } from "./combat.mjs";
 import { withRng, makeRng } from "./rng.mjs";
 
 let fail = 0;
@@ -11,9 +11,8 @@ const ok = (c, m) => { console.log(`  ${c ? "✓" : "✗"} ${m}`); if (!c) fail+
 const SEEDS = [11, 22, 33, 44, 55, 66];
 const mean = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
 const armed = (cls, spec, sd) => withRng(makeRng(sd), () => {
-  const c = buildBotChar(cls, spec, 60, 63); c.spec = spec;
-  c.autoSkillsOwned = {}; c.autoSkills = {};
-  for (const n of (c.selectedSkills || [])) { c.autoSkillsOwned[n] = true; c.autoSkills[n] = true; }
+  let c = buildBotChar(cls, spec, 60, 63); c.spec = spec;
+  c = armGambits(c);   // gambits, not the dead auto-skill flag
   // Adding a main stat to a FOCUSED piece puts its Power affix dormant, which reads as a stat
   // being worth negative dps and has nothing to do with scaling.
   c.equipment.chest = { ...c.equipment.chest, stats: { ...c.equipment.chest.stats, ap: 0, sp: 0 } };
@@ -48,7 +47,7 @@ const armed = (cls, spec, sd) => withRng(makeRng(sd), () => {
 {
   const bump = (cls, spec, stat) => mean(SEEDS.map((sd) => {
     const b = armed(cls, spec, sd), d0 = offlinePlayerDps(b);
-    const c = JSON.parse(JSON.stringify(b));
+    let c = JSON.parse(JSON.stringify(b));
     c.equipment.chest.stats[stat] = (c.equipment.chest.stats[stat] || 0) + 30;
     return offlinePlayerDps(c) / d0 - 1;
   }));

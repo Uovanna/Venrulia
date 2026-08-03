@@ -9,7 +9,7 @@
 // The two properties that matter are that levelling is untouched, and that the climb compounds.
 import { gearStatBase, endgameClimb, ENDGAME_ILVL_FLOOR, ENDGAME_ILVL_GROWTH, RARITY_STAT_MULT,
          generateItem, rarityById, baseArmorFor, weaponRangeFor, buildBotChar, maxHpFor,
-         offlinePlayerDps } from "./combat.mjs";
+         offlinePlayerDps, armGambits } from "./combat.mjs";
 import { withRng, makeRng } from "./rng.mjs";
 
 let fail = 0;
@@ -80,8 +80,7 @@ const meanPts = (ilvl, rar, n = 400) => withRng(makeRng(ilvl * 17 + rar.length),
 {
   const build = (ilvl, seed) => withRng(makeRng(seed), () => {
     const c = buildBotChar("warrior", "w_berserk", 60, ilvl);
-    c.spec = "w_berserk"; c.autoSkillsOwned = {}; c.autoSkills = {};
-    for (const n of (c.selectedSkills || [])) { c.autoSkillsOwned[n] = true; c.autoSkills[n] = true; }
+    c.spec = "w_berserk";
     return c;
   });
   const avg = (ilvl) => { let d = 0, h = 0; const N = 40;

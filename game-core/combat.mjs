@@ -982,6 +982,28 @@ const cdrFracFor = (char, battle, now) => {
   if (perDbf) bonus += Math.min(0.50, perDbf * enemyDebuffCount(battle, n)); // Beastmaster: +10%/debuff, capped +50%
   return Math.min(0.99, capped + bonus); // 0.99 guard keeps cooldowns from hitting zero
 };
+// Does this character have a gambit rule that casts `name`? The live tick fires skills only through
+// gambits, so this answers the single question "will this go off while nobody is tapping".
+const gambitSlug = (n) => String(n || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+const gambitFiresSkill = (char, name) => {
+  const g = (char && char.gambits) || {};
+  const want = "then_sk_" + gambitSlug(name);
+  const rules = g.rules || {};
+  for (const k in rules) for (const r of (rules[k] || [])) if (r && r.then === want) return true;
+  for (const r of (g.general || [])) if (r && r.then === want) return true;
+  return false;
+};
+
+// Arm every slotted skill with a gambit that always fires it — the fully-automated bar a player
+// builds by hand or with Auto Gambit. Simulators used to do this by setting autoSkillsOwned, which
+// no UI can set, so they were measuring a character nobody could build.
+const armGambits = (char) => {
+  const rules = {};
+  const sel = (char.selectedSkills || []).slice(0, unlockedSlotCount(char.level || 1));
+  sel.forEach((n, i) => { rules[i + 1] = [{ if: "if_always", then: "then_sk_" + gambitSlug(n) }]; });
+  return { ...char, gambits: { ...(char.gambits || {}), rules } };
+};
+
 const offlinePlayerDps = (char) => {
   const physBase = playerBaseDamage(char, false);
   const magicBase = playerBaseDamage(char, true);
@@ -994,9 +1016,16 @@ const offlinePlayerDps = (char) => {
   if (!talentFlag(char, "noSkills")) for (const name of (char.selectedSkills || []).slice(0, unlockedSlotCount(char.level))) {
     const sk = skillByName(char, name); if (!sk) continue;
     if (talentFlag(char, "noMagic") && isMagicSkill(sk)) continue;
-    const owned = char.autoSkillsOwned?.[sk.name];
-    const on = char.autoSkills?.[sk.name];
-    if (!owned || !on || !sk.cd) continue;
+    // What makes a skill fire offline must be what makes it fire LIVE. This used to require
+    // char.autoSkillsOwned — a per-skill purchase whose UI was removed when the live tick moved to
+    // "Skill automation is handled exclusively by the Gambit system (no free auto-cast)". The flag
+    // survived in the save shape and in this check, but nothing could set it any more, so every
+    // parked character silently counted AUTO-ATTACKS ONLY, no matter what was on their bar.
+    //
+    // A skill counts now when a gambit rule fires it, which is exactly the live rule. Below the
+    // gambit unlock a character has no rules, so a parked hero swings and nothing else — which is
+    // the truth of it: there is nobody there to tap the button.
+    if (!gambitFiresSkill(char, sk.name) || !sk.cd) continue;
     const sbase = (isMagicSkill(sk) || talentFlag(char, "skillsInt")) ? magicBase : physBase; // magic → Int, physical → Str
     if (sk.detonate) { detonator = { sk, sbase }; continue; } // scored after the affliction pool is known
     const potf = 1 + tm.skillPot + skillModPotency(char, sk.name);
@@ -2202,6 +2231,8 @@ const stepEncounter = (state, dt, inputs) => withRng(makeRng((state.seed ^ (stat
 });
 
 export {
+  gambitFiresSkill,
+  armGambits,
   migrateGambitKeys,
   GDKP_RESERVE,
   gdkpReserve,

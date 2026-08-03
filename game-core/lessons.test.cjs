@@ -67,9 +67,11 @@ js += `
     ok(!!pot, "there is a lesson for the auto-potion upgrade — the purchase that decides whether a parked character reaches 60 at all");
     ok(pot.done({ upgrades: { autoPotion: true } }) === true && !pot.done({ upgrades: {} }),
        "…and it completes on OWNING it, not on reading about it");
-    const rot = byId("autoskill");
-    ok(!!rot && rot.done({ autoSkillsOwned: { "Slam": true } }) && !rot.done({ autoSkillsOwned: {} }),
-       "a lesson forces buying an auto-skill — no rotation measured 2.6x slower");
+    // There is deliberately NO auto-skill lesson: that system was removed, its handlers were left
+    // orphaned, and the lesson that waited on it walled the tutorial at level 9. Automation is
+    // gambits, and gambits have their own lesson at their own unlock.
+    ok(!byId("autoskill"), "the auto-skill lesson is gone — it taught a system that no longer exists");
+    ok(!!byId("gambit"), "…and automation is taught by the gambit lesson instead");
     const drink = byId("potion");
     ok(!!drink && drink.done({ tutorial: { drankPotion: true } }) && !drink.done({ tutorial: {} }),
        "a lesson forces actually drinking a potion");
@@ -296,8 +298,7 @@ js += `
           let ch = core.normalizeChar(core.createCharacter("A", "warrior", "human"));
           let guard = 0;
           while (ch.level < beltLvl && guard++ < 600) {
-            ch.autoSkillsOwned = {}; ch.autoSkills = {};
-            for (const n of (ch.selectedSkills || [])) { ch.autoSkillsOwned[n] = true; ch.autoSkills[n] = true; }
+            ch = core.armGambits(ch);   // a bar a player can actually build: gambits, not the dead auto-skill flag
             ch.consumables = { [conKey("heal", core.tierForLevel(ch.level))]: 500 };
             ch.offlineZoneId = getZoneForLevel(ch.level).id;
             ch.hp = core.maxHpFor(ch);
@@ -364,9 +365,106 @@ js += `
        "Auto Gambit writes its potion rule at 50%, ABOVE the belt's 30% — it catches the dip earlier rather than duplicating it");
   }
 
+  // --- NAVIGATION: the building a lesson points at must actually lead to the panel it wants -------
+  //
+  // The check this replaces proved a WRITER EXISTED IN SOURCE. It did not ask whether that writer
+  // was reachable, nor whether the instruction text named the right building. Both failed in ways
+  // players hit: "Muscle Memory" sent them to a trainer in the Armory that does not exist (the
+  // handler was orphaned code nothing called), and eight more lessons named a building that does
+  // not contain the panel they describe — Salvage and Enchanting are Crafting Hall professions, not
+  // Market benches; Talents are in the Class Hall, not the Hero's Statue; City Management hangs off
+  // the Tavern; the Supply Master is in the Market; Mail is a bottom-bar button with no building.
+  //
+  // So walk the REAL navigation graph: from the lesson's own highlight, following setTab calls, can
+  // the player reach the panel its done() waits on?
+  {
+    const src = require("fs").readFileSync("${SRC.replace(/\\/g, '/')}", "utf8");
+    const lines = src.split("\\n");
+    // Where each {tab === "x" && block begins; a block runs to the next one.
+    const starts = [];
+    lines.forEach((l, n) => { const m = l.match(/\\{tab === "([a-z]+)" &&/); if (m) starts.push([n, m[1]]); });
+    const edges = {};   // tab -> tabs it can open
+    starts.forEach(([n, name], i) => {
+      const end = i + 1 < starts.length ? starts[i + 1][0] : lines.length;
+      const body = lines.slice(n, end).join("\\n");
+      const out = new Set();
+      for (const m of body.matchAll(/setTab\\("([a-z]+)"\\)/g)) out.add(m[1]);
+      for (const m of body.matchAll(/setBagTab\\("([a-z]+)"\\)/g)) out.add(m[1]);
+      edges[name] = [...new Set([...(edges[name] || []), ...out])];
+    });
+    // The Bank renders its sub-tabs from a table rather than literal setBagTab calls.
+    const bagIds = [...src.matchAll(/\\["([a-z]+)", "[^"]*(?:Equipment|Items|Gems|Crafting|Quest)[^"]*"\\]/g)].map((m) => m[1]);
+    edges.bag = [...new Set([...(edges.bag || []), ...bagIds])];
+    // The town map opens any building directly, and the bottom bar always offers these.
+    const ALWAYS = new Set([...TOWN_SPOTS.map((s) => s.dest), "town", "mail", "premium", "combat"]);
+
+    // enterBuilding forwards some town-map destinations to a differently-named tab — the Tavern spot
+    // is dest "quests" but opens tab "tavern". Read those aliases out of the function rather than
+    // assuming, or the walk starts from a node that does not exist and reports a false failure.
+    const eb = src.slice(src.indexOf("const enterBuilding"), src.indexOf("const enterBuilding") + 700);
+    const alias = {};
+    for (const line of eb.split(String.fromCharCode(10))) {
+      const a = line.indexOf('dest === "'), b = line.indexOf('setTab("');
+      if (a < 0 || b < 0 || b < a) continue;
+      alias[line.slice(a + 10, line.indexOf('"', a + 10))] = line.slice(b + 8, line.indexOf('"', b + 8));
+    }
+
+    const reaches = (fromRaw, want) => {
+      const from = alias[fromRaw] || fromRaw;
+      if (ALWAYS.has(want)) return true;
+      const seen = new Set(), stack = [from];
+      while (stack.length) {
+        const cur = stack.pop();
+        if (cur === want) return true;
+        if (seen.has(cur)) continue;
+        seen.add(cur);
+        for (const nx of (edges[cur] || [])) stack.push(nx);
+      }
+      return false;
+    };
+
+    let bad = 0;
+    for (const l of LESSONS) {
+      const body = String(l.done);
+      const wants = [...new Set([...body.matchAll(/c\\.seen(\\?)?\\.([A-Za-z0-9_]+)/g)].map((m) => m[2]))];
+      if (!wants.length) continue;              // action lessons are covered by the writer check
+      const from = l.highlight || "town";
+      // A lesson may accept any ONE of several panels (e.g. gambits OR gambitshop).
+      const ok1 = wants.some((w) => reaches(from, w));
+      if (!ok1) bad++;
+      ok(ok1, l.id + ": " + from + " leads to " + wants.join(" or "));
+    }
+    ok(bad === 0, bad === 0 ? "every lesson's building actually leads to the panel it describes"
+                            : bad + " lesson(s) point at a building that cannot reach their panel");
+  }
+
+  // --- DEAD CODE: a lesson may not depend on a handler nothing calls -------------------------------
+  // buyAutoSkill was defined and never called from anywhere, so autoSkillsOwned could not be set and
+  // the lesson that waited on it walled the tutorial at level 9 for every player.
+  {
+    const src = require("fs").readFileSync("${SRC.replace(/\\/g, '/')}", "utf8");
+    const code = src.split("\\n").filter((l) => !l.trim().startsWith("//")).join("\\n");
+    const handlers = [...code.matchAll(/^  const ([a-zA-Z0-9_]+) = \\(/gm)].map((m) => m[1]);
+    const orphans = handlers.filter((h) => {
+      const uses = code.split(new RegExp("\\\\b" + h + "\\\\b")).length - 1;
+      return uses <= 1;                          // only the definition itself
+    });
+    ok(!orphans.includes("buyAutoSkill") && !orphans.includes("toggleAutoSkill"),
+       "the orphaned auto-skill handlers are gone");
+    // Report the rest rather than failing: not every unused helper is a bug, but a lesson must not
+    // rest on one. This is the sweep that would have caught the original.
+    if (orphans.length) console.log("    note: " + orphans.length + " defined-but-never-called handler(s): " + orphans.join(", "));
+    for (const l of LESSONS) {
+      const body = String(l.done);
+      for (const o of orphans) ok(!body.includes(o), l.id + " does not depend on the orphan " + o);
+    }
+    ok(!/autoSkillsOwned/.test(LESSONS.map((l) => String(l.done)).join(" ")),
+       "no lesson waits on autoSkillsOwned, which nothing can set");
+  }
+
   // --- coverage: the systems the sweep named are all present ----------------------------------------
   {
-    const want = ["potion", "autopot", "autoskill", "spec", "talent", "auction", "dungeon", "gems",
+    const want = ["potion", "autopot", "spec", "talent", "auction", "dungeon", "gems",
                   "gambit", "craft", "enchant", "temper", "guild", "arena", "hardprep"];
     for (const id of want) ok(!!byId(id), "a lesson exists for: " + id);
     const last = LESSONS[LESSONS.length - 1];

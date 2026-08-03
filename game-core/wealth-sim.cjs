@@ -47,10 +47,10 @@ js += `
       }
       // Keep the potion stock topped up and the rotation switched on, at the tier the level allows.
       c.consumables = { ...(c.consumables || {}), [conKey("heal", tierForLevel(c.level))]: 500 };
-      c.autoSkillsOwned = {}; c.autoSkills = {};
+      c.gambits = { ...(c.gambits || {}), rules: {} };
       // Auto-skills are a PURCHASED upgrade, so a leveller may have none or all of them. That is a
       // 30x swing in kill speed, which is why both bounds are reported rather than one.
-      if (rotation) for (const n of (c.selectedSkills || [])) { c.autoSkillsOwned[n] = true; c.autoSkills[n] = true; }
+      if (rotation) c = core.armGambits(c);   // gambits, not the dead auto-skill flag
       // simulateOffline returns null unless the character is parked in a zone it qualifies for.
       c.offlineZoneId = getZoneForLevel(c.level).id;
       const before = c.level;
@@ -71,7 +71,7 @@ js += `
   for (const [label, lvl, cap] of [["level 30", 30, 4000], ["level 60 (hard mode)", 60, 8000]]) {
     for (const rotation of [true, false]) {
       const r = rngm.withRng(rngm.makeRng(7), () => playTo("warrior", lvl, cap, 60, rotation));
-      const c = r.char;
+      let c = r.char;
       const tag = label + (rotation ? ", auto-skills" : ", autos only");
       if (rotation) rows.push({ label, gold: c.gold, kills: c.kills, hours: r.hours, level: c.level });
       console.log(pad(tag, 34) + rp(r.hours, 8) + rp(g(c.kills), 10) + rp(g(c.gold), 12)
@@ -88,10 +88,9 @@ js += `
   // stock of potions. Benching without them measures a character nobody plays — and now that
   // offline no longer under-reports enemy damage, it is the difference between farming and dying.
   const armedSixty = (seed) => rngm.withRng(rngm.makeRng(seed), () => {
-    const c = core.buildBotChar("warrior", "w_berserk", 60, 63);
+    let c = core.buildBotChar("warrior", "w_berserk", 60, 63);
     c.spec = "w_berserk"; c.gold = 0;
-    c.autoSkillsOwned = {}; c.autoSkills = {};
-    for (const n of (c.selectedSkills || [])) { c.autoSkillsOwned[n] = true; c.autoSkills[n] = true; }
+    c = core.armGambits(c);   // a bar a player can actually build: gambits, not the dead auto-skill flag
     c.offlineZoneId = getZoneForLevel(60).id;
     c.upgrades = { ...(c.upgrades || {}), autoPotion: true };
     c.consumables = { ...(c.consumables || {}), [conKey("heal", 6)]: 5000 };
@@ -99,7 +98,7 @@ js += `
     return c;
   });
   const runs = [1, 2, 3, 4, 5].map((sd) => {
-    const c = armedSixty(sd * 13);
+    let c = armedSixty(sd * 13);
     const r = simulateOffline(c, 10 * HOUR);
     return r ? { gold: r.goldGained, kills: r.kills, secs: r.secondsSimulated, died: r.died,
                  pots: r.potionsDrunk || 0 } : null;
@@ -139,10 +138,9 @@ js += `
 
   // A level-60 with a spec, a full set at the bracket's ilvl, and its rotation switched on.
   const geared = (ilvl, seed) => rngm.withRng(rngm.makeRng(seed), () => {
-    const c = core.buildBotChar("warrior", "w_berserk", 60, ilvl);
+    let c = core.buildBotChar("warrior", "w_berserk", 60, ilvl);
     c.spec = "w_berserk"; c.gold = 0; c.race = "human";
-    c.autoSkillsOwned = {}; c.autoSkills = {};
-    for (const n of (c.selectedSkills || [])) { c.autoSkillsOwned[n] = true; c.autoSkills[n] = true; }
+    c = core.armGambits(c);   // a bar a player can actually build: gambits, not the dead auto-skill flag
     c.hp = maxHpFor(c);
     return c;
   });
@@ -153,7 +151,7 @@ js += `
 
   const hardRows = [];
   for (const hz of HARD_ZONES) {
-    const c = geared(hz.reqIlvl, hz.enemyLvl * 7);
+    let c = geared(hz.reqIlvl, hz.enemyLvl * 7);
     const eff = effectiveStats(c);
     const sp = secondaryPcts(eff);
     const dps = core.offlinePlayerDps(c);

@@ -7,7 +7,7 @@
 //
 // Measures and recommends; changes nothing.
 import { buildBotChar, offlinePlayerDps, maxHpFor, mitigation, effectiveStats, secPct,
-         LEECH_MULT, SECONDARY_POOL } from "./combat.mjs";
+         LEECH_MULT, SECONDARY_POOL, armGambits } from "./combat.mjs";
 import { withRng, makeRng } from "./rng.mjs";
 
 const pad = (s, n) => String(s).padEnd(n), rp = (s, n) => String(s).padStart(n);
@@ -18,9 +18,8 @@ const ROSTER = [["warrior", "w_berserk"], ["paladin", "p_just"], ["rogue", "r_am
 const N = 30;   // rating added per probe
 
 const armed = (cls, spec, sd) => withRng(makeRng(sd), () => {
-  const c = buildBotChar(cls, spec, 60, 63); c.spec = spec;
-  c.autoSkillsOwned = {}; c.autoSkills = {};
-  for (const n of (c.selectedSkills || [])) { c.autoSkillsOwned[n] = true; c.autoSkills[n] = true; }
+  let c = buildBotChar(cls, spec, 60, 63); c.spec = spec;
+  c = armGambits(c);   // gambits, not the dead auto-skill flag
   // Adding a main stat to a FOCUSED piece puts its Power affix dormant, which reads as a stat
   // being worth negative value and has nothing to do with the stat.
   c.equipment.chest = { ...c.equipment.chest, stats: { ...c.equipment.chest.stats, ap: 0, sp: 0 } };

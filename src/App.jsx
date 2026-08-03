@@ -166,6 +166,7 @@ import {
   guildBossDef,
   HUNTER_WEAPONS,
   gambitCondMet,
+  gambitFiresSkill,
   executeThreshold,
   intentRejection,
   potionRejection,
@@ -333,6 +334,13 @@ const statWeight = (clsId, stat) => {
 // normal mode's ilvl-63 ceiling and clearly outclassed by Hard Mode's ilvl 65+. Rolls at legendary magnitude.
 const ARTIFACT_BASE_ILVL = 40;
 const ARTIFACT_TAPER_LEVEL = 50; // growth halves past this level
+// Lifted out of the component so the daily sign-in reward and its test can use it: the weekend
+// gift is rolled at the player's average equipped item level.
+const avgEquippedIlvl = (c) => {
+  const items = Object.values((c && c.equipment) || {}).filter((it) => it && it.ilvl && it.slotId !== "relic"); // relics have no ilvl and don't count
+  if (!items.length) return (c && c.level) || 1; // no gear yet → base on character level
+  return Math.round(items.reduce((s, it) => s + it.ilvl, 0) / items.length);
+};
 const artifactIlvl = (level) => {
   const l = level || 1;
   return l <= ARTIFACT_TAPER_LEVEL
@@ -684,24 +692,29 @@ const LESSONS = [
   { id: "autopot", level: 7, title: "The Draught Belt", body: "Buy the Draught Belt from the 🏪 Market's Vendor, under Permanent Upgrades. It drinks for you at 15% health — the last line before you fall, under anything your own gambits do. A parked hero without one stops progressing entirely.", highlight: "market", done: (c) => !!c.upgrades?.autoPotion },
 
   // --- fighting properly ------------------------------------------------------------------------
-  { id: "skills", level: 8, title: "Know Your Kit", body: "Open the flashing 🛡️ Armory and look over your skills. Which five you carry is the whole of your damage.", highlight: "gear", done: (c) => !!c.seen?.gear },
-  { id: "autoskill", level: 9, title: "Muscle Memory", body: "Buy an Auto-Skill from the Armory's trainer so a skill fires on its own. Fighting with auto-attacks alone is 2.6x slower.", highlight: "gear", done: (c) => Object.keys(c.autoSkillsOwned || {}).length > 0 },
+  { id: "skills", level: 8, title: "Know Your Kit", body: "Open the flashing 🗿 Hero\u2019s Statue and look over your Ability Slots. Which five you carry is the whole of your damage — tap a skill to slot it.", highlight: "hero", done: (c) => !!c.seen?.hero },
+  // "Muscle Memory" stood here and asked the player to buy an Auto-Skill from a trainer. There is no
+  // trainer: that system was removed when automation became gambits-only, and its handlers were left
+  // uncalled, so the lesson could NEVER complete. Since activeLesson serves the earliest unfinished
+  // lesson, it walled the tutorial — a player who did everything the UI allows finished 9 of 30 and
+  // was stuck here forever. There is nothing to teach at level 9; automation arrives with gambits at
+  // 20 and has its own lesson there.
   { id: "spec", level: 10, title: "Choose a Path", body: "Visit the flashing ⛪ Class Hall and pick a Specialization. It grants three signature skills and reshapes how you fight.", highlight: "classhall", done: (c) => !!c.spec },
-  { id: "talent", level: 11, title: "The First Talent", body: "Open the flashing 🗿 Hero's Statue and spend your talent point.", highlight: "hero", done: (c) => !!(c.talents || {})[10] || !!c.talentTutorialDone },
+  { id: "talent", level: 11, title: "The First Talent", body: "Open the flashing 🎓 Class Hall, choose \u{1F31F} Talents, and spend your point. New rows open at 20, 30, 40 and 50.", highlight: "classhall", done: (c) => !!(c.talents || {})[10] || !!c.talentTutorialDone },
   { id: "attrs", level: 12, title: "Raw Potential", body: "Spend an attribute point at the 🗿 Hero's Statue. Points are yours to place every level.", highlight: "hero", done: (c) => Object.values(c.allocated || {}).some((v) => v > 0) },
 
   // --- the economy ------------------------------------------------------------------------------
   { id: "auction", level: () => AH_ECON.unlockLevel, title: "The Trading Floor", body: "The 🏛️ Auction House is open. Visit it — gear you cannot use is worth more to another player than to a vendor.", highlight: "auction", done: (c) => !!c.seen?.auction },
   { id: "dungeon", level: 15, title: "Into the Dark", body: "Run a Dungeon from the ⚔️ Adventure Gate. Bosses drop the gear the open world will not.", highlight: "world", done: (c) => (c.dungeonClears || 0) >= 1 },
-  { id: "salvage", level: 17, title: "Nothing Wasted", body: "Visit the 🏪 Market's Salvage bench and break down a piece you will never wear.", highlight: "market", done: (c) => !!c.seen?.salvage },
+  { id: "salvage", level: 17, title: "Nothing Wasted", body: "Open the \u2692\uFE0F Crafting Hall and tap your Salvage profession. Break down a piece you will never wear.", highlight: "prof", done: (c) => !!c.seen?.salvage },
   { id: "gems", level: 18, title: "Set in Stone", body: "Open the 🏦 Bank's Gems tab. Sockets turn a good piece into your best one.", highlight: "bag", done: (c) => !!c.seen?.bag && !!c.seen?.gems },
 
   // --- automation and depth ---------------------------------------------------------------------
-  { id: "gambit", level: () => GAMBIT_UNLOCK_LEVEL, title: "Standing Orders", body: "Gambits are open. Visit the ⛪ Class Hall's Gambit panel and set one rule — or use Auto Gambit for a working default.", highlight: "classhall", done: (c) => !!c.seen?.gambits || !!c.seen?.gambitshop },
-  { id: "town", level: 22, title: "Build the Town", body: "Open City Management from the 🗿 Hero's Statue. Town buildings pay a permanent bonus to everything you do.", highlight: "hero", done: (c) => !!c.seen?.citymgmt },
+  { id: "gambit", level: () => GAMBIT_UNLOCK_LEVEL, title: "Standing Orders", body: "Gambits are open — and they are the ONLY thing that casts a skill without you tapping it. Open the \u{1F6E1}\uFE0F Armory, tap Equip Gambits, and set a rule (or press Auto Gambit). Buy more at the \u{1F3EA} Market\u2019s Gambit Shop.", highlight: "gear", done: (c) => !!c.seen?.gambits || !!c.seen?.gambitshop },
+  { id: "town", level: 22, title: "Build the Town", body: "Open the \u{1F37A} Tavern and choose City Management. Town buildings pay a permanent bonus to everything you do.", highlight: "quests", done: (c) => !!c.seen?.citymgmt },
   { id: "craft", level: 24, title: "The Anvil", body: "Craft a piece of armour in the ⚒️ Crafting Hall's Forge, using ore you have mined.", highlight: "prof", done: (c) => !!c.seen?.forge },
   { id: "brew", level: 26, title: "Better Draughts", body: "Visit the ⚒️ Crafting Hall's Brewery. Stronger potions are the difference in a long fight.", highlight: "prof", done: (c) => !!c.seen?.brewery },
-  { id: "enchant", level: 30, title: "Bound in Runes", body: "Visit the 🏪 Market's Enchanting bench and put an enchant on a piece you intend to keep.", highlight: "market", done: (c) => !!c.seen?.enchanting },
+  { id: "enchant", level: 30, title: "Bound in Runes", body: "Open the \u2692\uFE0F Crafting Hall and tap your Enchanting profession. Put an enchant on a piece you intend to keep.", highlight: "prof", done: (c) => !!c.seen?.enchanting },
   { id: "bestiary", level: 32, title: "Know the Enemy", body: "Open the Bestiary in the 🍺 Tavern. What you have killed is recorded, and what it drops with it.", highlight: "quests", done: (c) => !!c.seen?.bestiary },
   { id: "skillmod", level: 35, title: "Reshape a Skill", body: "Visit the ⛪ Class Hall's Skill Mods and change what one of your abilities does.", highlight: "classhall", done: (c) => !!c.seen?.skillmods },
   { id: "temper", level: 38, title: "The Forge Heat", body: "Visit the 🏪 Market's Tempering Forge. Every failure raises the next attempt until the rank is guaranteed — read the odds before you spend.", highlight: "market", done: (c) => !!c.seen?.temper },
@@ -709,10 +722,10 @@ const LESSONS = [
   // --- other people. Visiting only: none of these lessons queues the player for anything. -------
   { id: "guild", level: 40, title: "Not Alone", body: "Run the Training Delve at 🏛️ The Guild. A practice party of four, no lockout and nothing at stake — learn to interrupt, hold a role and survive a boss before a real group depends on you.", highlight: "guild", done: (c) => !!c.tutorial?.delveCleared },
   { id: "arena", level: 45, title: "The Sands", body: "Fight a Practice Duel at the ⚔️ Arena. An unranked bout against a training partner — nothing is recorded, win or lose.", highlight: "arena", done: (c) => !!c.tutorial?.duelDone },
-  { id: "mail", level: 48, title: "The Courier", body: "Check your 📬 Mail. Auction sales and overflow from a full bank arrive here.", highlight: "auction", done: (c) => !!c.seen?.mail },
+  { id: "mail", level: 48, title: "The Courier", body: "Tap the \u{1F4EC} Mail button in the bottom bar \u2014 it is there from any screen, not inside a building. Auction sales and overflow from a full bank arrive here.", highlight: null, done: (c) => !!c.seen?.mail },
 
   // --- the handover to Hard Mode ------------------------------------------------------------------
-  { id: "supply", level: 52, title: "Lay In Supplies", body: "Visit the 🍺 Tavern's Supply Run. Consumables are no longer optional from here on.", highlight: "quests", done: (c) => !!c.seen?.supply },
+  { id: "supply", level: 52, title: "Lay In Supplies", body: "Open the \u{1F3EA} Market and visit the Supply Master \u2014 bottles, flasks and blank scrolls. Consumables are no longer optional from here on.", highlight: "market", done: (c) => !!c.seen?.supply },
   { id: "hardprep", level: 58, title: "Before the Threshold", body: "Hard Mode judges item level, your rotation and your potions — all three. Check your 🛡️ Armory and make sure every slot is filled before you cross.", highlight: "gear", done: (c) => !!c.seen?.gear && (c.level || 1) >= 59 },
 ];
 // Kept as the old name so nothing that referenced the opening run breaks.
@@ -1637,6 +1650,90 @@ const VEN_PACKS = [
   { ven: 99, usd: "0.99" }, { ven: 499, usd: "4.99" }, { ven: 999, usd: "9.99" },
   { ven: 1999, usd: "29.99" }, { ven: 4999, usd: "49.99" }, { ven: 9999, usd: "99.99" },
 ];
+// ============================================================
+// DAILY SIGN-IN — rewards for coming back
+// ============================================================
+// The SERVER owns both the clock and the dice (supabase/migrations/0015_daily_signin.sql). This
+// file only turns the row it hands back into rewards, which is why every number lives here in one
+// table and the roll is a pure function of the server's seed.
+//
+// A missed day costs ONE day of streak rather than resetting it. The whole point of the system is
+// to recover a lapsed player, and a hard reset punishes exactly the player it exists to bring back.
+const DAILY = {
+  weekdayVen: 5,
+  weekendVen: 10,
+  bonusEvery: 5,            // every 5th consecutive day: 5, 10, 15, 20, 25, 30
+  bonusVen: 10,
+  milestoneDay: 30,
+  milestoneVen: 100,
+  weekendRarity: "epic",
+  milestoneRarity: "legendary",
+};
+// The day boundary is UTC, matching the server's (now() at time zone 'utc')::date. Local dates
+// would let a player nudge a claim by changing timezone, and would make "weekend" mean different
+// days for different people.
+const utcDayString = (d) => (d ? new Date(d) : new Date()).toISOString().slice(0, 10);
+const utcIsWeekend = (dayStr) => { const dow = new Date(dayStr + "T00:00:00Z").getUTCDay(); return dow === 0 || dow === 6; };
+const dailyIsBonusDay = (streak) => streak > 0 && streak % DAILY.bonusEvery === 0;
+const dailyIsMilestone = (streak) => streak > 0 && streak % DAILY.milestoneDay === 0;
+
+// What a claim pays. `rolls` describes the gear to generate — the CALLER generates it inside a
+// withRng scope seeded by the server, so the same claim always produces the same item and a
+// replayed call cannot re-roll it.
+const dailyRewardFor = ({ streak, isWeekend, avgIlvl, cls }) => {
+  const lines = [];
+  let ven = isWeekend ? DAILY.weekendVen : DAILY.weekdayVen;
+  lines.push(`+${isWeekend ? DAILY.weekendVen : DAILY.weekdayVen} Ven${isWeekend ? " (weekend)" : ""}`);
+  const rolls = [];
+  if (isWeekend) {
+    rolls.push({ rarity: DAILY.weekendRarity, ilvl: Math.max(1, Math.round(avgIlvl || 1)), why: "weekend gift" });
+    lines.push(`an ${DAILY.weekendRarity} at your average item level (${Math.max(1, Math.round(avgIlvl || 1))})`);
+  }
+  if (dailyIsBonusDay(streak)) { ven += DAILY.bonusVen; lines.push(`+${DAILY.bonusVen} Ven — day ${streak} streak bonus`); }
+  if (dailyIsMilestone(streak)) {
+    ven += DAILY.milestoneVen;
+    rolls.push({ rarity: DAILY.milestoneRarity, ilvl: Math.max(1, Math.round(avgIlvl || 1)), why: `day ${streak}` });
+    lines.push(`+${DAILY.milestoneVen} Ven and a ${DAILY.milestoneRarity} — ${streak} days running`);
+  }
+  return { ven, rolls, lines, cls };
+};
+
+// ============================================================
+// FIRST-PURCHASE OFFER — the level-10 artifact bundle
+// ============================================================
+// Deliberately a LOSS LEADER. The Ven shop sells an artifact weapon or off-hand at 1,500 Ven each,
+// and Ven packs run $0.99 for 99, so two artifacts is roughly $29.99 at shop rate. This sells the
+// same two for 99c. That is the point — it is the one-time hook that converts a free player — so
+// nobody should "correct" it later by pricing it against the shop.
+//
+// The 24 hours runs from the first time the player SEES the icon, not from the moment they reached
+// level 10: a window that expires while someone is logged out is a window they never had.
+const OFFER = {
+  id: "starter_artifacts",
+  level: 10,
+  windowMs: 24 * 3600 * 1000,
+  usd: "0.99",
+  name: "Champion's Bundle",
+  grant: { slot: "weapon" },                                   // always given
+  choices: [                                                   // and one of these
+    { id: "weapon2", slot: "weapon",  name: "A second Artifact Weapon", icon: "⚔️",
+      desc: "A spare main-hand to swap between — or to temper as a second project." },
+    { id: "offhand", slot: "offhand", name: "Artifact Off-hand",        icon: "🛡️",
+      desc: "Fills the other hand. Three sockets, and it re-forges as you level." },
+  ],
+};
+// hidden → below level 10 · live → inside the 24h · expired → past it, now in the Ven shop's Offers
+// tab · taken → already bought.
+const offerState = (c, now) => {
+  if (!c) return "hidden";
+  if ((c.offer || {}).taken) return "taken";
+  if ((c.level || 1) < OFFER.level) return "hidden";
+  const seenAt = (c.offer || {}).seenAt || 0;
+  if (!seenAt) return "live";                                  // qualified but not yet shown: the clock starts now
+  return (now - seenAt) < OFFER.windowMs ? "live" : "expired";
+};
+const offerMsLeft = (c, now) => Math.max(0, (((c && c.offer) || {}).seenAt || now) + OFFER.windowMs - now);
+
 const PREMIUM_ITEMS = [
   { id: "dungeonReset",  kind: "ticket", name: "Dungeon Reset Ticket",         icon: "🎟️", cost: 99,   desc: "Enter a dungeon once even when out of runs." },
   { id: "arenaChallenge", kind: "ticket", name: "Arena Challenge Ticket",       icon: "🏟️", cost: 99,   desc: "Challenge the Arena once while out of daily runs." },
@@ -4719,11 +4816,6 @@ function GameScreen({ character: initChar, onSave, onBack }) {
   };
 
   // ---------- auction house ----------
-  const avgEquippedIlvl = (c) => {
-    const items = Object.values(c.equipment || {}).filter((it) => it && it.ilvl && it.slotId !== "relic"); // relics have no ilvl and don't count
-    if (!items.length) return c.level; // no gear yet → base on character level
-    return Math.round(items.reduce((s, it) => s + it.ilvl, 0) / items.length);
-  };
 
   // ============================================================
   // AUCTION HOUSE / MAIL — server-backed (Supabase). Shared listings + mail live
@@ -4786,6 +4878,88 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     setAhSell(null); setAhPrice(""); setAhView("mine"); showNotif(`Listed ${item.name} · −${fee}g deposit`);
     loadListings();
   };
+  // ---------- the level-10 first-purchase offer ----------
+  const [offerOpen, setOfferOpen] = useState(false);
+  const [offerPick, setOfferPick] = useState(OFFER.choices[0].id);
+  // The 24 hours starts the first time the icon is actually SHOWN, so it cannot run down while the
+  // player is logged out. Stamped once, then never touched again.
+  const markOfferSeen = useCallback(() => {
+    const c = charRef.current;
+    if (!c || (c.offer || {}).seenAt || (c.offer || {}).taken) return;
+    if ((c.level || 1) < OFFER.level) return;
+    commitChar({ ...c, offer: { ...(c.offer || {}), seenAt: Date.now() } });
+  }, [commitChar]);
+  // Everything below the payment is built and tested; only the charge itself is missing. When a
+  // provider lands, its success callback calls grantOffer and nothing else changes.
+  const grantOffer = (pickId) => {
+    const c = charRef.current;
+    if ((c.offer || {}).taken) { showNotif("Already claimed."); return; }
+    const pick = OFFER.choices.find((x) => x.id === pickId) || OFFER.choices[0];
+    let nc = { ...c };
+    const made = [];
+    for (const slot of [OFFER.grant.slot, pick.slot]) {
+      const art = makeArtifact(nc.cls, slot, nc.level);
+      const d = depositEarned(nc, art);
+      nc = { ...nc, inventory: d.inventory, overflow: d.overflow };
+      made.push(art);
+    }
+    nc = { ...nc, offer: { ...(nc.offer || {}), taken: true, pick: pick.id } };
+    commitChar(nc);
+    setOfferOpen(false);
+    showNotif(`\u2694\uFE0F ${OFFER.name} claimed — check your Bag!`);
+    for (const a of made) addLog(`\u2694\uFE0F ${a.name} (ilvl ${a.ilvl})`, "#c8102e");
+  };
+  const buyOffer = () => {
+    // No payment provider is wired yet — VEN_PACKS' buttons show the same notice. The grant path
+    // above is complete and tested, so this is one call away from working.
+    showNotif("\u{1F4B3} In-app purchases coming soon — Google Play & more");
+  };
+
+  // ---------- daily sign-in ----------
+  // The claim is an RPC because the device clock cannot be trusted with it: moving the date forward
+  // would otherwise hand a player thirty days and the milestone legendary in a minute. The server
+  // stamps the row with its own now(), the (user, day) primary key is what makes a second claim
+  // impossible, and the SEED it returns is stored — so replaying the call returns the same seed and
+  // cannot re-roll the item.
+  const [dailyOpen, setDailyOpen] = useState(false);
+  const [dailyBusy, setDailyBusy] = useState(false);
+  const [dailyResult, setDailyResult] = useState(null);   // { lines, items } for the reward panel
+  const claimDaily = async () => {
+    const sb = getSbC();
+    if (!sb) { showNotif("Connection required to claim your daily sign-in."); return; }
+    const c = charRef.current;
+    setDailyBusy(true);
+    const { data, error } = await sb.rpc("daily_signin");
+    setDailyBusy(false);
+    if (error) { showNotif(error.message || "Could not reach the sign-in ledger."); return; }
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) { showNotif("Could not reach the sign-in ledger."); return; }
+    if (!row.fresh) { showNotif("Already signed in today."); return; }
+
+    const reward = dailyRewardFor({ streak: row.streak, isWeekend: row.is_weekend,
+                                    avgIlvl: avgEquippedIlvl(c), cls: c.cls });
+    // Rolled from the SERVER's seed, so the item is reproducible and cannot be re-rolled.
+    const items = withRng(makeRng(Number(row.seed) || 1), () =>
+      reward.rolls.map((r) => generateItem(r.ilvl, rarityById(r.rarity), pickLootSlot(), c.cls)));
+
+    const hist = [...(c.daily?.history || []).filter((h) => h.day !== row.utc_day),
+                  { day: row.utc_day, streak: row.streak, weekend: !!row.is_weekend }].slice(-60);
+    let nc = { ...c, ven: (c.ven || 0) + reward.ven,
+               daily: { lastDay: row.utc_day, streak: row.streak, history: hist } };
+    if (items.length) {
+      // depositItems returns `gold` meaning AUTO-SELL PROCEEDS, not the character's purse. Spreading
+      // the whole result onto the character would replace their gold with that figure — usually 0.
+      // Take the three fields that belong on a character and ADD the proceeds.
+      const dep = depositItems(nc, items);
+      nc = { ...nc, inventory: dep.inventory, overflow: dep.overflow, gold: (nc.gold || 0) + dep.gold };
+      if (dep.sold.length) addLog(`\u{1F4B0} Bank full \u2014 sold ${dep.sold.length} for ${dep.gold}g`, "#caa64a");
+      if (dep.mailed.length) addLog(`\u{1F4EC} Bank full \u2014 ${dep.mailed.length} held in the mail`, "#7fd0ff");
+    }
+    commitChar(nc);
+    setDailyResult({ lines: reward.lines, items, streak: row.streak });
+    addLog(`\u{1F4C5} Daily sign-in \u2014 day ${row.streak}: ${reward.lines.join(", ")}`, "#7fd0ff");
+  };
+
   const postStack = async (kind, id, price) => {
     const sb = getSbC(); if (!sb) { showNotif("Connection required to use the Auction House."); return; }
     const c = charRef.current; const pool = kind === "drop" ? "drops" : "materials";
@@ -5044,19 +5218,12 @@ function GameScreen({ character: initChar, onSave, onBack }) {
   };
 
   // ---------- auto-skill actions ----------
-  const autoSkillCost = (c) => 10000 + 5000 * Object.keys(c.autoSkillsOwned || {}).filter((k) => c.autoSkillsOwned[k]).length;
-  const buyAutoSkill = (name) => {
-    const c = charRef.current;
-    const cost = autoSkillCost(c);
-    if (c.gold < cost) { showNotif(`Need ${cost.toLocaleString()}g`); return; }
-    commitChar({ ...c, gold: c.gold - cost, autoSkillsOwned: { ...c.autoSkillsOwned, [name]: true }, autoSkills: { ...c.autoSkills, [name]: true } });
-    showNotif(`Auto-cast unlocked: ${name}`);
-  };
-  const toggleAutoSkill = (name) => {
-    const c = charRef.current;
-    const currentlyOn = c.autoSkills?.[name] !== false; // slotted skills auto-cast by default
-    commitChar({ ...c, autoSkills: { ...c.autoSkills, [name]: !currentlyOn } });
-  };
+  // The per-skill Auto-Cast purchase (autoSkillCost / buyAutoSkill / toggleAutoSkill) lived here and
+  // was DELETED. Its UI was removed when the live tick moved to "Skill automation is handled
+  // exclusively by the Gambit system (no free auto-cast)", but the three handlers stayed behind with
+  // nothing calling them — so char.autoSkillsOwned could never be set by anyone. That dead flag was
+  // still load-bearing in offlinePlayerDps, which meant parked characters counted auto-attacks only,
+  // and a tutorial lesson asked players to buy from a trainer that does not exist.
 
   // ---------- profession actions ----------
   const learnProfession = (pid) => {
@@ -5490,6 +5657,178 @@ function GameScreen({ character: initChar, onSave, onBack }) {
         })()}
 
         {tab === "town" && <TownHub onEnter={enterBuilding} highlight={tutorialHighlight(char)} charLevel={char.level || 1} />}
+        {/* The level-10 offer, under the daily icon. Rendering it is what starts its 24 hours. */}
+        {tab === "town" && offerState(char, now) === "live" && (() => {
+          if (!(char.offer || {}).seenAt) markOfferSeen();
+          const left = offerMsLeft(char, now);
+          const hrs = Math.floor(left / 3600000), mins = Math.floor((left % 3600000) / 60000);
+          return (
+            <button onClick={() => setOfferOpen(true)} aria-label="Limited offer"
+              style={{ position: "absolute", left: 10, top: 156, zIndex: 320, width: 52, height: 56,
+                background: "linear-gradient(135deg,#3a1020,#1e0a14)", border: "2px solid #e0455a",
+                borderRadius: 12, cursor: "pointer", color: "#ff9aa8",
+                boxShadow: "0 0 14px #e0455a66", animation: "tutflash 1.6s ease-in-out infinite" }}>
+              <div style={{ fontSize: 19, lineHeight: 1 }}>⚔️</div>
+              <div style={{ fontSize: 8, fontWeight: 800, marginTop: 1 }}>${OFFER.usd}</div>
+              <div style={{ fontSize: 7.5, color: "#e0a0aa" }}>{hrs}h {mins}m</div>
+            </button>
+          );
+        })()}
+
+        {/* Floating daily sign-in, top-left of the map. Badged while today is unclaimed — the badge
+            is the only thing that tells a returning player there is something waiting. */}
+        {tab === "town" && (() => {
+          const today = utcDayString();
+          const claimed = (char.daily?.lastDay || null) === today;
+          const streak = char.daily?.streak || 0;
+          return (
+            <button onClick={() => { setDailyResult(null); setDailyOpen(true); }} aria-label="Daily sign-in"
+              style={{ position: "absolute", left: 10, top: 96, zIndex: 320, width: 52, height: 52,
+                background: "linear-gradient(135deg,#16213a,#0e1626)", border: `2px solid ${claimed ? "#3a5a7a" : "#f0b429"}`,
+                borderRadius: 12, cursor: "pointer", color: claimed ? "#6f8aa8" : "#f0b429",
+                boxShadow: claimed ? "none" : "0 0 14px #f0b42966",
+                animation: claimed ? "none" : "tutflash 1.6s ease-in-out infinite" }}>
+              <div style={{ fontSize: 20, lineHeight: 1 }}>📅</div>
+              <div style={{ fontSize: 9, fontWeight: 800, marginTop: 2 }}>{streak > 0 ? `${streak}d` : "Daily"}</div>
+              {!claimed && <span style={{ position: "absolute", top: -4, right: -4, background: "#e0455a", color: "#fff",
+                fontSize: 9, fontWeight: 800, width: 16, height: 16, borderRadius: 8, display: "flex",
+                alignItems: "center", justifyContent: "center", boxShadow: "0 0 0 1.5px #0d0b1e" }}>!</span>}
+            </button>
+          );
+        })()}
+        {offerOpen && (() => {
+          const left = offerMsLeft(char, now);
+          const hrs = Math.floor(left / 3600000), mins = Math.floor((left % 3600000) / 60000);
+          const expired = offerState(char, now) === "expired";
+          return (
+            <div onClick={() => setOfferOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 400,
+              background: "rgba(4,4,10,0.8)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+              <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 360,
+                background: "linear-gradient(180deg,#2a1020,#0f0a14)", border: "2px solid #e0455a",
+                borderRadius: 16, padding: 18, boxShadow: "0 10px 44px #000b" }}>
+                <div style={{ textAlign: "center", marginBottom: 10 }}>
+                  <div style={{ fontSize: 30 }}>⚔️</div>
+                  <div style={{ color: "#ff9aa8", fontFamily: "Georgia, serif", fontSize: 18, fontWeight: 700 }}>{OFFER.name}</div>
+                  <div style={{ color: "#e0a0aa", fontSize: 11.5, marginTop: 3 }}>
+                    {expired ? "Available in the Ven shop's Offers tab" : `Ends in ${hrs}h ${mins}m`}
+                  </div>
+                </div>
+                <div style={{ background: "#150c18", border: "1px solid #4a2030", borderRadius: 10, padding: "10px 12px", marginBottom: 10 }}>
+                  <div style={{ color: "#fff", fontSize: 12.5, fontWeight: 700, marginBottom: 3 }}>⚔️ Artifact Weapon</div>
+                  <div style={{ color: "#9a93b3", fontSize: 11, lineHeight: 1.45 }}>Deep-red relic. Three sockets, and it re-forges as you level so it never falls behind.</div>
+                </div>
+                <div style={{ color: "#e0a0aa", fontSize: 11, fontWeight: 700, marginBottom: 5 }}>…and choose one more:</div>
+                {OFFER.choices.map((ch) => (
+                  <button key={ch.id} onClick={() => setOfferPick(ch.id)}
+                    style={{ width: "100%", textAlign: "left", marginBottom: 6, cursor: "pointer",
+                      background: offerPick === ch.id ? "#241028" : "#140c18",
+                      border: `1.5px solid ${offerPick === ch.id ? "#e0455a" : "#3a2030"}`, borderRadius: 10, padding: "9px 11px" }}>
+                    <div style={{ color: offerPick === ch.id ? "#ff9aa8" : "#cbb", fontSize: 12.5, fontWeight: 700 }}>
+                      {offerPick === ch.id ? "◉" : "○"} {ch.icon} {ch.name}
+                    </div>
+                    <div style={{ color: "#9a93b3", fontSize: 10.5, lineHeight: 1.4, marginLeft: 16 }}>{ch.desc}</div>
+                  </button>
+                ))}
+                <button onClick={buyOffer} style={{ width: "100%", marginTop: 6,
+                  background: "linear-gradient(135deg,#1a3a24,#245a34)", border: "1.5px solid #5fd35f",
+                  borderRadius: 10, color: "#9ff0b0", fontSize: 14, fontWeight: 800, padding: 12, cursor: "pointer" }}>
+                  ${OFFER.usd} — Claim the bundle
+                </button>
+                <button onClick={() => setOfferOpen(false)} style={{ width: "100%", marginTop: 6,
+                  background: "transparent", border: "none", color: "#8a7a86", fontSize: 11.5, padding: 6, cursor: "pointer" }}>
+                  Maybe later
+                </button>
+              </div>
+            </div>
+          );
+        })()}
+
+        {dailyOpen && (() => {
+          const today = utcDayString();
+          const claimedToday = (char.daily?.lastDay || null) === today;
+          const hist = {}; for (const h of (char.daily?.history || [])) hist[h.day] = h;
+          // The current UTC month, Monday-first, so weekends sit together at the end of a row.
+          const now = new Date(today + "T00:00:00Z");
+          const y = now.getUTCFullYear(), m = now.getUTCMonth();
+          const first = new Date(Date.UTC(y, m, 1));
+          const lead = (first.getUTCDay() + 6) % 7;                 // Monday = 0
+          const days = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+          const streak = char.daily?.streak || 0;
+          const nextBonus = DAILY.bonusEvery - ((streak) % DAILY.bonusEvery);
+          return (
+            <div onClick={() => setDailyOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 400,
+              background: "rgba(4,4,10,0.78)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+              <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 360,
+                background: "linear-gradient(180deg,#141a2e,#0b0e1c)", border: "2px solid #3a6ea5",
+                borderRadius: 16, padding: 18, boxShadow: "0 10px 44px #000b" }}>
+                <div style={{ textAlign: "center", marginBottom: 10 }}>
+                  <div style={{ fontSize: 28 }}>📅</div>
+                  <div style={{ color: "#8fd0ff", fontFamily: "Georgia, serif", fontSize: 17, fontWeight: 700 }}>Daily Sign-In</div>
+                  <div style={{ color: "#9a93b3", fontSize: 11.5, marginTop: 3 }}>
+                    {streak > 0 ? `${streak} day${streak === 1 ? "" : "s"} running · ` : ""}
+                    {streak > 0 ? `${nextBonus} more to the next bonus` : "Sign in to start a streak"}
+                  </div>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 3, marginBottom: 4 }}>
+                  {["M","T","W","T","F","S","S"].map((d, i) => (
+                    <div key={i} style={{ textAlign: "center", color: i >= 5 ? "#f0b429" : "#6f7a96", fontSize: 9.5, fontWeight: 700 }}>{d}</div>
+                  ))}
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 3, marginBottom: 12 }}>
+                  {Array.from({ length: lead }).map((_, i) => <div key={"p" + i} />)}
+                  {Array.from({ length: days }, (_, i) => {
+                    const dayStr = `${y}-${String(m + 1).padStart(2, "0")}-${String(i + 1).padStart(2, "0")}`;
+                    const isToday = dayStr === today, past = dayStr < today;
+                    const got = hist[dayStr], wknd = utcIsWeekend(dayStr);
+                    const bg = got ? "#12301e" : isToday ? "#2a2410" : past ? "#1a1220" : "#10121e";
+                    const bd = got ? "#3e8a5a" : isToday ? "#f0b429" : past ? "#3a2434" : "#232840";
+                    return (
+                      <div key={dayStr} title={got ? `claimed · day ${got.streak}` : past ? "missed" : wknd ? "weekend" : ""}
+                        style={{ aspectRatio: "1", background: bg, border: `1px solid ${bd}`, borderRadius: 6,
+                          display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                          color: got ? "#7CFC9E" : isToday ? "#f0b429" : past ? "#6a4a5a" : wknd ? "#c8a86a" : "#6f7a96",
+                          fontSize: 10.5, fontWeight: isToday ? 800 : 600 }}>
+                        {i + 1}
+                        <span style={{ fontSize: 7.5, lineHeight: 1 }}>{got ? "✓" : past ? "·" : wknd ? "★" : ""}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {dailyResult ? (
+                  <div style={{ background: "#0e1a12", border: "1px solid #2e5a3a", borderRadius: 10, padding: "10px 12px", marginBottom: 10 }}>
+                    <div style={{ color: "#7CFC9E", fontSize: 12.5, fontWeight: 700, marginBottom: 4 }}>Day {dailyResult.streak} claimed</div>
+                    {dailyResult.lines.map((l, i) => <div key={i} style={{ color: "#cbd3ea", fontSize: 11.5 }}>· {l}</div>)}
+                    {dailyResult.items.map((it) => (
+                      <div key={it.id} style={{ color: rarityById(it.rarity).color, fontSize: 11.5, marginTop: 2 }}>🎁 {it.name} (ilvl {it.ilvl})</div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ background: "#0e1220", border: "1px solid #232840", borderRadius: 10, padding: "10px 12px", marginBottom: 10, fontSize: 11.5, color: "#9a93b3", lineHeight: 1.6 }}>
+                    <div>Weekdays · <b style={{ color: "#7fd0ff" }}>{DAILY.weekdayVen} Ven</b></div>
+                    <div>Weekends · <b style={{ color: "#7fd0ff" }}>{DAILY.weekendVen} Ven</b> + an {DAILY.weekendRarity} at your item level</div>
+                    <div>Every {DAILY.bonusEvery}th day running · <b style={{ color: "#7fd0ff" }}>+{DAILY.bonusVen} Ven</b></div>
+                    <div>Day {DAILY.milestoneDay} · <b style={{ color: "#FFD700" }}>{DAILY.milestoneRarity} + {DAILY.milestoneVen} Ven</b></div>
+                    <div style={{ color: "#6f7a96", fontSize: 10.5, marginTop: 5 }}>Miss a day and the streak drops by one, not to zero.</div>
+                  </div>
+                )}
+
+                <button onClick={claimedToday ? () => setDailyOpen(false) : claimDaily} disabled={dailyBusy}
+                  style={{ width: "100%", background: claimedToday ? "#15132a" : "linear-gradient(135deg,#1a3a24,#245a34)",
+                    border: `1.5px solid ${claimedToday ? "#2a2550" : "#5fd35f"}`, borderRadius: 10,
+                    color: claimedToday ? "#9a93b3" : "#9ff0b0", fontSize: 13.5, fontWeight: 800, padding: 11,
+                    cursor: dailyBusy ? "default" : "pointer" }}>
+                  {dailyBusy ? "Signing in…" : claimedToday ? "Close" : "Sign in for today"}
+                </button>
+                <div style={{ color: "#6f7a96", fontSize: 10, textAlign: "center", marginTop: 6 }}>
+                  Days reset at midnight UTC · a connection is required to claim
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
         {tab === "town" && (
           <>
             <button onClick={() => setTownChatOpen((v) => !v)} aria-label="Global chat" style={{ position: "fixed", left: "50%", transform: "translateX(-50%)", bottom: 74, zIndex: 330, background: "rgba(26,19,48,0.9)", border: "1px solid #7a5aa8", borderRadius: 22, color: "#c8a0ff", fontSize: 13, fontWeight: 700, padding: "8px 18px", cursor: "pointer", boxShadow: "0 4px 16px rgba(0,0,0,0.5)", backdropFilter: "blur(4px)" }}>💬 Chat{chatState.chatLive ? " ●" : ""}</button>
@@ -5620,7 +5959,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                 const onCd = cdEnd > nowMs;
                 const effCd = Math.max(1, Math.round(sk.cd * (1 - cdrFracFor(char)) - gemFlatCd(char))); // cooldown after CDR + power gems
                 const remain = onCd ? Math.min(effCd, Math.max(1, Math.ceil((cdEnd - nowMs) / 1000))) : 0;
-                const auto = char.autoSkills?.[sk.name];
+                const auto = gambitFiresSkill(char, sk.name); // a gambit rule casts this without a tap
                 return (
                   <button key={sk.name} onClick={() => useSkill(sk)} disabled={!battle || onCd} title={sk.desc}
                     style={{ flex: "1 1 30%", minWidth: 92, background: onCd ? "#0d0b16" : "#1a1530", border: `1.5px solid ${onCd ? "#333" : cls?.color || "#f0b429"}`, borderRadius: 9, padding: "8px 6px", cursor: battle && !onCd ? "pointer" : "default", opacity: !battle ? 0.5 : 1, textAlign: "center", position: "relative" }}>
@@ -6157,6 +6496,27 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                 </div>
               )}
 
+              {/* OFFERS — where a limited-time offer goes once its window closes. It does not vanish;
+                  it stops being urgent. Shown only once the town-map window has expired, and hidden
+                  once taken, so it is never two places at once. */}
+              {offerState(char, now) === "expired" && (
+                <>
+                  <div style={{ color: "#e0a0aa", fontSize: 11, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Offers</div>
+                  <button onClick={() => setOfferOpen(true)}
+                    style={{ width: "100%", textAlign: "left", marginBottom: 16, cursor: "pointer",
+                      background: "linear-gradient(135deg,#2a1020,#140a12)", border: "1.5px solid #e0455a",
+                      borderRadius: 12, padding: "12px 14px", display: "flex", alignItems: "center", gap: 12 }}>
+                    <span style={{ fontSize: 24 }}>⚔️</span>
+                    <span style={{ flex: 1 }}>
+                      <span style={{ color: "#ff9aa8", fontFamily: "Georgia, serif", fontSize: 14, fontWeight: 700, display: "block" }}>{OFFER.name}</span>
+                      <span style={{ color: "#9a93b3", fontSize: 11, lineHeight: 1.4, display: "block" }}>
+                        An Artifact Weapon plus your choice of a second weapon or an off-hand.
+                      </span>
+                    </span>
+                    <span style={{ color: "#9ff0b0", fontSize: 13, fontWeight: 800 }}>${OFFER.usd}</span>
+                  </button>
+                </>
+              )}
               <div style={{ color: "#aaa", fontSize: 11, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Boosts & Tickets</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
                 {PREMIUM_ITEMS.filter((it) => !(it.kind === "aura" && (char.auras?.[it.aura] || 0) >= PERMA_TS)).map((it) => {
@@ -8097,8 +8457,6 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                     const selected = sel.includes(skill.name);
                     const fromSpec = !!skill.spec; // a signature skill of the active spec
                     const srcColor = cls?.color || "#888";
-                    const owned = char.autoSkillsOwned?.[skill.name];
-                    const on = char.autoSkills?.[skill.name];
                     const canAdd = selected || sel.length < cap;
                     return (
                       <div key={skill.name} onClick={() => toggleSelectedSkill(skill.name)} style={{ background: selected ? "#171335" : "#0c0a18", border: `1.5px solid ${selected ? srcColor : "#241f3c"}`, borderRadius: 8, padding: "11px 13px", marginBottom: 8, cursor: "pointer", opacity: canAdd ? 1 : 0.5 }}>

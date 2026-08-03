@@ -79,8 +79,7 @@ js += `
   // the curve look non-monotonic when it is not. Average 60 independently rolled sets per bracket.
   const buildSet = (ilvl, seed) => rngm.withRng(rngm.makeRng(seed), () => {
     const ch = core.buildBotChar("warrior", "w_berserk", 60, ilvl);
-    ch.spec = "w_berserk"; ch.autoSkillsOwned = {}; ch.autoSkills = {};
-    for (const n of (ch.selectedSkills || [])) { ch.autoSkillsOwned[n] = true; ch.autoSkills[n] = true; }
+    ch.spec = "w_berserk"; ch = core.armGambits(ch);   // a bar a player can actually build: gambits, not the dead auto-skill flag
     ch.hp = maxHpFor(ch); return ch;
   });
   const chars = [];

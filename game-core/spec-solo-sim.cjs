@@ -131,11 +131,10 @@ js += `
     const N = 40; let hp = 0, armor = 0, dps = 0, leech = 0, vers = 0;
     for (let s = 0; s < N; s++) {
       const c = rngm.withRng(rngm.makeRng(ilvl * 977 + s * 13), () => {
-        const x = core.buildBotChar(cls, spec, 60, ilvl);
+        let x = core.buildBotChar(cls, spec, 60, ilvl);
         x.spec = spec;
         x.selectedSkills = [...bar];
-        x.autoSkillsOwned = {}; x.autoSkills = {};
-        for (const n of bar) { x.autoSkillsOwned[n] = true; x.autoSkills[n] = true; }
+        x = core.armGambits({ ...x, selectedSkills: [...bar] });   // a bar a player can actually build: gambits, not the dead auto-skill flag
         x.town = { buildings: { sanctum: 10, barracks: 10 } };
         return x;
       });

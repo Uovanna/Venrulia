@@ -31,9 +31,8 @@ js += `
   // buildBotChar rolls random gear, so build ONE character per seed and clone it per variant —
   // calling it again per variant compares two different characters and reports pure noise.
   const armed = (cls, spec, sd) => withRng(makeRng(sd), () => {
-    const c = buildBotChar(cls, spec, 60, 63); c.spec = spec;
-    c.autoSkillsOwned = {}; c.autoSkills = {};
-    for (const n of (c.selectedSkills || [])) { c.autoSkillsOwned[n] = true; c.autoSkills[n] = true; }
+    let c = buildBotChar(cls, spec, 60, 63); c.spec = spec;
+    c = core.armGambits(c);   // a bar a player can actually build: gambits, not the dead auto-skill flag
     // Adding a main stat to a FOCUSED piece puts its Power affix dormant, which reads as a stat
     // being worth negative dps and has nothing to do with the stat itself.
     c.equipment.chest = { ...c.equipment.chest, stats: { ...c.equipment.chest.stats, ap: 0, sp: 0 } };
@@ -41,7 +40,7 @@ js += `
   });
   const gain = (cls, spec, stat) => mean(SEEDS.map((sd) => {
     const b = armed(cls, spec, sd), d0 = offlinePlayerDps(b);
-    const c = JSON.parse(JSON.stringify(b));
+    let c = JSON.parse(JSON.stringify(b));
     c.equipment.chest.stats[stat] = (c.equipment.chest.stats[stat] || 0) + 30;
     return offlinePlayerDps(c) / d0 - 1;
   }));

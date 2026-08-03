@@ -112,9 +112,8 @@ js += `
     const SPECS = { warrior: "w_berserk", rogue: "r_ambush", hunter: "h_snipe",
                     paladin: "p_just", mage: "m_fire", warlock: "l_scorch" };
     const armed = (cls, sd) => rngm.withRng(rngm.makeRng(sd), () => {
-      const c = buildBotChar(cls, SPECS[cls], 60, 63); c.spec = SPECS[cls];
-      c.autoSkillsOwned = {}; c.autoSkills = {};
-      for (const n of (c.selectedSkills || [])) { c.autoSkillsOwned[n] = true; c.autoSkills[n] = true; }
+      let c = buildBotChar(cls, SPECS[cls], 60, 63); c.spec = SPECS[cls];
+      c = core.armGambits(c);   // a bar a player can actually build: gambits, not the dead auto-skill flag
       c.equipment.chest = { ...c.equipment.chest, stats: { ...c.equipment.chest.stats, ap: 0, sp: 0 } };
       return c;
     });

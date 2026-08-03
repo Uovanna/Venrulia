@@ -157,6 +157,26 @@ js += `
     ok(!!file, "the SQL pricing migration exists (" + (file || "MISSING") + ")");
     const sql = fs.readFileSync(path.join(dir, file), "utf8");
 
+    // WHO MAY CHANGE THE WEIGHTS. The checks below prove the numbers MATCH the client, which says
+    // nothing about who is allowed to rewrite them. 0014 shipped ah_stat_weight with RLS off, and
+    // Supabase grants the API roles full table privileges by default, so the LIVE table read:
+    //
+    //   ah_stat_weight  rls: false   acl: anon=arwdDxtm, authenticated=arwdDxtm
+    //
+    // a=insert, w=update, d=delete — to anyone, signed in or not, over /rest/v1/. Since
+    // ah_gear_base_value prices every listing from this table and builds the band a posted price
+    // must sit inside, raising the weights would let a player list junk for millions and zeroing
+    // them would break posting for everyone.
+    const all = fs.readdirSync(dir).map((f) => fs.readFileSync(path.join(dir, f), "utf8")).join(" ");
+    ok(all.indexOf("alter table ah_stat_weight enable row level security") > 0,
+       "row level security is enabled on the pricing weights");
+    ok(all.indexOf("revoke all on table ah_stat_weight from anon, authenticated") > 0,
+       "…and neither anonymous nor signed-in callers may touch the table directly");
+    // Nothing in the client reads it — only ah_gear_base_value does, and a SECURITY DEFINER
+    // function bypasses RLS — so closing it completely costs nothing.
+    const appSrc = fs.readFileSync("${SRC.replace(/\\/g, '/')}", "utf8");
+    ok(appSrc.indexOf("ah_stat_weight") < 0, "…and the client never reads the table, so locking it breaks nothing");
+
     // Constants
     const num = (re) => { const m = sql.match(re); return m ? Number(m[1]) : null; };
     ok(num(/price_per_point numeric not null default ([\\d.]+)/) === AH_PRICE.perPoint,

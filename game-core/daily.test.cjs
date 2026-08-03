@@ -102,7 +102,19 @@ js += `
        "a replayed claim hands back the STORED seed, so the item cannot be re-rolled");
     ok(/enable row level security/.test(sql) && /auth\\.uid\\(\\) = user_id/.test(sql),
        "a player can only read their own claims");
-    ok(/revoke all on function daily_signin\\(\\) from public/.test(sql), "the RPC is not open to anonymous callers");
+    // A revoke from PUBLIC reads like it closes the door and does not: Supabase grants EXECUTE
+    // to anon and authenticated DIRECTLY, not through PUBLIC. Checked against the live project after
+    // applying 0015, anon still held EXECUTE on both RPCs. Nothing leaked — daily_signin raises
+    // 'not signed in' and daily_history filters on auth.uid() — but a revoke that does not revoke is
+    // worse than none, because the next reader believes it.
+    ok(sql.indexOf("revoke all on function daily_signin() from public") > 0, "PUBLIC is revoked");
+    const migDir = require("path").join("${path.join(__dirname, '..').replace(/\\/g, '/')}", "supabase", "migrations");
+    const allSql = require("fs").readdirSync(migDir)
+      .map((f) => require("fs").readFileSync(require("path").join(migDir, f), "utf8")).join(" ");
+    ok(allSql.indexOf("revoke execute on function daily_signin() from anon") > 0,
+       "…and so is anon, explicitly — the PUBLIC revoke alone did not remove it");
+    ok(allSql.indexOf("revoke execute on function daily_history(date, date) from anon") > 0,
+       "…on the history RPC too");
   }
 
   // --- the streak decays by one; it does not reset ---------------------------------------------------

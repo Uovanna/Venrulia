@@ -1734,6 +1734,90 @@ const offerState = (c, now) => {
 };
 const offerMsLeft = (c, now) => Math.max(0, (((c && c.offer) || {}).seenAt || now) + OFFER.windowMs - now);
 
+// ---------- BATTLE PASS ----------
+// A levelling companion: 20 ranks earned by killing, finishing at about the same time as level 60.
+//
+// killsPerRank is MEASURED, not guessed. Simulating 1-60 for all 22 specs over 6 seeds (132
+// completed runs) put the kill count at min 4,070, median 4,139, max 4,269 — a remarkably tight
+// spread, because kills to 60 are driven by the XP curve rather than by class. 20 ranks x 200 is
+// 4,000, which every measured run cleared with about 70 kills to spare. Anything at 225/rank
+// (4,500) was reached by none of them.
+//
+// PROGRESS RIDES char.kills THROUGH A BASELINE rather than a counter of its own. A second counter
+// would have to be incremented at every kill site — live combat, the offline sim, dungeons, raids,
+// the arena — and missing one would be invisible until a player noticed their bar was slow. The
+// baseline is stamped when the pass record is created, so a level-60 veteran with 247,726 lifetime
+// kills starts at rank 0 like everyone else, and a new character starts at 0 because they are at 0.
+const PASS = {
+  ranks: 20,
+  killsPerRank: 200,
+  venCost: 100,
+  ticketRanks: [5, 10, 15],   // see below: a ticket every rank would be worth 19x the pass price
+  gold: 1000,                 // both tracks, every rank
+  finalGold: 100000,
+  finalGems: 2,
+  finalIlvl: 64,              // the legendary floor, and the bridge item into Hard Mode
+};
+
+const passRec = (c) => (c && c.pass) || {};
+const passKills = (c) => Math.max(0, ((c && c.kills) || 0) - (passRec(c).base || 0));
+const passRank = (c) => Math.min(PASS.ranks, Math.floor(passKills(c) / PASS.killsPerRank));
+const passKillsInto = (c) => (passRank(c) >= PASS.ranks ? PASS.killsPerRank : passKills(c) % PASS.killsPerRank);
+const passOwnsPaid = (c) => !!passRec(c).paid;
+const passClaimed = (c, rank, paid) => !!((passRec(c)[paid ? "claimedPaid" : "claimedFree"] || {})[rank]);
+const passCanClaim = (c, rank, paid) =>
+  rank >= 1 && rank <= PASS.ranks && passRank(c) >= rank && !passClaimed(c, rank, paid) && (!paid || passOwnsPaid(c));
+const passUnclaimed = (c) => {
+  let n = 0;
+  for (let r = 1; r <= passRank(c); r++) { if (passCanClaim(c, r, false)) n++; if (passCanClaim(c, r, true)) n++; }
+  return n;
+};
+
+// What a rank pays. Free is gold and nothing else — it is the consolation track, and a player who
+// never spends should still see the bar mean something.
+//
+// The paid track gives a Dungeon Reset Ticket on three ranks rather than all twenty. That ticket
+// sells for 99 Ven in the premium shop, so nineteen of them would be 1,881 Ven of value inside a
+// 100 Ven pass — an 18.8x inversion that would take the shop ticket off the market entirely. Three
+// is 297 Ven, which still makes the pass comfortably worth buying without repricing anything else.
+const passReward = (rank, paid) => {
+  if (!paid) return { gold: PASS.gold, gems: 0, gemRarity: null, tickets: 0, item: null };
+  if (rank === PASS.ranks)
+    return { gold: PASS.finalGold, gems: PASS.finalGems, gemRarity: "legendary", tickets: 0,
+             item: { ilvl: PASS.finalIlvl, rarity: "legendary" } };
+  return { gold: PASS.gold, gems: 1, gemRarity: "epic",
+           tickets: PASS.ticketRanks.includes(rank) ? 1 : 0, item: null };
+};
+
+const passRewardLines = (rank, paid) => {
+  const r = passReward(rank, paid), out = [`${r.gold.toLocaleString()}g`];
+  if (r.gems) out.push(`${r.gems > 1 ? `${r.gems} ` : ""}random ${r.gemRarity} gem${r.gems > 1 ? "s" : ""}`);
+  if (r.tickets) out.push(`${r.tickets} Dungeon Reset Ticket`);
+  if (r.item) out.push(`ilvl ${r.item.ilvl} ${r.item.rarity} gear`);
+  return out;
+};
+
+// A claim must not be re-rollable. There is no server in this flow — unlike the daily sign-in,
+// which gets its seed from the database — so the seed is derived from the character and the rank.
+// Reloading and claiming again yields the SAME gem and the same item, which is what stops a player
+// save-scumming rank 20 until the legendary is the piece they wanted.
+const passSeed = (c, rank, paid) => {
+  const s = `${(c && c.id) || "c"}:${rank}:${paid ? "p" : "f"}`;
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return (h >>> 0) || 1;
+};
+
+// Duplicates are allowed, as asked: the legendary gems all say "Stacks" in their own descriptions,
+// so a second Warmonger's Ruby is a second +8% damage rather than a wasted roll.
+const passRollGems = (rank, paid, rng) => {
+  const r = passReward(rank, paid);
+  if (!r.gems) return [];
+  const pool = ALL_GEMS.filter((g) => g.rarity === r.gemRarity);
+  if (!pool.length) return [];
+  return Array.from({ length: r.gems }, () => pool[Math.floor(rng() * pool.length) % pool.length]);
+};
+
 const PREMIUM_ITEMS = [
   { id: "dungeonReset",  kind: "ticket", name: "Dungeon Reset Ticket",         icon: "🎟️", cost: 99,   desc: "Enter a dungeon once even when out of runs." },
   { id: "arenaChallenge", kind: "ticket", name: "Arena Challenge Ticket",       icon: "🏟️", cost: 99,   desc: "Challenge the Arena once while out of daily runs." },
@@ -4915,6 +4999,68 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     showNotif("\u{1F4B3} In-app purchases coming soon — Google Play & more");
   };
 
+  // ---------- battle pass ----------
+  const [passOpen, setPassOpen] = useState(false);
+  // Buying is retroactive: everything already earned becomes claimable at once. That is what makes
+  // buying at rank 18 worth 100 Ven — a pass that only paid forward would be nearly worthless to
+  // the player most likely to have noticed it, and the Ven sink would never fire.
+  const buyPass = () => {
+    const c = charRef.current;
+    if (passOwnsPaid(c)) { showNotif("You already own the Champion's Pass."); return; }
+    if ((c.ven || 0) < PASS.venCost) { showNotif(`Costs ${PASS.venCost} \u{1F48E} Ven`); return; }
+    commitChar({ ...c, ven: (c.ven || 0) - PASS.venCost, pass: { ...passRec(c), paid: true } });
+    const owed = passRank(c);
+    showNotif(owed > 0 ? `⚔️ Champion's Pass unlocked — ${owed} rank${owed > 1 ? "s" : ""} ready to claim`
+                       : "⚔️ Champion's Pass unlocked");
+    addLog(`⚔️ Champion's Pass purchased — −${PASS.venCost} Ven`, "#f0b429");
+  };
+
+  const claimPassRank = (rank, paid, quiet = false) => {
+    const c = charRef.current;
+    if (!passCanClaim(c, rank, paid)) return;
+    const r = passReward(rank, paid);
+    // Seeded from the character and the rank, so reloading and claiming again cannot re-roll the
+    // legendary into a different piece. Gems take the generator directly; generateItem reads the
+    // ambient RNG, so it needs the same stream scoped around it.
+    const rng = makeRng(passSeed(c, rank, paid));
+    const gems = passRollGems(rank, paid, rng);
+    const items = r.item ? withRng(rng, () => [generateItem(r.item.ilvl, rarityById(r.item.rarity), pickLootSlot(), c.cls)]) : [];
+
+    let nc = { ...c, gold: (c.gold || 0) + r.gold };
+    for (const g of gems) nc = grantGem(nc, g);
+    if (r.tickets) nc = { ...nc, tickets: { ...(nc.tickets || {}), dungeonReset: ((nc.tickets || {}).dungeonReset || 0) + r.tickets } };
+    if (items.length) {
+      // depositItems' `gold` is AUTO-SELL PROCEEDS, not the purse — take the three character fields
+      // and ADD the proceeds, the same trap the daily claim had to avoid.
+      const dep = depositItems(nc, items);
+      nc = { ...nc, inventory: dep.inventory, overflow: dep.overflow, gold: (nc.gold || 0) + dep.gold };
+      if (dep.sold.length) addLog(`\u{1F4B0} Bank full — sold ${dep.sold.length} for ${dep.gold}g`, "#caa64a");
+      if (dep.mailed.length) addLog(`\u{1F4EC} Bank full — ${dep.mailed.length} held in the mail`, "#7fd0ff");
+    }
+    const key = paid ? "claimedPaid" : "claimedFree";
+    nc = { ...nc, pass: { ...passRec(nc), [key]: { ...(passRec(nc)[key] || {}), [rank]: true } } };
+    commitChar(nc);
+    const lines = [`${r.gold.toLocaleString()}g`, ...gems.map((g) => g.name),
+                   ...(r.tickets ? [`${r.tickets} Dungeon Reset Ticket`] : []),
+                   ...items.map((it) => `${it.name} (ilvl ${it.ilvl})`)];
+    addLog(`\u{1F3C5} Pass rank ${rank} (${paid ? "Champion" : "Free"}) — ${lines.join(", ")}`, paid ? "#f0b429" : "#7fd0ff");
+    if (!quiet) showNotif(`\u{1F3C5} Rank ${rank}: ${lines.join(" · ")}`);
+  };
+
+  // Claim-all is why commitChar assigning charRef.current SYNCHRONOUSLY matters: each pass through
+  // the loop re-reads the ref, so the rewards accumulate instead of the last claim overwriting the
+  // gold of the ones before it. The per-rank notification is suppressed — twenty of them would
+  // just be one banner flickering — and a single summary is shown instead.
+  const claimPassAll = () => {
+    let n = 0, gold = (charRef.current.gold || 0);
+    for (let r = 1; r <= passRank(charRef.current); r++) {
+      if (passCanClaim(charRef.current, r, false)) { claimPassRank(r, false, true); n++; }
+      if (passCanClaim(charRef.current, r, true)) { claimPassRank(r, true, true); n++; }
+    }
+    if (!n) { showNotif("Nothing to claim yet."); return; }
+    showNotif(`\u{1F3C5} Claimed ${n} reward${n > 1 ? "s" : ""} · +${((charRef.current.gold || 0) - gold).toLocaleString()}g`);
+  };
+
   // ---------- daily sign-in ----------
   // The claim is an RPC because the device clock cannot be trusted with it: moving the date forward
   // would otherwise hand a player thirty days and the milestone legendary in a minute. The server
@@ -5656,46 +5802,91 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           );
         })()}
 
-        {tab === "town" && <TownHub onEnter={enterBuilding} highlight={tutorialHighlight(char)} charLevel={char.level || 1} />}
-        {/* The level-10 offer, under the daily icon. Rendering it is what starts its 24 hours. */}
-        {tab === "town" && offerState(char, now) === "live" && (() => {
-          if (!(char.offer || {}).seenAt) markOfferSeen();
-          const left = offerMsLeft(char, now);
-          const hrs = Math.floor(left / 3600000), mins = Math.floor((left % 3600000) / 60000);
-          return (
-            <button onClick={() => setOfferOpen(true)} aria-label="Limited offer"
-              style={{ position: "absolute", left: 10, top: 156, zIndex: 320, width: 52, height: 56,
-                background: "linear-gradient(135deg,#3a1020,#1e0a14)", border: "2px solid #e0455a",
-                borderRadius: 12, cursor: "pointer", color: "#ff9aa8",
-                boxShadow: "0 0 14px #e0455a66", animation: "tutflash 1.6s ease-in-out infinite" }}>
-              <div style={{ fontSize: 19, lineHeight: 1 }}>⚔️</div>
-              <div style={{ fontSize: 8, fontWeight: 800, marginTop: 1 }}>${OFFER.usd}</div>
-              <div style={{ fontSize: 7.5, color: "#e0a0aa" }}>{hrs}h {mins}m</div>
-            </button>
-          );
-        })()}
+        {/* The town map, with its floating icons anchored TO THE MAP.
+            They used to be absolute with no positioned ancestor, so they resolved against the
+            viewport and landed on top of the header — which is not a fixed height: the honor bar
+            replaces the XP bar at 60, and the lesson banner appears and disappears above. Anchoring
+            to this wrapper means the corner of the map is the corner of the map whatever is above. */}
+        {tab === "town" && (
+          <div style={{ position: "relative" }}>
+            <TownHub onEnter={enterBuilding} highlight={tutorialHighlight(char)} charLevel={char.level || 1} />
 
-        {/* Floating daily sign-in, top-left of the map. Badged while today is unclaimed — the badge
-            is the only thing that tells a returning player there is something waiting. */}
-        {tab === "town" && (() => {
-          const today = utcDayString();
-          const claimed = (char.daily?.lastDay || null) === today;
-          const streak = char.daily?.streak || 0;
-          return (
-            <button onClick={() => { setDailyResult(null); setDailyOpen(true); }} aria-label="Daily sign-in"
-              style={{ position: "absolute", left: 10, top: 96, zIndex: 320, width: 52, height: 52,
-                background: "linear-gradient(135deg,#16213a,#0e1626)", border: `2px solid ${claimed ? "#3a5a7a" : "#f0b429"}`,
-                borderRadius: 12, cursor: "pointer", color: claimed ? "#6f8aa8" : "#f0b429",
-                boxShadow: claimed ? "none" : "0 0 14px #f0b42966",
-                animation: claimed ? "none" : "tutflash 1.6s ease-in-out infinite" }}>
-              <div style={{ fontSize: 20, lineHeight: 1 }}>📅</div>
-              <div style={{ fontSize: 9, fontWeight: 800, marginTop: 2 }}>{streak > 0 ? `${streak}d` : "Daily"}</div>
-              {!claimed && <span style={{ position: "absolute", top: -4, right: -4, background: "#e0455a", color: "#fff",
-                fontSize: 9, fontWeight: 800, width: 16, height: 16, borderRadius: 8, display: "flex",
-                alignItems: "center", justifyContent: "center", boxShadow: "0 0 0 1.5px #0d0b1e" }}>!</span>}
-            </button>
-          );
-        })()}
+            {/* Top-left cluster: sign-in, then anything else that wants the player's eye.
+                The battle pass sits to the RIGHT of the sign-in, so the first row reads
+                [daily][pass] and the offer hangs below the daily. */}
+            <div style={{ position: "absolute", left: 8, top: 8, zIndex: 320,
+                          display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 6 }}>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 6 }}>
+              {/* Badged while today is unclaimed — the badge is the only thing that tells a
+                  returning player there is something waiting. */}
+              {(() => {
+                const today = utcDayString();
+                const claimed = (char.daily?.lastDay || null) === today;
+                const streak = char.daily?.streak || 0;
+                return (
+                  <button onClick={() => { setDailyResult(null); setDailyOpen(true); }} aria-label="Daily sign-in"
+                    style={{ position: "relative", width: 52, height: 52,
+                      background: "linear-gradient(135deg,#16213a,#0e1626)", border: `2px solid ${claimed ? "#3a5a7a" : "#f0b429"}`,
+                      borderRadius: 12, cursor: "pointer", color: claimed ? "#6f8aa8" : "#f0b429",
+                      boxShadow: claimed ? "none" : "0 0 14px #f0b42966",
+                      animation: claimed ? "none" : "tutflash 1.6s ease-in-out infinite" }}>
+                    <div style={{ fontSize: 20, lineHeight: 1 }}>📅</div>
+                    <div style={{ fontSize: 9, fontWeight: 800, marginTop: 2 }}>{streak > 0 ? `${streak}d` : "Daily"}</div>
+                    {!claimed && <span style={{ position: "absolute", top: -4, right: -4, background: "#e0455a", color: "#fff",
+                      fontSize: 9, fontWeight: 800, width: 16, height: 16, borderRadius: 8, display: "flex",
+                      alignItems: "center", justifyContent: "center", boxShadow: "0 0 0 1.5px #0d0b1e" }}>!</span>}
+                  </button>
+                );
+              })()}
+
+              {/* Battle pass, to the right of the sign-in. The badge counts rewards WAITING, not
+                  ranks earned — an unclaimed count is the only number worth interrupting for. */}
+              {(() => {
+                const rank = passRank(char), waiting = passUnclaimed(char), owned = passOwnsPaid(char);
+                const pct = rank >= PASS.ranks ? 100 : Math.round(passKillsInto(char) / PASS.killsPerRank * 100);
+                return (
+                  <button onClick={() => setPassOpen(true)} aria-label="Battle pass"
+                    style={{ position: "relative", width: 52, height: 52,
+                      background: owned ? "linear-gradient(135deg,#2a2410,#171205)" : "linear-gradient(135deg,#1a1535,#100d24)",
+                      border: `2px solid ${waiting ? "#f0b429" : owned ? "#8a6a1a" : "#46407a"}`,
+                      borderRadius: 12, cursor: "pointer", color: waiting ? "#f0b429" : "#a79ad8",
+                      boxShadow: waiting ? "0 0 14px #f0b42966" : "none",
+                      animation: waiting ? "tutflash 1.6s ease-in-out infinite" : "none" }}>
+                    <div style={{ fontSize: 19, lineHeight: 1 }}>🏅</div>
+                    <div style={{ fontSize: 9, fontWeight: 800, marginTop: 1 }}>R{rank}</div>
+                    {/* A sliver of the current rank's progress, so the icon says "nearly there". */}
+                    <div style={{ position: "absolute", left: 5, right: 5, bottom: 4, height: 2.5,
+                                  background: "#0d0b1e", borderRadius: 2, overflow: "hidden" }}>
+                      <div style={{ width: `${pct}%`, height: "100%", background: "linear-gradient(90deg,#8a6a1a,#f0b429)" }} />
+                    </div>
+                    {waiting > 0 && <span style={{ position: "absolute", top: -4, right: -4, background: "#e0455a", color: "#fff",
+                      fontSize: 9, fontWeight: 800, minWidth: 16, height: 16, padding: "0 3px", borderRadius: 8, display: "flex",
+                      alignItems: "center", justifyContent: "center", boxShadow: "0 0 0 1.5px #0d0b1e" }}>{waiting}</span>}
+                  </button>
+                );
+              })()}
+              </div>
+
+              {/* The level-10 offer, under the sign-in. Rendering it is what starts its 24 hours. */}
+              {offerState(char, now) === "live" && (() => {
+                if (!(char.offer || {}).seenAt) markOfferSeen();
+                const left = offerMsLeft(char, now);
+                const hrs = Math.floor(left / 3600000), mins = Math.floor((left % 3600000) / 60000);
+                return (
+                  <button onClick={() => setOfferOpen(true)} aria-label="Limited offer"
+                    style={{ position: "relative", width: 52, height: 56,
+                      background: "linear-gradient(135deg,#3a1020,#1e0a14)", border: "2px solid #e0455a",
+                      borderRadius: 12, cursor: "pointer", color: "#ff9aa8",
+                      boxShadow: "0 0 14px #e0455a66", animation: "tutflash 1.6s ease-in-out infinite" }}>
+                    <div style={{ fontSize: 19, lineHeight: 1 }}>⚔️</div>
+                    <div style={{ fontSize: 8, fontWeight: 800, marginTop: 1 }}>${OFFER.usd}</div>
+                    <div style={{ fontSize: 7.5, color: "#e0a0aa" }}>{hrs}h {mins}m</div>
+                  </button>
+                );
+              })()}
+            </div>
+          </div>
+        )}
         {offerOpen && (() => {
           const left = offerMsLeft(char, now);
           const hrs = Math.floor(left / 3600000), mins = Math.floor((left % 3600000) / 60000);
@@ -5738,6 +5929,124 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                   background: "transparent", border: "none", color: "#8a7a86", fontSize: 11.5, padding: 6, cursor: "pointer" }}>
                   Maybe later
                 </button>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* THE BATTLE PASS. Two vertical tracks with the progress rail running between them:
+            free on the left, Champion on the right, and the rank nodes on the rail itself. The
+            rail is the thing that makes the layout readable — it is one continuous line the eye
+            follows down, and a row's position on it says whether it is earned, next, or far off. */}
+        {passOpen && (() => {
+          const rank = passRank(char), owned = passOwnsPaid(char), waiting = passUnclaimed(char);
+          const kills = passKills(char), into = passKillsInto(char);
+          const done = rank >= PASS.ranks;
+          const cell = (r, paid) => {
+            const rw = passReward(r, paid);
+            const earned = rank >= r, claimed = passClaimed(char, r, paid);
+            const canClaim = passCanClaim(char, r, paid);
+            const locked = paid && !owned;
+            return (
+              <button onClick={() => canClaim && claimPassRank(r, paid)} disabled={!canClaim}
+                aria-label={`Rank ${r} ${paid ? "Champion" : "Free"}${canClaim ? " — claim" : ""}`}
+                style={{ flex: 1, minWidth: 0, textAlign: "left", padding: "7px 8px", borderRadius: 9,
+                  cursor: canClaim ? "pointer" : "default",
+                  background: claimed ? "#12101f" : canClaim ? (paid ? "linear-gradient(135deg,#2e2610,#1a1408)" : "linear-gradient(135deg,#132033,#0d1522)") : "#12101f",
+                  border: `1.5px solid ${claimed ? "#241f3a" : canClaim ? (paid ? "#f0b429" : "#4a90c0") : earned ? "#3a3358" : "#241f3a"}`,
+                  opacity: locked ? 0.45 : claimed ? 0.55 : earned ? 1 : 0.62,
+                  boxShadow: canClaim ? (paid ? "0 0 10px #f0b42944" : "0 0 10px #4a90c044") : "none" }}>
+                <div style={{ fontSize: 10.5, color: claimed ? "#6f6a90" : paid ? "#f0d98a" : "#a8c8e8", fontWeight: 700, lineHeight: 1.45 }}>
+                  {passRewardLines(r, paid).map((l, i) => <div key={i}>{l}</div>)}
+                </div>
+                <div style={{ marginTop: 4, fontSize: 9, fontWeight: 800,
+                              color: claimed ? "#5a5578" : canClaim ? (paid ? "#f0b429" : "#7fd0ff") : locked ? "#8a83b8" : "#6f6a90" }}>
+                  {claimed ? "✓ Claimed" : canClaim ? "TAP TO CLAIM" : locked ? "🔒 Champion" : earned ? "—" : "Locked"}
+                </div>
+              </button>
+            );
+          };
+          return (
+            <div onClick={() => setPassOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 400,
+                 background: "#000b", display: "flex", alignItems: "center", justifyContent: "center", padding: 12 }}>
+              <div onClick={(e) => e.stopPropagation()} style={{ background: "linear-gradient(180deg,#15122e,#0d0a1f)",
+                   border: "2px solid #46407a", borderRadius: 16, width: "100%", maxWidth: 400,
+                   maxHeight: "88vh", display: "flex", flexDirection: "column", boxShadow: "0 8px 40px #000a" }}>
+
+                {/* Header: what the pass is, and where the player is on it. */}
+                <div style={{ padding: "14px 14px 10px", borderBottom: "1px solid #241f3a" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div style={{ color: "#f0b429", fontFamily: "Georgia, serif", fontSize: 17, fontWeight: 700 }}>🏅 Champion's Pass</div>
+                    <button onClick={() => setPassOpen(false)} style={{ background: "none", border: "none", color: "#8a83b8", fontSize: 20, cursor: "pointer", lineHeight: 1 }}>×</button>
+                  </div>
+                  <div style={{ color: "#8a83b8", fontSize: 11, marginTop: 3 }}>
+                    Rank {rank} of {PASS.ranks} · {kills.toLocaleString()} kills
+                    {!done && <> · {(PASS.killsPerRank - into).toLocaleString()} to rank {rank + 1}</>}
+                  </div>
+                  <div style={{ height: 5, background: "#241c40", borderRadius: 3, overflow: "hidden", marginTop: 7 }}>
+                    <div style={{ width: `${Math.round((rank + (done ? 0 : into / PASS.killsPerRank)) / PASS.ranks * 100)}%`,
+                                  height: "100%", background: "linear-gradient(90deg,#8a6a1a,#f0b429)" }} />
+                  </div>
+                  {!owned && (
+                    <button onClick={buyPass} style={{ width: "100%", marginTop: 10, padding: "9px 0", borderRadius: 10,
+                      background: "linear-gradient(135deg,#f0b429,#c8901a)", border: "none", color: "#1a1200",
+                      fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
+                      Unlock Champion · {PASS.venCost} 💎 Ven
+                      {rank > 0 && <span style={{ display: "block", fontSize: 9.5, fontWeight: 700, opacity: 0.75 }}>
+                        {rank} rank{rank > 1 ? "s" : ""} already earned — claimable immediately
+                      </span>}
+                    </button>
+                  )}
+                  {waiting > 0 && (
+                    <button onClick={claimPassAll} style={{ width: "100%", marginTop: 8, padding: "8px 0", borderRadius: 10,
+                      background: "#1a2b3d", border: "1.5px solid #4a90c0", color: "#7fd0ff",
+                      fontWeight: 800, fontSize: 12, cursor: "pointer" }}>
+                      Claim all {waiting} waiting
+                    </button>
+                  )}
+                </div>
+
+                {/* Column headings, aligned to the two tracks and the rail between them. */}
+                <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px 4px" }}>
+                  <div style={{ flex: 1, color: "#a8c8e8", fontSize: 10, fontWeight: 800, letterSpacing: 0.6 }}>FREE</div>
+                  <div style={{ width: 30 }} />
+                  <div style={{ flex: 1, color: owned ? "#f0d98a" : "#8a83b8", fontSize: 10, fontWeight: 800, letterSpacing: 0.6, textAlign: "right" }}>
+                    CHAMPION {owned ? "" : "🔒"}
+                  </div>
+                </div>
+
+                {/* The track. */}
+                <div style={{ overflowY: "auto", padding: "0 14px 14px" }}>
+                  {Array.from({ length: PASS.ranks }, (_, i) => i + 1).map((r) => {
+                    const earned = rank >= r, isNext = !earned && rank + 1 === r;
+                    return (
+                      <div key={r} style={{ display: "flex", alignItems: "stretch", gap: 6, position: "relative" }}>
+                        {cell(r, false)}
+                        {/* The rail: a continuous line with this rank's node on it. */}
+                        <div style={{ width: 30, position: "relative", display: "flex", flexDirection: "column", alignItems: "center" }}>
+                          <div style={{ position: "absolute", top: 0, bottom: 0, width: 3, borderRadius: 2,
+                                        background: earned ? "linear-gradient(180deg,#f0b429,#8a6a1a)" : "#241f3a" }} />
+                          {/* The final rank is the only one that is worth marking out. */}
+                          <div style={{ position: "relative", marginTop: "auto", marginBottom: "auto",
+                            width: r === PASS.ranks ? 26 : 22, height: r === PASS.ranks ? 26 : 22, borderRadius: "50%",
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            fontSize: r === PASS.ranks ? 10 : 10.5, fontWeight: 800,
+                            background: earned ? "linear-gradient(135deg,#f0b429,#c8901a)" : "#15122e",
+                            color: earned ? "#1a1200" : isNext ? "#f0b429" : "#6f6a90",
+                            border: `2px solid ${earned ? "#ffe08a" : isNext ? "#f0b429" : "#3a3358"}`,
+                            boxShadow: isNext ? "0 0 10px #f0b42977" : "none" }}>
+                            {r === PASS.ranks ? "👑" : r}
+                          </div>
+                        </div>
+                        {cell(r, true)}
+                      </div>
+                    );
+                  })}
+                  <div style={{ color: "#6f6a90", fontSize: 10, lineHeight: 1.5, marginTop: 10, textAlign: "center" }}>
+                    {PASS.killsPerRank} kills per rank · {(PASS.killsPerRank * PASS.ranks).toLocaleString()} for the crown,
+                    about what a run from 1 to 60 takes.
+                  </div>
+                </div>
               </div>
             </div>
           );

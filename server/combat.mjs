@@ -1752,6 +1752,7 @@ const createCharacter = (name, cls, race) => {
     seen: {},
     daily: { lastDay: null, streak: 0, history: [] },
     offer: { seenAt: 0, taken: false, pick: null },
+    pass: { base: 0, paid: false, claimedFree: {}, claimedPaid: {} },
     buffs: {},
     hp: 0,
     createdAt: Date.now(),
@@ -1957,6 +1958,15 @@ const normalizeChar = (c) => ({
   offer: (c.offer && typeof c.offer === "object" && !Array.isArray(c.offer))
     ? { seenAt: Number(c.offer.seenAt) || 0, taken: !!c.offer.taken, pick: c.offer.pick || null }
     : { seenAt: 0, taken: false, pick: null },
+  // Battle pass. `base` is the lifetime kill count at the moment the pass began, so pass progress
+  // is (kills - base) and rides the counter that every kill site already updates. Stamping it on
+  // FIRST NORMALIZE is what stops an existing character claiming all twenty ranks the instant the
+  // feature ships — a level-60 save with 247,726 kills gets base 247,726 and starts at rank 0.
+  pass: (c.pass && typeof c.pass === "object" && !Array.isArray(c.pass))
+    ? { base: Number(c.pass.base) || 0, paid: !!c.pass.paid,
+        claimedFree: (c.pass.claimedFree && typeof c.pass.claimedFree === "object") ? c.pass.claimedFree : {},
+        claimedPaid: (c.pass.claimedPaid && typeof c.pass.claimedPaid === "object") ? c.pass.claimedPaid : {} }
+    : { base: Number(c.kills) || 0, paid: false, claimedFree: {}, claimedPaid: {} },
   consumables: (() => { const src = c.consumables || {}; const out = {}; const t = Math.min(6, Math.max(0, Math.floor((c.level || 1) / 10))); for (const k in src) { const v = src[k]; if (!v) continue; if (k.includes("@")) out[k] = (out[k] || 0) + v; else out[k + "@" + t] = (out[k + "@" + t] || 0) + v; } return out; })(),
   buffs: c.buffs || {},
   hp: typeof c.hp === "number" ? c.hp : maxHpFor(c),

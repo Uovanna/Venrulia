@@ -3655,7 +3655,16 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     items.forEach((it) => {
       if (c.autoEquip) {
         const cur = equip[it.slotId];
-        if (!cur || itemScore(it, c.cls) > itemScore(cur, c.cls)) {
+        // AUTO-EQUIP MUST NOT DISMANTLE A SET. itemScore knows about item level and stats and
+        // nothing about set bonuses, so a raid drop one ilvl above a Battlemaster piece scores
+        // higher and would silently cost the player 10% Arena mitigation they paid 125 tokens for.
+        // A worn set piece is only ever replaced by hand.
+        //
+        // This gates the EQUIP only. Written as an early `return` it exited the whole per-item
+        // callback, so a drop for that slot was not equipped, not sold and not banked — it was
+        // deleted. The drop still has to reach the bag below.
+        const wornIsSetPiece = !!(cur && cur.setId);
+        if (!wornIsSetPiece && (!cur || itemScore(it, c.cls) > itemScore(cur, c.cls))) {
           if (cur) unequipped.push(cur);
           equip[it.slotId] = it;
           if (!firstShown) firstShown = it;
@@ -5014,6 +5023,39 @@ function GameScreen({ character: initChar, onSave, onBack }) {
 
   // ---------- gear actions ----------
   const sellPrice = (item) => (item.slotId === "relic" || item.relicId) ? 150 : Math.max(1, Math.floor(item.value * 0.6 * 0.25)); // relics (artifacts) flat 150g; else 60% value -75%
+  // ---------- GEAR SETS: two loadouts, one active ----------
+  // The invariant that matters: char.equipment is the ONLY equipment map in existence at any
+  // moment. Every stat, every set bonus and every socket reads it and nothing else. The parked set
+  // lives in loadouts.stash, which nothing computes from. Swapping is a single atomic exchange, so
+  // there is no window — not even one render — in which both sets could be applied.
+  const loadoutRec = (c) => (c && c.loadouts) || { active: 0, stash: null };
+  const loadoutActive = (c) => (loadoutRec(c).active === 1 ? 1 : 0);
+  const loadoutStash = (c) => loadoutRec(c).stash;
+  const equipmentPieces = (eq) => Object.values(eq || {}).filter(Boolean);
+  const loadoutSummary = (eq) => {
+    const items = equipmentPieces(eq).filter((it) => it && it.ilvl && it.slotId !== "relic");
+    const pvp = equipmentPieces(eq).filter((it) => it && it.setId === BM_SET_ID).length;
+    return { count: equipmentPieces(eq).length,
+             ilvl: items.length ? Math.round(items.reduce((a, it) => a + it.ilvl, 0) / items.length) : 0,
+             pvp };
+  };
+  const swapLoadout = () => {
+    const c = charRef.current;
+    if (battleRef.current) { showNotif("Finish your current fight first"); return; }
+    const to = 1 - loadoutActive(c);
+    // The exchange. Both halves move in ONE commit — writing equipment first and the stash second
+    // would leave a state where the outgoing set was both worn and parked.
+    commitChar({ ...c,
+      equipment: loadoutStash(c) || {},
+      loadouts: { active: to, stash: c.equipment || {} },
+    });
+    const s = loadoutSummary(loadoutStash(c));
+    showNotif(s.count
+      ? `Set ${to + 1} equipped — ${s.count} piece${s.count === 1 ? "" : "s"}, ilvl ${s.ilvl}`
+      : `Set ${to + 1} is empty — equip from your bank`);
+    addLog(`🗡️ Switched to gear Set ${to + 1}`, "#8fd0e0");
+  };
+
   const equipItem = (item, targetSlot) => {
     const c = charRef.current;
     const slot = targetSlot || item.slotId;
@@ -5399,15 +5441,27 @@ function GameScreen({ character: initChar, onSave, onBack }) {
   // ---------- tempering forge ----------
   const cloneItem = (it) => JSON.parse(JSON.stringify(it));
   // swap an item (by id) wherever it lives — inventory or an equipped slot; next=null destroys it
+  // Both of these must know about the PARKED set as well as the worn one. A player's arena kit
+  // spends most of its life in the stash, and gear you cannot temper or reroll while it is put
+  // away is gear you have to swap into first for no reason the player could guess.
   const replaceItemInChar = (c, id, next) => {
     const inventory = c.inventory.map((i) => (i && i.id === id ? next : i)).filter(Boolean);
     const equipment = { ...c.equipment };
     for (const k in equipment) if (equipment[k]?.id === id) { if (next) equipment[k] = next; else delete equipment[k]; }
-    return { ...c, inventory, equipment };
+    let loadouts = c.loadouts;
+    const st = loadoutStash(c);
+    if (st && Object.values(st).some((i) => i && i.id === id)) {
+      const stash = { ...st };
+      for (const k in stash) if (stash[k]?.id === id) { if (next) stash[k] = next; else delete stash[k]; }
+      loadouts = { ...loadoutRec(c), stash };
+    }
+    return { ...c, inventory, equipment, loadouts };
   };
-  // find the current live copy of an item by id (equipment first, then bags)
+  // find the current live copy of an item by id (worn first, then the parked set, then bags)
   const findItemById = (c, id) => {
     for (const k in (c.equipment || {})) if (c.equipment[k]?.id === id) return c.equipment[k];
+    const st = loadoutStash(c) || {};
+    for (const k in st) if (st[k]?.id === id) return st[k];
     return (c.inventory || []).find((i) => i && i.id === id) || null;
   };
   const temperItem = (srcItem, useProtect) => {
@@ -6576,6 +6630,40 @@ function GameScreen({ character: initChar, onSave, onBack }) {
               <span style={{ flex: 1, textAlign: "left" }}><span style={{ color: "#c8a0ff", fontWeight: 700, fontSize: 13.5, display: "block" }}>Equip Gambits</span><span style={{ color: "#9a93b3", fontSize: 10.5 }}>Assign if/then automation to your skills & consumables</span></span>
               <span style={{ color: "#8a7fb8", fontSize: 16 }}>›</span>
             </button>
+            {/* TWO GEAR SETS. The tab is a switch, not a view: tapping the inactive one swaps the
+                gear. Each tab shows what is actually in that set — piece count, average item level
+                and any Battlemaster pieces — because "Set 2" on its own tells a player nothing
+                about which is their arena kit. */}
+            {(() => {
+              const active = loadoutActive(char);
+              const sets = [
+                { i: 0, eq: active === 0 ? char.equipment : loadoutStash(char) },
+                { i: 1, eq: active === 1 ? char.equipment : loadoutStash(char) },
+              ];
+              return (
+                <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+                  {sets.map(({ i, eq }) => {
+                    const on = active === i, s = loadoutSummary(eq);
+                    return (
+                      <button key={i} onClick={() => { if (!on) swapLoadout(); }} disabled={on}
+                        aria-label={`Gear set ${i + 1}${on ? " (active)" : " — switch"}`}
+                        style={{ flex: 1, background: on ? "linear-gradient(135deg,#1b2a3a,#101a26)" : "#12101c",
+                          border: `1.5px solid ${on ? "#4a90c0" : "#2a2740"}`, borderRadius: 10,
+                          padding: "8px 9px", cursor: on ? "default" : "pointer", textAlign: "left" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                          <span style={{ color: on ? "#7fd0ff" : "#8a83b8", fontWeight: 800, fontSize: 12 }}>Set {i + 1}</span>
+                          {on && <span style={{ color: "#7CFC9E", fontSize: 8.5, fontWeight: 800, background: "#0e2418", border: "1px solid #2a6a44", borderRadius: 4, padding: "0 4px" }}>WORN</span>}
+                        </div>
+                        <div style={{ color: "#6f6a90", fontSize: 9.5, marginTop: 2 }}>
+                          {s.count ? `${s.count} piece${s.count === 1 ? "" : "s"} · ilvl ${s.ilvl}` : "empty"}
+                          {s.pvp ? ` · 🛡️${s.pvp}` : ""}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })()}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
               <span style={{ color: "#aaa", fontSize: 11, textTransform: "uppercase", letterSpacing: 1 }}>Character</span>
               <label style={{ color: "#888", fontSize: 10.5, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
@@ -7537,6 +7625,9 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           // anything not currently worn.
           const items = [
             ...Object.values(char.equipment || {}).filter(isTemperable),
+            // The parked set. Without this a player's arena kit is untemperable for as long as it
+            // is put away, which is most of the time.
+            ...Object.values(loadoutStash(char) || {}).filter(isTemperable),
             ...(char.inventory || []).filter((it) => isTemperable(it) && it.locked),
           ];
           const sel = temperSel ? items.find((i) => i.id === temperSel) : null;

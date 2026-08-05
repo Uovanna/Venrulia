@@ -1805,6 +1805,7 @@ const createCharacter = (name, cls, race) => {
     offer: { seenAt: 0, taken: false, pick: null },
     pass: { base: 0, paid: false, claimedFree: {}, claimedPaid: {} },
     arena: { day: null, runs: 0, streak: 0 },
+    loadouts: { active: 0, stash: null },
     buffs: {},
     hp: 0,
     createdAt: Date.now(),
@@ -2025,6 +2026,18 @@ const normalizeChar = (c) => ({
   arena: (c.arena && typeof c.arena === "object" && !Array.isArray(c.arena))
     ? { day: c.arena.day || null, runs: Number(c.arena.runs) || 0, streak: Number(c.arena.streak) || 0 }
     : { day: null, runs: 0, streak: 0 },
+  // TWO GEAR SETS, ONE ACTIVE. char.equipment is the only thing any stat, set bonus or socket ever
+  // reads — this holds the OTHER set, parked. There is deliberately no second equipment map that
+  // could also be live: swapping EXCHANGES equipment and stash in one step, so "both applied at
+  // once" is not a bug that has to be prevented, it is a state that cannot be represented.
+  //
+  // Parked items are not in the inventory either, so they cannot be sold, salvaged, listed or
+  // disenchanted out from under the set they belong to.
+  loadouts: (c.loadouts && typeof c.loadouts === "object" && !Array.isArray(c.loadouts))
+    ? { active: c.loadouts.active === 1 ? 1 : 0,
+        stash: (c.loadouts.stash && typeof c.loadouts.stash === "object" && !Array.isArray(c.loadouts.stash))
+          ? c.loadouts.stash : null }
+    : { active: 0, stash: null },
   consumables: (() => { const src = c.consumables || {}; const out = {}; const t = Math.min(6, Math.max(0, Math.floor((c.level || 1) / 10))); for (const k in src) { const v = src[k]; if (!v) continue; if (k.includes("@")) out[k] = (out[k] || 0) + v; else out[k + "@" + t] = (out[k + "@" + t] || 0) + v; } return out; })(),
   buffs: c.buffs || {},
   hp: typeof c.hp === "number" ? c.hp : maxHpFor(c),

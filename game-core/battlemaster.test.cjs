@@ -46,13 +46,46 @@ js += `
   // --- token payouts ---------------------------------------------------------------------------
   sec("A bout pays, win or lose, and a streak pays more");
   {
-    ok(arenaPayout(true, 0) === 5, "the first win pays 5");
+    ok(arenaPayout(true, 0) === 11, "the first win pays 11");
     ok(arenaPayout(false, 0) === 1, "a loss still pays 1 \\u2014 a bad session still moves you toward a purchase");
     const walk = [1,2,3,4,5,6,7,8].map((n) => arenaPayout(true, n - 1));
-    ok(walk.join(",") === "5,6,7,8,9,10,10,10",
-       "wins 1-8 pay " + walk.join(", ") + " \\u2014 +1 a win, and the 6th win is the 10 that was asked for");
-    ok(arenaPayout(true, 999) === 10, "the bonus caps however long the streak runs");
+    ok(walk.join(",") === "11,13,15,17,19,21,21,21",
+       "wins 1-8 pay " + walk.join(", ") + " \\u2014 +2 a win, holding at 21 from the sixth");
+    ok(arenaPayout(true, 999) === 21, "the bonus caps however long the streak runs");
     ok(arenaPayout(false, 20) === 1, "a loss pays the flat 1 regardless of the streak it just ended");
+
+    // THE TUNING IS THE POINT, so it is measured here rather than trusted. Ten bouts a day at a
+    // 50% win rate, streaks forming and breaking naturally, against the full 2,500-token chase.
+    // The original 5/1/+1 paid 35.7 a day and took 10.0 weeks, which was too long.
+    const sim = (winRate) => {
+      let total = 0, streak = 0, seed = 12345;
+      const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+      for (let d = 0; d < 40000; d++) for (let r = 0; r < ARENA.dailyRuns; r++) {
+        if (rnd() < winRate) { total += arenaPayout(true, streak); streak++; }
+        else { total += arenaPayout(false, streak); streak = 0; }
+      }
+      return total / 40000;
+    };
+    const CHASE = 4 * BM_PIECE_COST + 2 * 500 + 4 * bmTemperTotal();
+    ok(CHASE === 2500, "the full chase is 2,500 tokens (4 pieces + 2 runes + tempering all four)");
+    const perDay = sim(0.5), weeks = CHASE / perDay / 7;
+    ok(Math.abs(perDay - 71.7) < 1.5, "a 50% win rate pays " + perDay.toFixed(1) + " tokens a day");
+    ok(weeks > 4.5 && weeks < 5.5, "\\u2026so the full chase takes " + weeks.toFixed(1) + " weeks, not the 10.0 it did");
+    // A losing player must not be locked out of the shop entirely.
+    ok(CHASE / sim(0.4) / 7 < 7.5, "even at a 40% win rate it is " + (CHASE / sim(0.4) / 7).toFixed(1) + " weeks");
+
+    // Where the increase sits was a design decision, so pin it: the loss payout is untouched and
+    // the streak stays a small share, or the streak becomes the only way to afford anything.
+    ok(ARENA.lossTokens === 1, "the loss payout is UNCHANGED \\u2014 the whole adjustment falls on wins");
+    let base = 0, bonus = 0, st = 0, sd = 999;
+    const r2 = () => (sd = (sd * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+    for (let i = 0; i < 200000; i++) {
+      if (r2() < 0.5) { base += ARENA.winTokens; bonus += Math.min(ARENA.streakBonusMax, st) * ARENA.streakBonusPer; st++; }
+      else { base += ARENA.lossTokens; st = 0; }
+    }
+    const share = bonus / (base + bonus);
+    ok(share > 0.10 && share < 0.20,
+       "the streak is " + Math.round(share * 100) + "% of income \\u2014 a bonus for playing well, not the whole economy");
   }
 
   // --- the daily allowance, and the ticket it finally gives a job to ---------------------------

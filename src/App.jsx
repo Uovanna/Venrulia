@@ -1854,15 +1854,28 @@ const VEN_TO_GOLD = 1000; // 1 Ven → 1,000 gold (100 Ven = 100,000 gold)
 // counter that only moves at the end is one a player can dodge by retreating from a losing fight
 // and re-queueing, which would make the allowance meaningless and the ticket worthless again.
 // Entry is the only moment that cannot be avoided.
+//
+// THE NUMBERS ARE MEASURED, not chosen. Simulating 10 bouts a day over 40,000 days at a 50% win
+// rate — streaks forming and breaking naturally — the original 5/1/+1 paid 35.7 tokens a day, so
+// the full 2,500-token chase (4 set pieces, 2 runes, +5 on all four) took 10.0 weeks. That was too
+// long. These values put it at 71.7 a day and 5.0 weeks.
+//
+// WHERE THE INCREASE SITS is deliberate. The loss payout is UNCHANGED at 1, so the whole adjustment
+// falls on wins: of the extra 36 tokens a day, 31 come from the win base and 5 from the streak.
+// That holds the streak at 15% of income — the same share it had before — so a streak stays a
+// bonus for playing well rather than becoming the only way to afford anything.
 const ARENA = {
   dailyRuns: 10,
-  winTokens: 5,
+  winTokens: 11,
   lossTokens: 1,
-  streakBonusMax: 5,   // +1 per consecutive win, so the 6th win and beyond pay 10
+  streakBonusMax: 5,   // +2 per consecutive win, so the 6th win and beyond pay 11 + 10 = 21
+  streakBonusPer: 2,
 };
-// Payout for a bout, given the streak BEFORE it. Win 1 pays 5, win 6 pays 5 + min(5, 5) = 10.
+// Payout for a bout, given the streak BEFORE it. Win 1 pays 11; wins run 11, 13, 15, 17, 19, 21,
+// and hold at 21. A perfect day is 180 tokens; a day without a single win is still 10.
 const arenaPayout = (win, streakBefore) =>
-  win ? ARENA.winTokens + Math.min(ARENA.streakBonusMax, Math.max(0, streakBefore || 0)) : ARENA.lossTokens;
+  win ? ARENA.winTokens + Math.min(ARENA.streakBonusMax, Math.max(0, streakBefore || 0)) * ARENA.streakBonusPer
+      : ARENA.lossTokens;
 const arenaToday = (c) => {
   const a = (c && c.arena) || {};
   const day = utcDayString();
@@ -7733,7 +7746,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
               </div>
               <div style={{ color: "#6f6a90", fontSize: 10, lineHeight: 1.5, marginBottom: 2 }}>
                 Nothing here can be bought with gold or Ven. A rated win pays {ARENA.winTokens} tokens
-                (up to {ARENA.winTokens + ARENA.streakBonusMax} on a streak) and a loss still pays {ARENA.lossTokens}.
+                (up to {ARENA.winTokens + ARENA.streakBonusMax * ARENA.streakBonusPer} on a streak) and a loss still pays {ARENA.lossTokens}.
               </div>
 
               {head("BATTLEMASTER'S REGALIA", `Artifact, item level ${BM_PIECE_ILVL}, three sockets each. Every piece worn: take ${Math.round(GEAR_SETS[BM_SET_ID].perPiece * 100)}% less damage in the Arena — ${owned}/4 worn, ${Math.round((1 - Math.pow(1 - GEAR_SETS[BM_SET_ID].perPiece, owned)) * 100)}% now. Temperable to +${BM_TEMPER_MAX} with tokens (${bmTemperTotal()} for the lot); rerolls stay on gold.`)}

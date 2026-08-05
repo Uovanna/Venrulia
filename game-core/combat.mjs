@@ -57,6 +57,13 @@ const GEMS = [
   { id: "g_potent",      name: "Potent Chrysoberyl", icon: "🔆", rarity: "epic",    desc: "+6% skill potency",      m: { skillPot: 0.06 } },
   // ARTIFACT — Ven-only, and the sole source of CDR that ignores the 90% cap
   { id: "g_cascade",     name: "Cascade Diamond",  icon: "🔻", rarity: "artifact", desc: "+10% cooldown reduction for every skill on cooldown — ignores the CDR cap", cdrPerCd: 0.10 },
+  // ARENA RUNES — bought only with Arena Tokens at the Battlemaster. Both carry `noStack`: a second
+  // copy in a second socket is dead weight, which is stated on the gem and enforced in the maths
+  // rather than left for a player to discover after paying 500 tokens for it.
+  { id: "g_aegis",       name: "Aegis Diamond",    icon: "💎", rarity: "artifact", noStack: true,
+    desc: "Take 30% less damage in the Arena. Does not stack.", pvpDr: 0.30 },
+  { id: "g_unfetter",    name: "Unfettered Onyx",  icon: "⛓️", rarity: "artifact", noStack: true,
+    desc: "Breaks the first stun applied to you each fight. Does not stack.", ccBreak: true },
 ];
 const socketsOf = (item) => (Array.isArray(item?.sockets) ? item.sockets : []);
 const MAIN_KEYS = ["str", "agi", "int"];
@@ -739,6 +746,50 @@ const POWER_GEMS = [
 ];
 const ALL_GEMS = [...GEMS, ...POWER_GEMS];
 const gemById = (id) => ALL_GEMS.find((g) => g.id === id);
+// ---------- GEAR SETS ----------
+// The first set in the game. `setId` rides on the item, so a piece carries its own membership and
+// a set can never be faked by name-matching — two items called "Battlemaster's Helm" from different
+// sources would still only count if they were forged as set pieces.
+//
+// MULTIPLICATIVE, deliberately. Four pieces at a flat 10% is 40%; at 0.9^4 it is 34.4%. The
+// difference is small today and the reason is not: additive stacking has no ceiling, so a future
+// six-piece set would reach 60% and a ten-piece one would reach zero damage taken. Compounding
+// cannot get there however many pieces are added.
+const GEAR_SETS = {
+  battlemaster: {
+    id: "battlemaster", name: "Battlemaster's Regalia",
+    slots: ["head", "chest", "legs", "feet"],
+    perPiece: 0.10,
+    pvpOnly: true,
+    desc: "Each piece equipped: take 10% less damage in the Arena.",
+  },
+};
+const setPiecesEquipped = (char, setId) =>
+  Object.values((char && char.equipment) || {}).filter((it) => it && it.setId === setId).length;
+
+// Damage the player actually takes in the Arena, as a multiplier. 1 means untouched.
+// Set and rune are separate sources and compound with each other: a full set plus the Aegis Diamond
+// is 0.9^4 x 0.7 = 0.459, so 46% of incoming damage gets through. That is the intended ceiling.
+const pvpDamageTakenMult = (char) => {
+  let mult = 1;
+  for (const id in GEAR_SETS) {
+    const set = GEAR_SETS[id];
+    if (!set.pvpOnly) continue;
+    mult *= Math.pow(1 - set.perPiece, setPiecesEquipped(char, id));
+  }
+  // noStack gems count ONCE however many are socketed.
+  const seen = new Set();
+  for (const g of socketedGems(char)) {
+    if (!g.pvpDr) continue;
+    if (g.noStack) { if (seen.has(g.id)) continue; seen.add(g.id); }
+    mult *= (1 - g.pvpDr);
+  }
+  return mult;
+};
+// Does this character break the first stun of a fight? A noStack gem grants it once; a second
+// copy adds nothing, which is why this is a boolean and not a count.
+const hasCcBreak = (char) => socketedGems(char).some((g) => g.ccBreak);
+
 const socketedGems = (char) => {
   const out = [];
   for (const it of Object.values(char?.equipment || {})) for (const gid of socketsOf(it)) if (gid) { const g = gemById(gid); if (g) out.push(g); }
@@ -1753,6 +1804,7 @@ const createCharacter = (name, cls, race) => {
     daily: { lastDay: null, streak: 0, history: [] },
     offer: { seenAt: 0, taken: false, pick: null },
     pass: { base: 0, paid: false, claimedFree: {}, claimedPaid: {} },
+    arena: { day: null, runs: 0, streak: 0 },
     buffs: {},
     hp: 0,
     createdAt: Date.now(),
@@ -1967,6 +2019,12 @@ const normalizeChar = (c) => ({
         claimedFree: (c.pass.claimedFree && typeof c.pass.claimedFree === "object") ? c.pass.claimedFree : {},
         claimedPaid: (c.pass.claimedPaid && typeof c.pass.claimedPaid === "object") ? c.pass.claimedPaid : {} }
     : { base: Number(c.kills) || 0, paid: false, claimedFree: {}, claimedPaid: {} },
+  // Arena: today's rated attempts and the current win streak. `day` is a UTC date string, so the
+  // 10-a-day allowance cannot be reset by changing timezone, and a streak survives a reload —
+  // losing a six-win streak to a browser refresh would be worse than losing it to a defeat.
+  arena: (c.arena && typeof c.arena === "object" && !Array.isArray(c.arena))
+    ? { day: c.arena.day || null, runs: Number(c.arena.runs) || 0, streak: Number(c.arena.streak) || 0 }
+    : { day: null, runs: 0, streak: 0 },
   consumables: (() => { const src = c.consumables || {}; const out = {}; const t = Math.min(6, Math.max(0, Math.floor((c.level || 1) / 10))); for (const k in src) { const v = src[k]; if (!v) continue; if (k.includes("@")) out[k] = (out[k] || 0) + v; else out[k + "@" + t] = (out[k + "@" + t] || 0) + v; } return out; })(),
   buffs: c.buffs || {},
   hp: typeof c.hp === "number" ? c.hp : maxHpFor(c),
@@ -2326,6 +2384,10 @@ export {
   roleOf,
   POWER_GEMS,
   ALL_GEMS,
+  GEAR_SETS,
+  setPiecesEquipped,
+  pvpDamageTakenMult,
+  hasCcBreak,
   gemById,
   socketedGems,
   gemFlatCd,

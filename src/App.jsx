@@ -4,6 +4,10 @@ import {
   CLASSES,
   RACES,
   GEMS,
+  GEAR_SETS,
+  setPiecesEquipped,
+  pvpDamageTakenMult,
+  hasCcBreak,
   socketsOf,
   MAIN_KEYS,
   itemMainTotals,
@@ -1036,11 +1040,16 @@ const enchantAmount = (stat, enchLevel) => { const cap = enchantCap(stat); const
 // Forge an artifact. `existing` re-forges in place on level-up, preserving the item's identity
 // (name + which secondaries it rolled) while its magnitudes scale with the new ilvl.
 function makeArtifact(clsId, slotId, level, existing) {
-  const ilvl = artifactIlvl(level);
+  // A fixed-ilvl artifact ignores the level curve entirely. That is the whole difference between a
+  // Ven-shop artifact, which re-forges as you level, and a Battlemaster piece bought at 65.
+  const ilvl = (existing && existing.fixedIlvl) || artifactIlvl(level);
   const rarity = rarityById("artifact");
   const rIdx = RARITIES.findIndex((r) => r.id === "artifact");
   const slot = slotById(slotId);
-  const mains = ARTIFACT_STATS[clsId] || ["str", "agi"]; // class-appropriate primaries, always both
+  // Normally the class table decides, and always gives both. A Battlemaster piece is bought with a
+  // CHOSEN main stat, so an existing shape wins — otherwise a re-forge would silently overwrite the
+  // thing the player was asked to pick.
+  const mains = (existing && existing.shape && existing.shape.mains) || ARTIFACT_STATS[clsId] || ["str", "agi"];
   const perStat = Math.max(1, Math.round((1 + ilvl * 0.05) * RARITY_STAT_MULT[rIdx]));
   const secBase = Math.max(1, Math.round(perStat * 0.7));
   // legendary rolls 4 secondaries; the 2 guaranteed mains consume one slot → 3 secondaries.
@@ -1067,6 +1076,7 @@ function makeArtifact(clsId, slotId, level, existing) {
     id: existing?.id || uid(), name, baseName: base, slotId, icon: slot.icon, rarity: "artifact", ilvl, stats,
     value: Math.max(1, Math.round(ilvl * rarity.valueMult)), enchant: existing?.enchant || null, wdmg,
     artifact: true, shape: { mains, secs }, locked: existing?.locked ?? true, // artifacts lock by default
+    setId: existing?.setId || null, fixedIlvl: existing?.fixedIlvl || null,
     sockets: existing?.sockets || emptySockets(socketCountFor("artifact", slotId)),
   };
 }
@@ -1833,6 +1843,97 @@ const PREMIUM_ITEMS = [
   { id: "bankSlots", kind: "bank", slots: 25, name: "Bank Expansion (+25 slots)", icon: "🏦", cost: 100, desc: "Permanently adds 25 slots to your bank. Buy as many as you like." },
 ];
 const VEN_TO_GOLD = 1000; // 1 Ven → 1,000 gold (100 Ven = 100,000 gold)
+
+// ---------- THE ARENA: attempts, payouts and streaks ----------
+// Rated arena had no limit and paid one token per win, zero per loss. Both change here, and they
+// change together: a daily allowance is what gives the Arena Challenge Ticket something to do.
+// That ticket has been buyable in the Ven shop since it was written and NOTHING has ever consumed
+// it — it is the Draught Belt problem again, an item a player can pay for that does nothing.
+//
+// An attempt is spent on ENTRY, not on the result. "Consumed on win or loss" is the intent, but a
+// counter that only moves at the end is one a player can dodge by retreating from a losing fight
+// and re-queueing, which would make the allowance meaningless and the ticket worthless again.
+// Entry is the only moment that cannot be avoided.
+const ARENA = {
+  dailyRuns: 10,
+  winTokens: 5,
+  lossTokens: 1,
+  streakBonusMax: 5,   // +1 per consecutive win, so the 6th win and beyond pay 10
+};
+// Payout for a bout, given the streak BEFORE it. Win 1 pays 5, win 6 pays 5 + min(5, 5) = 10.
+const arenaPayout = (win, streakBefore) =>
+  win ? ARENA.winTokens + Math.min(ARENA.streakBonusMax, Math.max(0, streakBefore || 0)) : ARENA.lossTokens;
+const arenaToday = (c) => {
+  const a = (c && c.arena) || {};
+  const day = utcDayString();
+  return a.day === day ? { day, runs: a.runs || 0, streak: a.streak || 0 } : { day, runs: 0, streak: a.streak || 0 };
+};
+const arenaRunsLeft = (c) => Math.max(0, ARENA.dailyRuns - arenaToday(c).runs);
+const arenaTicketsLeft = (c) => ((c && c.tickets) || {}).arenaChallenge || 0;
+const arenaCanEnter = (c) => arenaRunsLeft(c) > 0 || arenaTicketsLeft(c) > 0;
+
+// ---------- THE BATTLEMASTER: the Arena Token shop ----------
+// Everything here costs Arena Tokens and nothing here can be bought with gold or Ven. The set gear
+// is the point; the rest exists so a player who is not chasing the set still has somewhere to spend.
+//
+// LIMITS are per UTC week (Monday-based, matching ISO) or lifetime. They exist to stop a hoarded
+// balance being dumped into consumables the moment the shop opens, and they are checked against a
+// stored counter rather than inferred, so a limit cannot be dodged by reloading.
+const BM_SET_ID = "battlemaster";
+const BM_PIECE_COST = 125;
+const BM_PIECE_ILVL = 65;
+const BM_SLOTS = ["head", "chest", "legs", "feet"];
+const BM_SLOT_LABEL = { head: "Helm", chest: "Breastplate", legs: "Legguards", feet: "Sabatons" };
+// Tempering PvP gear: tokens, not gold, and it stops at +5 — the whole safe band, no destroy risk.
+// 25+35+50+60+80 = 250 tokens to reach +5, which is the figure asked for.
+const BM_TEMPER_MAX = 5;
+const BM_TEMPER_COST = { 1: 25, 2: 35, 3: 50, 4: 60, 5: 80 };
+const bmTemperTotal = () => Object.values(BM_TEMPER_COST).reduce((a, b) => a + b, 0);
+
+const BM_SHOP = [
+  { id: "bm_gemEpic",       kind: "gemRoll", rarity: "epic",      cost: 25,  limit: 10, per: "week",
+    icon: "💠", name: "Random Epic Gem",        desc: "One epic gem, rolled from the same table as any drop." },
+  { id: "bm_gemLegendary",  kind: "gemRoll", rarity: "legendary", cost: 25,  limit: 2,  per: "week",
+    icon: "🌟", name: "Random Legendary Gem",   desc: "One legendary power gem. Duplicates stack." },
+  { id: "bm_arenaChallenge",kind: "ticket",  ticket: "arenaChallenge", cost: 50, limit: 5, per: "week",
+    icon: "🏟️", name: "Arena Challenge Ticket", desc: "One extra rated bout once your ten daily attempts are gone." },
+  { id: "bm_dungeonReset",  kind: "ticket",  ticket: "dungeonReset",   cost: 100, limit: 5, per: "week",
+    icon: "🎟️", name: "Dungeon Reset Ticket",   desc: "Enter a dungeon once even when out of runs." },
+  { id: "bm_bankSlots",     kind: "bank",    slots: 25,           cost: 150, limit: 3,  per: "life",
+    icon: "🏦", name: "Bank Expansion (+25)",   desc: "Permanently adds 25 bank slots." },
+  { id: "bm_runeAegis",     kind: "gem",     gem: "g_aegis",      cost: 500,
+    icon: "💎", name: "Aegis Diamond",          desc: "Artifact rune: take 30% less damage in the Arena. Does not stack." },
+  { id: "bm_runeUnfetter",  kind: "gem",     gem: "g_unfetter",   cost: 500,
+    icon: "⛓️", name: "Unfettered Onyx",        desc: "Artifact rune: breaks the first stun applied to you each fight. Does not stack." },
+  ...BM_SLOTS.map((slot) => ({
+    id: `bm_${slot}`, kind: "setPiece", slot, cost: BM_PIECE_COST,
+    icon: slotById(slot).icon, name: `Battlemaster's ${BM_SLOT_LABEL[slot]}`,
+    desc: `Artifact, item level ${BM_PIECE_ILVL}. You choose its main stat on purchase.`,
+  })),
+];
+
+// UTC week key, Monday-based. Sunday is day 0 in JS, which would otherwise start the week on the
+// day most players treat as its end.
+const utcWeekString = (d) => {
+  const t = d ? new Date(d) : new Date();
+  const dow = (t.getUTCDay() + 6) % 7;                       // Mon=0 … Sun=6
+  const mon = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate() - dow));
+  return mon.toISOString().slice(0, 10);
+};
+const bmRec = (c) => (c && c.bm) || {};
+// Weekly counters reset by comparing the stored week key, so nothing has to run on a schedule.
+const bmCounts = (c) => {
+  const r = bmRec(c);
+  return r.week === utcWeekString() ? (r.counts || {}) : {};
+};
+const bmBought = (c, entry) => (entry.per === "life" ? (bmRec(c).life || {}) : bmCounts(c))[entry.id] || 0;
+const bmLeft = (c, entry) => (entry.limit == null ? Infinity : Math.max(0, entry.limit - bmBought(c, entry)));
+const bmCanBuy = (c, entry) => (c.arenaTokens || 0) >= entry.cost && bmLeft(c, entry) > 0;
+
+// Is this a Battlemaster piece? Everything that treats PvP gear differently — the +5 temper cap,
+// the token cost, the re-forge exemption — keys off this one predicate rather than re-deriving it.
+const isPvpSetItem = (it) => !!it && it.setId === BM_SET_ID;
+
 
 // ---------- BANK CAPACITY ----------
 // The bank held a hard 120 and every grant site ended in `.slice(-120)`. slice(-120) keeps the LAST
@@ -3331,6 +3432,11 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     const want = artifactIlvl(c.level);
     let touched = false;
     const fix = (it) => {
+      // A fixed-ilvl artifact never re-forges. Without this, a Battlemaster piece bought at ilvl 65
+      // would be dragged to artifactIlvl(60) = 60 on the very next commit AND have its mains
+      // regenerated from the class table, throwing away both the item level it was paid for and the
+      // main stat the player chose.
+      if (it?.artifact && it.fixedIlvl) return it;
       if (it?.artifact && it.ilvl !== want) {
         touched = true;
         const next = makeArtifact(c.cls, it.slotId, c.level, it);
@@ -4644,9 +4750,27 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     // bot rotation — REAL skill engine, resource + cooldown gated, tier-driven quality
     if (!bw.nextGcd) bw.nextGcd = now;
     if (now >= bw.nextGcd) { const sk = chooseBotSkill(bc, bw, now, tier); if (sk) { const r = applySkillCore(sk, bc, bw, now, () => {}); bw = r.battle; botMirrorRef.current = bw; addLog(`✦ ${w.enemy.name} casts ${sk.name}`, "#e0a0a0"); } bw.nextGcd = now + PVP_GCD; }
+    // UNFETTERED ONYX. In the bot's mirror the PLAYER is `bw.enemy`, so a stun cast on the player
+    // arrives in bw.enemyEffects as a 100% slow. Break the first one of the fight and mark it spent
+    // on the battle, not the character — "each fight" has to mean each fight, and a flag on the save
+    // would make the rune a once-per-character trinket.
+    if (!w.ccBroken && hasCcBreak(playerChar)) {
+      const stun = (bw.enemyEffects || []).find((e) => e.kind === "slow" && e.pct >= 100);
+      if (stun) {
+        bw.enemyEffects = bw.enemyEffects.filter((e) => e !== stun);
+        botMirrorRef.current = bw;
+        w.ccBroken = true;
+        addLog("⛓️ Unfettered Onyx shatters the stun!", "#8fd0e0");
+      }
+    }
     // apply the mitigated tick total to the player's real HP
+    //
+    // This one line is where EVERY point of arena damage lands: the bot's auto-attacks, its DoT
+    // ticks and its skill casts all accumulate into `raw` above and are mitigated once here. That
+    // is why the Battlemaster set bonus and the Aegis Diamond apply at this point and nowhere
+    // else — spreading them across the three sources would have been three chances to miss one.
     const raw = Math.max(0, before - bw.enemy.hp);
-    const dealt = Math.floor(raw * (1 - pmit) * BOT_DMG * tier.dmg);
+    const dealt = Math.floor(raw * (1 - pmit) * BOT_DMG * tier.dmg * pvpDamageTakenMult(playerChar));
     w.hp = Math.max(0, w.hp - dealt);
     bw.enemy.hp = w.hp; // keep the mirror's target in sync with the real player HP
   };
@@ -4688,8 +4812,26 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     const practice = !!(opts && opts.practice);
     const c = charRef.current;
     if (battleRef.current) { showNotif("Finish your current fight first"); return; }
-    const lvl = c.level || 60;
-    const lt = (c.mp && c.mp.lifetime) || { wins: 0, losses: 0 };
+    // Practice Duels are free and unlimited: they are the Arena lesson, they record nothing, and
+    // gating them would let a player spend their day on the tutorial.
+    if (!practice) {
+      if (!arenaCanEnter(c)) { showNotif(`No attempts left today — ${ARENA.dailyRuns} a day. Buy a 🏟️ Arena Challenge Ticket.`); return; }
+      const a = arenaToday(c);
+      if (a.runs < ARENA.dailyRuns) {
+        commitChar({ ...c, arena: { day: a.day, runs: a.runs + 1, streak: a.streak } });
+      } else {
+        // Out of daily attempts: spend a ticket. This is the first thing in the game that has ever
+        // consumed one — it has been buyable since it was written and nothing has taken it.
+        commitChar({ ...c, arena: { day: a.day, runs: a.runs, streak: a.streak },
+                     tickets: { ...(c.tickets || {}), arenaChallenge: arenaTicketsLeft(c) - 1 } });
+        showNotif("🏟️ Arena Challenge Ticket used");
+      }
+    }
+    // charRef was just updated by the attempt charge above; re-read so the bot is built from the
+    // committed character rather than the pre-charge snapshot.
+    const cc = charRef.current;
+    const lvl = cc.level || 60;
+    const lt = (cc.mp && cc.mp.lifetime) || { wins: 0, losses: 0 };
     const myRating = arenaRating(lt.wins, lt.losses);
     const oppRating = opp.rating || myRating;
     const tier = botTier(oppRating);
@@ -4715,14 +4857,24 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     const c = charRef.current; const mp = c.mp || {};
     const r = mp.rated || { wins: 0, losses: 0, start: Date.now() };
     const lt = mp.lifetime || { wins: 0, losses: 0 };
+    // A loss now pays too. Arena prices are deliberately steep, and a player who loses every bout
+    // of a bad session should still end it closer to a purchase than they started — otherwise the
+    // shop is only ever reachable by the players who least need it.
+    const a = arenaToday(c);
+    const pay = arenaPayout(win, a.streak);
+    const streak = win ? a.streak + 1 : 0;
     commitChar({ ...c,
-      arenaTokens: (c.arenaTokens || 0) + (win ? 1 : 0), // Arena Tokens spend in the (upcoming) arena shop
+      arenaTokens: (c.arenaTokens || 0) + pay,
+      arena: { day: a.day, runs: a.runs, streak },
       mp: { ...mp,
         rated: { wins: (r.wins || 0) + (win ? 1 : 0), losses: (r.losses || 0) + (win ? 0 : 1), start: r.start }, // 24h prize window
         lifetime: { wins: (lt.wins || 0) + (win ? 1 : 0), losses: (lt.losses || 0) + (win ? 0 : 1) },            // drives Conquest Rating
       },
     });
-    showNotif(win ? "🏆 Rated win! +1 🎟️ Arena Token" : "💀 Rated loss recorded");
+    const bonus = pay - ARENA.winTokens;
+    showNotif(win
+      ? `🏆 Rated win! +${pay} 🎟️${bonus > 0 ? ` (${streak} win streak)` : ""}`
+      : `💀 Rated loss — +${pay} 🎟️${a.streak > 0 ? ` · streak of ${a.streak} broken` : ""}`);
   };
   const stopCombat = () => {
     guildRunRef.current = null; setGroupParty(null); pveBotsRef.current = null; // leaving a run cancels any pending Guild bid + party panel
@@ -5173,6 +5325,64 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     return () => { try { const s = getSbC(); if (s && ch) s.removeChannel(ch); } catch {} };
   }, []);
 
+  // ---------- the Battlemaster (Arena Token shop) ----------
+  const [bmPick, setBmPick] = useState(null);   // { entry } while the main-stat chooser is open
+
+  const bmRecord = (c, entry) => {
+    const r = bmRec(c), week = utcWeekString();
+    if (entry.per === "life") return { ...r, life: { ...(r.life || {}), [entry.id]: ((r.life || {})[entry.id] || 0) + 1 } };
+    // A new week wipes the counters by REPLACING them, not by clearing keys one at a time — a stale
+    // key surviving a reset would silently eat part of the next week's allowance.
+    const counts = r.week === week ? { ...(r.counts || {}) } : {};
+    counts[entry.id] = (counts[entry.id] || 0) + 1;
+    return { ...r, week, counts };
+  };
+
+  // Forge a set piece with the main stats the player chose. `mains` is one or two keys: two is the
+  // normal artifact shape, one earns the Power affix at ilvl 65 (POWER_AFFIX_MIN_ILVL is 60), which
+  // is the real trade — breadth against a focused stat that pays Attack or Spell Power on top.
+  const makeSetPiece = (c, slot, mains) =>
+    makeArtifact(c.cls, slot, c.level, {
+      shape: { mains },            // the chosen main stat(s) win over the class table
+      setId: BM_SET_ID,            // membership rides on the item, so the bonus cannot be faked
+      fixedIlvl: BM_PIECE_ILVL,    // 65 forever — makeArtifact reads this instead of the curve
+      name: `Battlemaster's ${BM_SLOT_LABEL[slot]}`,
+      baseName: BM_SLOT_LABEL[slot],
+    });
+
+  const buyBattlemaster = (entry, mains) => {
+    const c = charRef.current;
+    if ((c.arenaTokens || 0) < entry.cost) { showNotif(`Need ${entry.cost} 🎟️ Arena Tokens.`); return; }
+    if (bmLeft(c, entry) <= 0) {
+      showNotif(entry.per === "life" ? `Limit reached — ${entry.limit} per character.` : `Limit reached — ${entry.limit} this week.`);
+      return;
+    }
+    let nc = { ...c, arenaTokens: (c.arenaTokens || 0) - entry.cost, bm: bmRecord(c, entry) };
+    let what = entry.name;
+
+    if (entry.kind === "ticket") {
+      nc = { ...nc, tickets: { ...(nc.tickets || {}), [entry.ticket]: ((nc.tickets || {})[entry.ticket] || 0) + 1 } };
+    } else if (entry.kind === "bank") {
+      nc = { ...nc, bankSlots: (nc.bankSlots || 0) + entry.slots };
+    } else if (entry.kind === "gem") {
+      nc = grantGem(nc, gemById(entry.gem));
+    } else if (entry.kind === "gemRoll") {
+      const pool = ALL_GEMS.filter((g) => g.rarity === entry.rarity);
+      const g = pool[Math.floor(Math.random() * pool.length)];
+      nc = grantGem(nc, g); what = g.name;
+    } else if (entry.kind === "setPiece") {
+      const it = makeSetPiece(nc, entry.slot, mains);
+      const dep = depositItems(nc, [it]);
+      nc = { ...nc, inventory: dep.inventory, overflow: dep.overflow, gold: (nc.gold || 0) + dep.gold };
+      what = `${it.name} (ilvl ${it.ilvl}, ${mains.map((k) => STAT_LABEL[k] || k).join(" + ")})`;
+      if (dep.mailed.length) addLog("📬 Bank full — held in the mail", "#7fd0ff");
+    }
+    commitChar(nc);
+    setBmPick(null);
+    showNotif(`🎟️ −${entry.cost} · ${what}`);
+    addLog(`🛡️ Battlemaster: ${what} for ${entry.cost} Arena Tokens`, "#ffd479");
+  };
+
   // ---------- tempering forge ----------
   const cloneItem = (it) => JSON.parse(JSON.stringify(it));
   // swap an item (by id) wherever it lives — inventory or an equipped slot; next=null destroys it
@@ -5191,15 +5401,23 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     const c = charRef.current;
     const it0 = findItemById(c, srcItem.id); if (!it0 || !isTemperable(it0)) return;
     const rank = it0.temper || 0;
-    if (rank >= TEMPER_CFG.maxRank) { showNotif("Already at max +10."); return; }
+    // PvP set gear runs on its own ladder: it stops at +5 and it is paid for in Arena Tokens, never
+    // gold. +5 is the whole of the SAFE band, so a Battlemaster piece can never be destroyed and
+    // never needs Ven protection — the risk half of tempering simply does not apply to it.
+    const pvp = isPvpSetItem(it0);
+    const maxRank = pvp ? BM_TEMPER_MAX : TEMPER_CFG.maxRank;
+    if (rank >= maxRank) { showNotif(pvp ? `Arena gear stops at +${BM_TEMPER_MAX}.` : "Already at max +10."); return; }
     const target = rank + 1;
-    const cost = temperCost(target);
-    if (c.gold < cost) { showNotif(`Need ${cost.toLocaleString()}g to attempt +${target}.`); return; }
-    const risky = rank >= TEMPER_CFG.safeMax;
+    const cost = pvp ? (BM_TEMPER_COST[target] || 0) : temperCost(target);
+    if (pvp) {
+      if ((c.arenaTokens || 0) < cost) { showNotif(`Need ${cost} 🎟️ Arena Tokens to attempt +${target}.`); return; }
+    } else if (c.gold < cost) { showNotif(`Need ${cost.toLocaleString()}g to attempt +${target}.`); return; }
+    const risky = !pvp && rank >= TEMPER_CFG.safeMax;
     const venCost = useProtect && risky ? (TEMPER_CFG.protectVen[target] || 0) : 0;
     if (venCost && (c.ven || 0) < venCost) { showNotif(`Need ${venCost} Ven to protect.`); return; }
     const item = ensureTemperData(cloneItem(it0));
-    let gold = c.gold - cost, ven = (c.ven || 0) - venCost, fs = c.failStacks || 0;
+    let gold = pvp ? c.gold : c.gold - cost, ven = (c.ven || 0) - venCost, fs = c.failStacks || 0;
+    const tokens = pvp ? (c.arenaTokens || 0) - cost : (c.arenaTokens || 0);
     // ONE roll against the chance the shop displayed. Success and destruction used to be separate
     // independent rolls, which meant a successful temper could still destroy the piece.
     const odds = risky ? temperOdds(item, target) : null;
@@ -5213,7 +5431,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       delete item.pity[target];   // the ladder for THIS rank is spent; higher ranks keep their own
       syncItemStats(item);
       if (item.artifact) item.shape = { ...(item.shape || {}), secs: item.lines.map((l) => l.stat) };
-      commitChar(replaceItemInChar({ ...c, gold, ven, failStacks: 0 }, it0.id, item)); // success consumes fail stacks
+      commitChar(replaceItemInChar({ ...c, gold, ven, arenaTokens: tokens, failStacks: 0 }, it0.id, item)); // success consumes fail stacks
       showNotif(doubled ? `✨ +${item.temper}! DOUBLE — +${grant}/line!` : `✨ Success! Now +${item.temper}`);
       return;
     }
@@ -5223,10 +5441,10 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     const next = temperOdds(item, target);
     const destroyed = !useProtect && Math.random() < odds.destroy;
     if (destroyed) {
-      commitChar(replaceItemInChar({ ...c, gold, ven, failStacks: fs + 1 }, it0.id, null));
+      commitChar(replaceItemInChar({ ...c, gold, ven, arenaTokens: tokens, failStacks: fs + 1 }, it0.id, null));
       showNotif(`☠️ ${it0.name} was destroyed! Its forge progress is gone with it.`);
     } else {
-      commitChar(replaceItemInChar({ ...c, gold, ven, failStacks: fs + 1 }, it0.id, item));
+      commitChar(replaceItemInChar({ ...c, gold, ven, arenaTokens: tokens, failStacks: fs + 1 }, it0.id, item));
       showNotif(next.chance >= 1
         ? `🔥 Failed — but +${target} is now GUARANTEED on the next attempt.`
         : `🔥 Failed. +${target} is now ${Math.round(next.chance * 100)}%${next.left ? ` · guaranteed in ${next.left}` : ""}`);
@@ -7286,9 +7504,13 @@ function GameScreen({ character: initChar, onSave, onBack }) {
               <span style={{ fontSize: 30 }}>⚒️</span>
               <span><span style={{ color: "#f0913e", fontWeight: 700, fontSize: 15, fontFamily: "Georgia, serif", display: "block" }}>Tempering Forge</span><span style={{ color: "#9a93b3", fontSize: 11.5 }}>Enhance gear (+) & reroll secondary stats — high-stakes gold sink</span></span>
             </button>
-            <button onClick={() => setTab("gambitshop")} style={{ width: "100%", textAlign: "left", background: "linear-gradient(135deg,#1a1230,#140c22)", border: "1px solid #6a4aa8", borderRadius: 12, padding: "16px 18px", cursor: "pointer", display: "flex", alignItems: "center", gap: 14 }}>
+            <button onClick={() => setTab("gambitshop")} style={{ width: "100%", textAlign: "left", background: "linear-gradient(135deg,#1a1230,#140c22)", border: "1px solid #6a4aa8", borderRadius: 12, padding: "16px 18px", cursor: "pointer", marginBottom: 10, display: "flex", alignItems: "center", gap: 14 }}>
               <span style={{ fontSize: 30 }}>🎰</span>
               <span><span style={{ color: "#c8a0ff", fontWeight: 700, fontSize: 15, fontFamily: "Georgia, serif", display: "block" }}>Gambit Shop {char.level < GAMBIT_UNLOCK_LEVEL && <span style={{ color: "#8a7fb8", fontSize: 11 }}>🔒 Lv {GAMBIT_UNLOCK_LEVEL}</span>}</span><span style={{ color: "#9a93b3", fontSize: 11.5 }}>Roll for if/then gambits to automate your skills</span></span>
+            </button>
+            <button onClick={() => setTab("battlemaster")} style={{ width: "100%", textAlign: "left", background: "linear-gradient(135deg,#1a1526,#120e1a)", border: "1px solid #a8863a", borderRadius: 12, padding: "16px 18px", cursor: "pointer", display: "flex", alignItems: "center", gap: 14 }}>
+              <span style={{ fontSize: 30 }}>🛡️</span>
+              <span><span style={{ color: "#ffd479", fontWeight: 700, fontSize: 15, fontFamily: "Georgia, serif", display: "block" }}>Battlemaster</span><span style={{ color: "#9a93b3", fontSize: 11.5 }}>Arena Tokens only — set gear, runes & tickets · 🎟️ {char.arenaTokens || 0}</span></span>
             </button>
           </div>
         )}
@@ -7456,6 +7678,107 @@ function GameScreen({ character: initChar, onSave, onBack }) {
               );
             })()}
           </div>
+          );
+        })()}
+
+        {/* ============ THE BATTLEMASTER ============ */}
+        {tab === "battlemaster" && (() => {
+          const acc = "#ffd479";
+          const tok = char.arenaTokens || 0;
+          const gear = BM_SHOP.filter((e) => e.kind === "setPiece");
+          const runes = BM_SHOP.filter((e) => e.kind === "gem");
+          const goods = BM_SHOP.filter((e) => !["setPiece", "gem"].includes(e.kind));
+          const owned = setPiecesEquipped(char, BM_SET_ID);
+          const row = (e) => {
+            const left = bmLeft(char, e), can = bmCanBuy(char, e), poor = tok < e.cost;
+            return (
+              <button key={e.id} disabled={!can}
+                onClick={() => (e.kind === "setPiece" ? setBmPick(e) : buyBattlemaster(e))}
+                aria-label={`Buy ${e.name}`}
+                style={{ width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 11,
+                  background: can ? "linear-gradient(135deg,#1a1526,#120e1a)" : "#12101c",
+                  border: `1px solid ${can ? "#a8863a" : "#2a2540"}`, borderRadius: 10,
+                  padding: "11px 12px", marginBottom: 8, cursor: can ? "pointer" : "default",
+                  opacity: can ? 1 : 0.55 }}>
+                <span style={{ fontSize: 24, width: 28, textAlign: "center" }}>{e.icon}</span>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ color: can ? acc : "#8a83b8", fontWeight: 700, fontSize: 13, display: "block" }}>{e.name}</span>
+                  <span style={{ color: "#9a93b3", fontSize: 10.5, lineHeight: 1.4, display: "block" }}>{e.desc}</span>
+                  {e.limit != null && (
+                    <span style={{ color: left > 0 ? "#6f8aa8" : "#c07a7a", fontSize: 9.5 }}>
+                      {left > 0 ? `${left} of ${e.limit} left ${e.per === "life" ? "(lifetime)" : "this week"}`
+                                : `Limit reached ${e.per === "life" ? "(lifetime)" : "— resets Monday"}`}
+                    </span>
+                  )}
+                </span>
+                <span style={{ color: poor ? "#c07a7a" : acc, fontWeight: 800, fontSize: 13, whiteSpace: "nowrap" }}>🎟️ {e.cost}</span>
+              </button>
+            );
+          };
+          const head = (t, sub) => (
+            <div style={{ marginTop: 14, marginBottom: 7 }}>
+              <div style={{ color: acc, fontSize: 11, fontWeight: 800, letterSpacing: 0.7 }}>{t}</div>
+              {sub && <div style={{ color: "#6f6a90", fontSize: 10, marginTop: 2, lineHeight: 1.45 }}>{sub}</div>}
+            </div>
+          );
+          return (
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                <button onClick={() => setTab("market")} style={{ background: "#15132a", border: "1px solid #2a2550", borderRadius: 8, color: "#c9c2e6", fontSize: 12, padding: "6px 12px", cursor: "pointer" }}>← Market</button>
+                <span style={{ color: acc, fontFamily: "Georgia, serif", fontSize: 15 }}>🛡️ Battlemaster</span>
+              </div>
+              <div style={{ background: "#1a1526", border: "1px solid #a8863a", borderRadius: 10, padding: "10px 12px", marginBottom: 4, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ color: "#9a93b3", fontSize: 11 }}>Arena Tokens · earned only in the Arena</span>
+                <span style={{ color: acc, fontSize: 19, fontWeight: 800 }}>🎟️ {tok.toLocaleString()}</span>
+              </div>
+              <div style={{ color: "#6f6a90", fontSize: 10, lineHeight: 1.5, marginBottom: 2 }}>
+                Nothing here can be bought with gold or Ven. A rated win pays {ARENA.winTokens} tokens
+                (up to {ARENA.winTokens + ARENA.streakBonusMax} on a streak) and a loss still pays {ARENA.lossTokens}.
+              </div>
+
+              {head("BATTLEMASTER'S REGALIA", `Artifact, item level ${BM_PIECE_ILVL}, three sockets each. Every piece worn: take ${Math.round(GEAR_SETS[BM_SET_ID].perPiece * 100)}% less damage in the Arena — ${owned}/4 worn, ${Math.round((1 - Math.pow(1 - GEAR_SETS[BM_SET_ID].perPiece, owned)) * 100)}% now. Temperable to +${BM_TEMPER_MAX} with tokens (${bmTemperTotal()} for the lot); rerolls stay on gold.`)}
+              {gear.map(row)}
+
+              {head("ARENA RUNES", "Artifact gems for any socket. Neither stacks — a second copy does nothing.")}
+              {runes.map(row)}
+
+              {head("SUPPLIES")}
+              {goods.map(row)}
+              <div style={{ height: 16 }} />
+            </div>
+          );
+        })()}
+
+        {/* Main-stat chooser. Asked BEFORE the tokens are spent, and cancellable, because the
+            choice is permanent — a set piece never re-forges, so this is the only time it is made. */}
+        {bmPick && (() => {
+          const cls = CLASSES.find((x) => x.id === char.cls) || {};
+          const pair = ARTIFACT_STATS[char.cls] || ["str", "agi"];
+          const opts = [
+            { mains: pair, label: `${STAT_LABEL[pair[0]]} + ${STAT_LABEL[pair[1]]}`, sub: "Both main stats, the standard artifact shape — more total stat, spread across two." },
+            ...pair.map((k) => ({ mains: [k], label: `${STAT_LABEL[k]} only`,
+              sub: `Everything in ${STAT_LABEL[k]}, and a focused piece at ilvl ${BM_PIECE_ILVL} also earns ${k === "int" ? "Spell" : "Attack"} Power.` })),
+          ];
+          return (
+            <div onClick={() => setBmPick(null)} style={{ position: "fixed", inset: 0, zIndex: 400, background: "#000b", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+              <div onClick={(e) => e.stopPropagation()} style={{ background: "linear-gradient(180deg,#15122e,#0d0a1f)", border: "2px solid #a8863a", borderRadius: 16, padding: 18, width: "100%", maxWidth: 360, boxShadow: "0 8px 40px #000a" }}>
+                <div style={{ color: "#ffd479", fontFamily: "Georgia, serif", fontSize: 16, fontWeight: 700, marginBottom: 3 }}>{bmPick.icon} {bmPick.name}</div>
+                <div style={{ color: "#9a93b3", fontSize: 11, lineHeight: 1.5, marginBottom: 12 }}>
+                  Choose its main stat. This is permanent — a set piece is fixed at item level {BM_PIECE_ILVL} and never re-forges.
+                </div>
+                {opts.map((o) => (
+                  <button key={o.label} onClick={() => buyBattlemaster(bmPick, o.mains)}
+                    aria-label={`Forge with ${o.label}`}
+                    style={{ width: "100%", textAlign: "left", background: "#1a1526", border: "1.5px solid #6a5a3a", borderRadius: 10, padding: "10px 12px", marginBottom: 8, cursor: "pointer" }}>
+                    <span style={{ color: "#ffd479", fontWeight: 800, fontSize: 13, display: "block" }}>{o.label}</span>
+                    <span style={{ color: "#9a93b3", fontSize: 10.5, lineHeight: 1.45 }}>{o.sub}</span>
+                  </button>
+                ))}
+                <button onClick={() => setBmPick(null)} style={{ width: "100%", background: "none", border: "1px solid #2a2550", borderRadius: 10, color: "#8a83b8", fontSize: 12, padding: "9px 0", cursor: "pointer" }}>
+                  Cancel — keep my {bmPick.cost} tokens
+                </button>
+              </div>
+            </div>
           );
         })()}
 
@@ -10078,7 +10401,22 @@ function MultiplayerHub({ char, commitChar, showNotif, onExit, onStartRated, onS
             <div style={{ flex: 1, background: "#1a1330", border: "1px solid #7a5aa8", borderRadius: 10, padding: "10px", textAlign: "center" }}><div style={{ color: "#f0b429", fontSize: 22, fontWeight: 800 }}>{myRating}</div><div style={{ color: "#8a83b8", fontSize: 9.5 }}>Rating</div></div>
             <div style={{ flex: 1, background: "#1a1526", border: "1px solid #a8863a", borderRadius: 10, padding: "10px", textAlign: "center" }}><div style={{ color: "#ffd479", fontSize: 22, fontWeight: 800 }}>🎟️ {char.arenaTokens || 0}</div><div style={{ color: "#8a83b8", fontSize: 9.5 }}>Arena Tokens</div></div>
           </div>
-          <div style={{ color: "#6b6486", fontSize: 9.5, textAlign: "center", marginBottom: 10 }}>Lifetime {lifetime.wins || 0}W / {lifetime.losses || 0}L · Tokens will buy exclusive gear, gems & items in the Arena Shop (soon)</div>
+          <div style={{ color: "#6b6486", fontSize: 9.5, textAlign: "center", marginBottom: 8 }}>Lifetime {lifetime.wins || 0}W / {lifetime.losses || 0}L · Spend tokens at the 🛡️ Battlemaster in the Market</div>
+          {/* Attempts and streak. Shown BEFORE the queue button, because running out mid-session
+              with no warning is how a limit reads as a bug rather than a rule. */}
+          {(() => {
+            const left = arenaRunsLeft(char), tix = arenaTicketsLeft(char), st = arenaToday(char).streak;
+            const next = arenaPayout(true, st);
+            return (
+              <div style={{ display: "flex", justifyContent: "center", gap: 12, flexWrap: "wrap",
+                            fontSize: 10.5, marginBottom: 10, color: "#8a83b8" }}>
+                <span>Attempts today: <b style={{ color: left > 0 ? "#7CFC9E" : "#e07a7a" }}>{left}/{ARENA.dailyRuns}</b></span>
+                {left === 0 && tix > 0 && <span>🏟️ Tickets: <b style={{ color: "#7fd0ff" }}>{tix}</b></span>}
+                {st > 0 && <span>🔥 Streak <b style={{ color: "#ffd479" }}>{st}</b></span>}
+                <span>Next win: <b style={{ color: "#ffd479" }}>+{next} 🎟️</b></span>
+              </div>
+            );
+          })()}
           <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
             <div style={{ flex: 1, background: "#0e1626", border: "1px solid #24406a", borderRadius: 10, padding: "10px", textAlign: "center" }}><div style={{ color: "#5fd35f", fontSize: 20, fontWeight: 800 }}>{rated.wins || 0}</div><div style={{ color: "#8a83b8", fontSize: 9.5 }}>Wins</div></div>
             <div style={{ flex: 1, background: "#0e1626", border: "1px solid #24406a", borderRadius: 10, padding: "10px", textAlign: "center" }}><div style={{ color: "#e07a7a", fontSize: 20, fontWeight: 800 }}>{rated.losses || 0}</div><div style={{ color: "#8a83b8", fontSize: 9.5 }}>Losses</div></div>
@@ -10095,6 +10433,14 @@ function MultiplayerHub({ char, commitChar, showNotif, onExit, onStartRated, onS
               <div style={{ color: match.win ? "#5fd35f" : "#e07a7a", fontSize: 15, fontWeight: 800, marginBottom: 2 }}>{match.win ? "Victory!" : "Defeat"}</div>
               <div style={{ color: "#8a83b8", fontSize: 11, marginBottom: 12 }}>vs {match.opp.name} · {mpFmt(match.opp.power)} pwr</div>
               <button onClick={findMatch} style={{ ...btnPrimary, margin: 0 }}>Queue again</button>
+            </div>
+          ) : !arenaCanEnter(char) ? (
+            <div style={{ textAlign: "center", padding: "14px 10px", background: "#1a1220", border: "1px solid #6a3a4a", borderRadius: 10, marginBottom: 8 }}>
+              <div style={{ color: "#e07a7a", fontSize: 13, fontWeight: 700, marginBottom: 3 }}>Out of attempts today</div>
+              <div style={{ color: "#9a93b3", fontSize: 11, lineHeight: 1.5 }}>
+                {ARENA.dailyRuns} rated bouts a day. A 🏟️ Arena Challenge Ticket buys another —
+                50 tokens at the Battlemaster, or 99 Ven in the shop. Practice Duels stay free.
+              </div>
             </div>
           ) : (
             <>

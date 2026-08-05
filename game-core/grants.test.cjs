@@ -36,16 +36,19 @@ const section = (t) => console.log('\n' + t);
 const clientRpcs = [...fs.readFileSync(SRC, 'utf8').matchAll(/\.rpc\(\s*["']([a-z0-9_]+)["']/g)]
   .map((m) => m[1]).filter((v, i, a) => a.indexOf(v) === i).sort();
 
-// ---- 0018's allowlist, read from the migration ------------------------------------------------
-const lockSql = read('0018_lock_definer_rpcs.sql');
+// ---- the allowlist, read from the LAST migration that declares one -----------------------------
+// Deliberately not pinned to a filename. 0018 was the authority until 0020 superseded it, and a
+// test that keeps reading the superseded file describes a state the database is no longer in.
+const lockFile = files.filter((f) => /keep\s+text\[\]/.test(read(f))).pop();
+const lockSql = lockFile ? read(lockFile) : '';
 const keepBlock = /keep\s+text\[\]\s*:=\s*array\[([\s\S]*?)\]/.exec(lockSql);
 const keep = keepBlock ? [...keepBlock[1].matchAll(/'([a-z0-9_]+)'/g)].map((m) => m[1]).sort() : [];
 
 section('The allowlist and the client agree');
-ok(keep.length > 0, 'the keep[] array parses out of 0018');
+ok(keep.length > 0, `the keep[] array parses out of the operative lock (${lockFile})`);
 ok(clientRpcs.length > 0, 'the client calls at least one RPC — the scan is not silently empty');
 for (const r of clientRpcs) {
-  ok(keep.includes(r), `the client calls ${r}(), and 0018 keeps it open to authenticated`);
+  ok(keep.includes(r), `the client calls ${r}(), and the lock keeps it open to authenticated`);
 }
 // The reverse direction matters just as much: an allowlist that quietly grows is an allowlist that
 // has stopped meaning anything. daily_history is the one deliberate extra — it is the calendar's
@@ -59,8 +62,19 @@ ok(/revoke execute on function %s from anon/.test(lockSql),
    'anon is revoked by a loop over pg_proc, not by a hand-written list that can fall behind');
 ok(/where n\.nspname = 'public' and p\.prosecdef/.test(lockSql),
    '…and that loop covers EVERY security definer function in public, present and future-at-apply-time');
-ok(/if not \(r\.proname = any\(keep\)\) then[\s\S]{0,160}from authenticated/.test(lockSql),
-   'authenticated keeps only the allowlisted ones');
+// THE CHECK 0018 NEEDED AND DID NOT HAVE. Postgres grants EXECUTE on a new function to PUBLIC by
+// default, and anon is a member of PUBLIC — so revoking anon by name while leaving PUBLIC standing
+// changes the ACL and changes nothing about who can call the function. Thirteen definer functions
+// were reachable anonymously for a day because of exactly this, including ah_purchase and
+// mail_claim. Revoking PUBLIC is the load-bearing line; the other two are tidiness.
+ok(/revoke execute on function %s from public/.test(lockSql),
+   'PUBLIC is revoked too — without it, revoking anon by name is cosmetic');
+ok(/grant execute on function %s to authenticated/.test(lockSql),
+   'the allowlist is granted back EXPLICITLY, so the game never depends on an inherited default');
+ok(/has_function_privilege\('anon'/.test(lockSql),
+   'the migration verifies itself with has_function_privilege, which follows role membership…');
+ok(/raise exception/.test(lockSql) && /the client calls these/.test(lockSql),
+   '…and refuses to finish if anon still has access or the client has lost it');
 // The specific hole. Worth naming, because a loop is easy to read past.
 ok(/_wallet_add_gold/.test(lockSql),
    '_wallet_add_gold is named in the migration that closes it, so the record says what was open');

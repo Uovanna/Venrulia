@@ -160,6 +160,8 @@ import {
   emptySockets,
   gearStatBase,
   secondaryNominal,
+  secondaryFor,
+  abyssMult,
   TRINITY_FILL,
   botTier,
   buildBotChar,
@@ -559,6 +561,9 @@ const abyssUnlocked = (c) => Math.max(0, Math.min(ABYSS.maxPlus, abyssRec(c).unl
 const abyssKills = (c, plus) => ((abyssRec(c).kills || {})[plus] || 0);
 const abyssRankDone = (c, plus) => abyssKills(c, plus) >= ABYSS.killGoal;
 // Hard Mode is finished when its raid boss has fallen. That is the gate.
+// "Abyss" for the base rank, "Abyss +7" above it. One definition, used by the tooltip, the log and
+// the shop, so the three cannot disagree about what a piece is called.
+const abyssLabel = (plus) => (plus ? `Abyss +${plus}` : "Abyss");
 const abyssOpen = (c) => (((c && c.hardBossKills) || {})["Ignaroth the Flamelord"] || 0) > 0;
 
 const hardZoneById = (id) => HARD_ZONES.find((z) => z.id === id);
@@ -1182,11 +1187,16 @@ const isTemperable = (it) => !!it && !it.relicId && it.slotId !== "relic"; // re
 // formula under a comment saying it mirrored it — and a copy labelled as a copy is still a copy.
 // It missed the endgame ilvl curve entirely, so a 100k-250k reroll on an ilvl-70 line would have
 // handed back a pre-curve value about 45% smaller. One definition, in the core, for both.
-function secNominal(ilvl, rarityId, stat) {
-  return secondaryNominal(ilvl || 1, RARITIES.findIndex((r) => r.id === rarityId), stat);
+// Every one of these takes the item's ABYSS RANK, because a rank widens the range a line rolls in
+// and that has to hold for the life of the item. A +7 piece rerolled without it would quietly come
+// back with Hard-mode numbers — the player would pay 250,000 gold to make their best item worse,
+// and nothing would tell them. secondaryFor is the single definition, in the core beside the drop
+// roller, so the two cannot drift.
+function secNominal(ilvl, rarityId, stat, abyss) {
+  return secondaryFor(ilvl || 1, RARITIES.findIndex((r) => r.id === rarityId), stat, abyss);
 }
-const rerollRange = (ilvl, rarityId, stat) => { const n = secNominal(ilvl, rarityId, stat); return [Math.max(1, Math.round(n * (1 - TEMPER_CFG.reroll.jitter))), Math.max(1, Math.round(n * (1 + TEMPER_CFG.reroll.jitter)))]; };
-const rollRerollValue = (ilvl, rarityId, stat) => { const [lo, hi] = rerollRange(ilvl, rarityId, stat); return lo + Math.floor(Math.random() * (hi - lo + 1)); };
+const rerollRange = (ilvl, rarityId, stat, abyss) => { const n = secNominal(ilvl, rarityId, stat, abyss); return [Math.max(1, Math.round(n * (1 - TEMPER_CFG.reroll.jitter))), Math.max(1, Math.round(n * (1 + TEMPER_CFG.reroll.jitter)))]; };
+const rollRerollValue = (ilvl, rarityId, stat, abyss) => { const [lo, hi] = rerollRange(ilvl, rarityId, stat, abyss); return lo + Math.floor(Math.random() * (hi - lo + 1)); };
 const temperCost = (targetRank) => TEMPER_CFG.cost[targetRank] || 0;
 const rerollCost = (rerollsDone) => { const { start, max, rampRolls } = TEMPER_CFG.reroll; const n = Math.min(rerollsDone, rampRolls - 1); return Math.round(start + (max - start) * (n / (rampRolls - 1))); };
 const doubleChanceFor = (stacks) => Math.min(1, (stacks || 0) * TEMPER_CFG.failStackPct);
@@ -2565,6 +2575,7 @@ const simulateOffline = (char, elapsedMs) => {
   // live one does. Copy the map first — `c` is a shallow clone of the caller's character.
   const autoPot = !!(c.upgrades && c.upgrades.autoPotion);
   let potionsDrunk = 0, lastPotionAt = -POTION_CD / 1000;   // first sip allowed immediately
+  let abyssKilled = 0; const abyssDrops = [];
   c.consumables = { ...(c.consumables || {}) };
 
   while (timeUsed < secs && guard++ < 500000) {
@@ -2613,9 +2624,24 @@ const simulateOffline = (char, elapsedMs) => {
     // earned the pre-cap rate forever. That one omission made parking the most profitable activity
     // in the game by a factor of 33, and it is why item prices read as worthless next to a purse.
     // Loot is deliberately NOT cut here, matching resolveDeath, which cuts XP and gold only.
-    if (c.level >= MAX_LEVEL) { xpEarned = Math.floor(xpEarned * 0.05); gold = Math.floor(gold * 0.05); }
-    for (const it of rollLoot({ level: enemyLevel, isBoss, dungeonId: null, guaranteed: false, clsId: c.cls, dropMult: rewardMult * (1 + _tb.drop) })) {
-      gold += Math.max(1, Math.floor(it.value * 0.6 * 0.25)); // offline loot auto-sold
+    if (aPlus == null) {
+      if (c.level >= MAX_LEVEL) { xpEarned = Math.floor(xpEarned * 0.05); gold = Math.floor(gold * 0.05); }
+      for (const it of rollLoot({ level: enemyLevel, isBoss, dungeonId: null, guaranteed: false, clsId: c.cls, dropMult: rewardMult * (1 + _tb.drop) })) {
+        gold += Math.max(1, Math.floor(it.value * 0.6 * 0.25)); // offline loot auto-sold
+      }
+    } else {
+      // The Abyss IS the endgame, so the max-level cut that exists to push players out of normal
+      // zones does not apply here; the Hard Mode doubling and the rank premium do.
+      gold = Math.floor(gold * 2 * (1 + ABYSS.goldPerPlus * aPlus));
+      xpEarned = Math.floor(xpEarned * (1 + ABYSS.xpPerPlus * aPlus));
+      // Kills bank against the rank, exactly as they do live.
+      abyssKilled++;
+      // And gear is KEPT. Auto-selling an ilvl 71 Abyss piece for pocket change is the one thing a
+      // parked player would never want, and it is the only reason to be down here.
+      if (Math.random() < 1 / ABYSS.killsPerDrop) {
+        const rar = rarityById(Math.random() < ABYSS.legendaryChance ? "legendary" : "epic");
+        abyssDrops.push(generateItem(ABYSS.dropIlvl, rar, pickLootSlot(), c.cls, aPlus));
+      }
     }
     xpGained += xpEarned; goldGained += gold;
 
@@ -2629,18 +2655,32 @@ const simulateOffline = (char, elapsedMs) => {
 
   c.gold = (c.gold || 0) + goldGained;
   c.kills = killCount;
+  if (aPlus != null && abyssKilled) {
+    const rec = c.abyss || { plus: 0, unlocked: 0, kills: {} };
+    const kills2 = { ...(rec.kills || {}), [aPlus]: ((rec.kills || {})[aPlus] || 0) + abyssKilled };
+    let unlocked = rec.unlocked || 0;
+    if (kills2[aPlus] >= ABYSS.killGoal && aPlus >= unlocked && unlocked < ABYSS.maxPlus) unlocked = aPlus + 1;
+    c.abyss = { ...rec, kills: kills2, unlocked };
+  }
+  if (abyssDrops.length) {
+    // Through depositItems, so the bank cap, the overflow sale and the mail all behave exactly as
+    // they do live rather than the drops appearing from nowhere.
+    const dep = depositItems(c, abyssDrops);
+    c.inventory = dep.inventory; c.overflow = dep.overflow; c.gold = (c.gold || 0) + dep.gold;
+  }
   c.unlockedSkills = (SKILLS[c.cls] || []).filter((s) => s.unlockLevel <= c.level).map((s) => s.name);
   c.selectedSkills = padSelectedSkills(c, c.selectedSkills);
   c.hp = maxHpFor(c); // revive ready for play
-  if (died) c.offlineZoneId = null; // defeat pauses offline combat until re-enabled
+  if (died) { c.offlineZoneId = null; c.offlineAbyss = null; } // defeat pauses offline combat until re-enabled
   c.lastActive = Date.now();
-  return { char: c, kills, xpGained, goldGained, leveledTo: c.level, died, potionsDrunk, secondsSimulated: Math.floor(timeUsed) };
+  return { char: c, kills, xpGained, goldGained, leveledTo: c.level, died, potionsDrunk,
+           abyssPlus: aPlus, abyssDrops: abyssDrops.length, secondsSimulated: Math.floor(timeUsed) };
 };
 
 // Predict how long (ms) until the character would die in offline combat, or null if they
 // survive the full 12h cap. Death timing is deterministic, so this matches the real run.
 const predictOfflineDeath = (char) => {
-  if (!char.offlineZoneId) return null;
+  if (!char.offlineZoneId && char.offlineAbyss == null) return null;
   const res = simulateOffline(char, OFFLINE_CAP_MS);
   if (res && res.died) return Math.max(1000, res.secondsSimulated * 1000);
   return null;
@@ -2694,10 +2734,13 @@ function ItemTooltip({ item, onClose, actions, onSocket }) {
           <GameIcon icon={item.icon} imgKey={item.iconKey} size={36} />
           <div style={{ minWidth: 0 }}>
             <div style={{ color: r.color, fontWeight: 700, fontSize: 15, fontFamily: "Georgia, serif", lineHeight: 1.15 }}>{item.enchant ? "✨ " : ""}{item.name}{temperSuffix(item)}</div>
+            {/* The rank sits directly under the name, exactly as asked, and above the rarity line —
+                where the piece came from is the first thing about an Abyss item that matters. */}
+            {item.abyss != null && <div style={{ color: "#b06ad0", fontSize: 11, fontWeight: 800 }}>{abyssLabel(item.abyss)}</div>}
             <div style={{ color: "#9a93b3", fontSize: 10.5 }}>{r.name} · {slotById(item.slotId)?.name}</div>
           </div>
         </div>
-        {item.ilvl ? <div style={{ color: "#f0d98a", fontSize: 11.5, marginBottom: 5 }}>Item Level {item.ilvl}{item.artifact ? <span style={{ color: "#c8102e", marginLeft: 6 }}>· re-forges with your level</span> : null}</div> : null}
+        {item.ilvl ? <div style={{ color: "#f0d98a", fontSize: 11.5, marginBottom: 5 }}>Item Level {item.ilvl}{item.artifact ? <span style={{ color: "#c8102e", marginLeft: 6 }}>· re-forges with your level</span> : null}{item.abyss ? <span style={{ color: "#b06ad0", marginLeft: 6 }}>· secondaries roll {Math.round((abyssMult(item.abyss) - 1) * 100)}% higher</span> : null}</div> : null}
         {item.temper > 0 ? <div style={{ color: "#f0913e", fontSize: 11, marginBottom: 5, fontWeight: 700 }}>⚒️ Tempered +{item.temper} <span style={{ color: "#b98a5a", fontWeight: 400 }}>· +{temperBonus} to each of its {item.lines?.length || 0} secondary line{(item.lines?.length || 0) === 1 ? "" : "s"}</span></div> : null}
         {(() => { const suf = suffixByMains(item.mains && item.mains.length ? item.mains : mainStatsOf(item)); return suf
           ? <div style={{ color: "#8fd0ff", fontSize: 10.5, marginBottom: 5 }}>{suf.name} <span style={{ color: "#6b6486" }}>— always {suf.desc}</span></div> : null; })()}
@@ -3601,12 +3644,13 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     const c = charRef.current; if (!c) return;
     const t = Date.now();
     const elapsed = t - (c.lastActive || t);
-    if (!c.offlineZoneId || elapsed < 60000) { commitChar({ ...c, lastActive: t }); return; }
+    if ((!c.offlineZoneId && c.offlineAbyss == null) || elapsed < 60000) { commitChar({ ...c, lastActive: t }); return; }
     const startLevel = c.level;
     const res = simulateOffline(c, elapsed);
     if (!res || res.kills === 0) { commitChar({ ...c, lastActive: t }); return; }
     commitChar(res.char);
-    setOfflineReport({ ...res, levelsGained: res.leveledTo - startLevel, zoneName: (ZONES.find((z) => z.id === c.offlineZoneId) || {}).name || "" });
+    setOfflineReport({ ...res, levelsGained: res.leveledTo - startLevel,
+      zoneName: c.offlineAbyss != null ? abyssLabel(c.offlineAbyss) : (ZONES.find((z) => z.id === c.offlineZoneId) || {}).name || "" });
     if (res.died) { showNotif("💀 Offline combat ended — you were defeated"); notifyDefeat(); }
     else if (bankIsFull(res.char)) {
       const waiting = (res.char.overflow || []).length;
@@ -3620,8 +3664,20 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     const c = charRef.current; if (!c) return;
     const enabling = c.offlineZoneId !== zoneId;
     if (enabling) LocalNotify.ensurePermission(); // ask for notification permission up front
-    commitChar({ ...c, offlineZoneId: enabling ? zoneId : null, lastActive: Date.now() });
+    // Parking somewhere clears the other place. A character is in ONE place; leaving both set
+    // would make which one they actually farmed depend on the order of two ifs.
+    commitChar({ ...c, offlineZoneId: enabling ? zoneId : null, offlineAbyss: null, lastActive: Date.now() });
     showNotif(enabling ? "🌙 Offline combat enabled" : "Offline combat disabled");
+  }, [commitChar, showNotif]);
+  // Park in the Abyss at a given rank. Only ranks already unlocked, so a player cannot leave a
+  // character grinding a depth they have never reached.
+  const toggleOfflineAbyss = useCallback((plus) => {
+    const c = charRef.current; if (!c) return;
+    const p = Math.max(0, Math.min(abyssUnlocked(c), plus));
+    const enabling = c.offlineAbyss !== p;
+    if (enabling) LocalNotify.ensurePermission();
+    commitChar({ ...c, offlineAbyss: enabling ? p : null, offlineZoneId: null, lastActive: Date.now() });
+    showNotif(enabling ? `🌙 Parked in ${abyssLabel(p)}` : "Offline combat disabled");
   }, [commitChar, showNotif]);
 
   // run offline progress on open & when returning; schedule a defeat notification when leaving
@@ -3631,7 +3687,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       markActive();
       const c = charRef.current;
       LocalNotify.cancelScheduled(); LocalNotify.cancelBankFull();
-      if (c && c.offlineZoneId) {
+      if (c && (c.offlineZoneId || c.offlineAbyss != null)) {
         const ms = predictOfflineDeath(c);
         if (ms != null) LocalNotify.scheduleDefeat(Date.now() + ms); // fires at the predicted defeat time
         // Idle-battling with nowhere to put anything: warn on the way out, so the player knows
@@ -3804,6 +3860,13 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     if (b.mode !== "hard" && c.level >= MAX_LEVEL) { xpEarned = Math.floor(xpEarned * 0.05); goldBase = Math.floor(goldBase * 0.05); }
     // Hard Mode at max level pays +100% gold to reward the endgame grind
     if (b.mode === "hard" && c.level >= MAX_LEVEL) goldBase = Math.floor(goldBase * 2);
+    // The Abyss pays like Hard Mode, plus a rank premium. Every + is more dangerous, so every + is
+    // worth more — otherwise the correct play is always to farm the easiest rank you can park on.
+    if (b.mode === "abyss") {
+      const ap = b.abyssPlus || 0;
+      goldBase = Math.floor(goldBase * 2 * (1 + ABYSS.goldPerPlus * ap));
+      xpEarned = Math.floor(xpEarned * (1 + ABYSS.xpPerPlus * ap));
+    }
 
     addLog(`✅ ${enemy.name} defeated! +${xpEarned} XP, +${goldBase}g`, "#ABD473");
 
@@ -3945,9 +4008,31 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       }
     }
 
+    // ----- the Abyss: bank the kill, roll the drop -----
+    if (b.mode === "abyss") {
+      const ap = b.abyssPlus || 0;
+      const prog = recordAbyssKill(nc, ap);
+      nc = { ...nc, abyss: prog.abyss };
+      if (prog.msg) { addLog(prog.msg, "#b06ad0"); showNotif(prog.msg); }
+      // One piece every 150 kills on average, 95% epic and 5% legendary. Rolled per kill rather
+      // than counted, so a run of bad luck is possible and a run of good luck is too — a hard
+      // counter would make the 150th kill the only one that ever mattered.
+      if (Math.random() < 1 / ABYSS.killsPerDrop) {
+        const rar = rarityById(Math.random() < ABYSS.legendaryChance ? "legendary" : "epic");
+        const it = generateItem(ABYSS.dropIlvl, rar, pickLootSlot(), c.cls, ap);
+        nc = { ...nc, ...depositEarned(nc, it) };
+        addLog(`🕳️ ${it.name} — ${abyssLabel(ap)}, ilvl ${it.ilvl}`, rar.color);
+        showNotif(`🕳️ ${rar.name} drop: ${it.name}`);
+      }
+    }
+
     // ----- next encounter -----
     let nb;
-    if (b.mode === "hard") {
+    if (b.mode === "abyss") {
+      // Endless. No waves, no boss, no end — the next one simply walks up.
+      nb = { ...b, enemy: makeAbyssEnemy(b.abyssPlus || 0), hp: b.hp, enemyEffects: [],
+             enemyNextAt: Date.now() + ENEMY_BASE_INTERVAL, playerNextAt: Date.now() + 600 };
+    } else if (b.mode === "hard") {
       if (b.hardKind === "zone") {
         const e = makeHardEnemy(hardZoneById(b.hardId), "zone"); // endless zone farm
         nb = { ...b, enemy: e, hp: b.hp, enemyEffects: [], enemyNextAt: Date.now() + ENEMY_BASE_INTERVAL, playerNextAt: Date.now() + 600 };
@@ -4534,6 +4619,44 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     if (bz) e.name = `👑 ${pick(bz.enemies)}`;
     return e;
   };
+  // ---------- THE ABYSS ----------
+  // Champion-rank foes at the rank's tier. There is no wave structure and no boss: the Abyss is an
+  // endless zone, and the kill counter is the whole of its progression.
+  const makeAbyssEnemy = (plus) => {
+    const bz = ZONES.find((z) => z.id === "plaguelands") || ZONES[ZONES.length - 1];
+    const isLord = Math.random() < 0.1;
+    const e = makeEnemy(ABYSS.enemyLvl, { lord: isLord, champion: !isLord, hpMult: isLord ? 10 : 8, tier: abyssTierId(plus) });
+    if (bz) e.name = `${isLord ? "👑 " : ""}${pick(bz.enemies)}`;
+    e.abyssPlus = plus;
+    return e;
+  };
+  const startAbyss = (plus) => {
+    const c = charRef.current;
+    if (battleRef.current) { showNotif("Finish current fight first"); return; }
+    if (!abyssOpen(c)) { showNotif("🔒 Clear Hard Mode first — the Molten Heart must fall"); return; }
+    const p = Math.max(0, Math.min(abyssUnlocked(c), plus));
+    if (avgEquippedIlvl(c) < ABYSS.reqIlvl) { showNotif(`🔒 Requires average item level ${ABYSS.reqIlvl}`); return; }
+    commitChar({ ...c, abyss: { ...abyssRec(c), plus: p } });
+    const t = Date.now();
+    commitBattle({ mode: "abyss", abyssPlus: p, dropIlvl: ABYSS.dropIlvl, wave: 1, waves: 0, runStart: t,
+      drPlayer: {}, drEnemy: {}, hp: curHp(c), enemy: makeAbyssEnemy(p), res: 0, resQ: [], shardTicks: 0,
+      cooldowns: {}, playerEffects: [], enemyEffects: [], playerNextAt: t + PLAYER_BASE_INTERVAL, enemyNextAt: t + ENEMY_BASE_INTERVAL });
+    setTab("combat");
+    addLog(`🕳️ The Abyss${p ? ` +${p}` : ""} — no waves, no boss, no end. Only what you can survive.`, "#b06ad0");
+  };
+  // A kill in the Abyss banks against THAT rank. Reaching the goal unlocks the next +, once.
+  const recordAbyssKill = (c, plus) => {
+    const rec = abyssRec(c);
+    const kills = { ...(rec.kills || {}), [plus]: (rec.kills || {})[plus] + 1 || 1 };
+    let unlocked = rec.unlocked || 0;
+    let msg = null;
+    if (kills[plus] >= ABYSS.killGoal && plus >= unlocked && unlocked < ABYSS.maxPlus) {
+      unlocked = plus + 1;
+      msg = `🕳️ The Abyss deepens — +${unlocked} unlocked`;
+    }
+    return { abyss: { ...rec, kills, unlocked }, msg };
+  };
+
   // Per instance, off its own `waves`, exactly as normal mode does. This was a flat 4 for every
   // hard dungeon and 6 for the raid, so the five hard instances were all the same length.
   const hardWaveCount = (inst) => (inst && inst.waves) || 4;
@@ -5580,7 +5703,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     const taken = (item.lines || []).map((l) => l.stat);
     const newStat = pickSlotSecondary(item.slotId, taken) || pickSlotSecondary(item.slotId, [ln.stat]) || pick(TEMPER_CFG.reroll.pool);
     ln.stat = newStat;
-    ln.base = rollRerollValue(item.ilvl, item.rarity, newStat);
+    ln.base = rollRerollValue(item.ilvl, item.rarity, newStat, item.abyss);
     item.rerolls += 1;
     syncItemStats(item);
     if (item.artifact) item.shape = { ...(item.shape || {}), secs: item.lines.map((l) => l.stat) };
@@ -7794,7 +7917,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                 {temperMode === "reroll" && (() => {
                   if (!lines.length) return <div style={{ color: "#8a83b8", textAlign: "center", padding: 16, fontSize: 12 }}>This item has no secondary stat lines to reroll.</div>;
                   const cost = rerollCost(rerolls);
-                  const ranges = TEMPER_CFG.reroll.pool.map((s) => rerollRange(sel.ilvl, sel.rarity, s));
+                  const ranges = TEMPER_CFG.reroll.pool.map((s) => rerollRange(sel.ilvl, sel.rarity, s, sel.abyss));
                   const rlo = Math.min(...ranges.map((r) => r[0])), rhi = Math.max(...ranges.map((r) => r[1]));
                   const canGold = char.gold >= cost;
                   return (
@@ -8284,15 +8407,83 @@ function GameScreen({ character: initChar, onSave, onBack }) {
         {tab === "world" && (
           <div>
             <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-              {[["normal", "Normal"], ["hard", "🔥 Hard Mode"]].map(([id, label]) => (
-                <button key={id} onClick={() => setDifficulty(id)} style={{ flex: 1, background: difficulty === id ? (id === "hard" ? "#3a0f0f" : "#1a1535") : "#0c0a16", border: `1.5px solid ${difficulty === id ? (id === "hard" ? "#ff4500" : "#f0b429") : "#2a2740"}`, borderRadius: 9, color: difficulty === id ? (id === "hard" ? "#ff6a33" : "#f0b429") : "#777", padding: "10px 4px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>{label}</button>
+              {[["normal", "Normal"], ["hard", "🔥 Hard"], ...(abyssOpen(char) ? [["abyss", "🕳️ Abyss"]] : [])].map(([id, label]) => (
+                <button key={id} onClick={() => setDifficulty(id)} style={{ flex: 1, background: difficulty === id ? (id === "abyss" ? "#1e0f2e" : id === "hard" ? "#3a0f0f" : "#1a1535") : "#0c0a16", border: `1.5px solid ${difficulty === id ? (id === "abyss" ? "#b06ad0" : id === "hard" ? "#ff4500" : "#f0b429") : "#2a2740"}`, borderRadius: 9, color: difficulty === id ? (id === "abyss" ? "#c88ae0" : id === "hard" ? "#ff6a33" : "#f0b429") : "#777", padding: "10px 4px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>{label}</button>
               ))}
             </div>
+            {difficulty !== "abyss" && (
             <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
               {[["zones", "🗺️ Zones"], ["dungeons", "🏰 Dungeons"], ["raids", "🌋 Raids"]].map(([id, label]) => (
                 <button key={id} onClick={() => setWorldTab(id)} style={{ flex: 1, background: worldTab === id ? "#1a1535" : "#100e1c", border: `1px solid ${worldTab === id ? (difficulty === "hard" ? "#ff4500" : "#f0b429") : "#2a2740"}`, borderRadius: 8, color: worldTab === id ? (difficulty === "hard" ? "#ff6a33" : "#f0b429") : "#888", padding: "9px 4px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{label}</button>
               ))}
             </div>
+            )}
+
+            {/* ============ THE ABYSS ============ */}
+            {difficulty === "abyss" && (() => {
+              const acc = "#b06ad0";
+              const avg = avgEquippedIlvl(char);
+              const geared = avg >= ABYSS.reqIlvl;
+              const unlocked = abyssUnlocked(char), sel = abyssPlus(char);
+              return (
+                <div>
+                  <div style={{ background: "linear-gradient(135deg,#1a0f26,#0e0818)", border: `1.5px solid ${acc}`, borderRadius: 12, padding: "13px 14px", marginBottom: 12 }}>
+                    <div style={{ color: acc, fontFamily: "Georgia, serif", fontSize: 16, fontWeight: 700, marginBottom: 4 }}>🕳️ The Abyss</div>
+                    <div style={{ color: "#9a93b3", fontSize: 11.5, lineHeight: 1.55 }}>
+                      Endless. No waves, no boss, nothing to clear — only how deep you can stand to go.
+                      Every kill banks against the rank you are on; {ABYSS.killGoal.toLocaleString()} of them opens the next.
+                    </div>
+                    <div style={{ color: geared ? "#7CFC9E" : "#e07a7a", fontSize: 11, marginTop: 7 }}>
+                      Average item level {avg} · requires {ABYSS.reqIlvl}
+                    </div>
+                    <div style={{ color: "#6f6a90", fontSize: 10.5, marginTop: 4 }}>
+                      ilvl {ABYSS.dropIlvl} drops, about one every {ABYSS.killsPerDrop} kills · {Math.round((1 - ABYSS.legendaryChance) * 100)}% epic, {Math.round(ABYSS.legendaryChance * 100)}% legendary
+                    </div>
+                  </div>
+                  {Array.from({ length: ABYSS.maxPlus + 1 }, (_, p) => p).map((p) => {
+                    const open = p <= unlocked, kills = abyssKills(char, p), done = abyssRankDone(char, p);
+                    const t = abyssTierFor(p);
+                    const canRun = open && geared && !battle;
+                    return (
+                      <div key={p} style={{ background: p === sel ? "#1a1030" : "#12102a", border: `1.5px solid ${p === sel ? acc : open ? "#3a2a50" : "#241f3a"}`, borderRadius: 10, padding: 12, marginBottom: 9, opacity: open ? 1 : 0.45 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 6 }}>
+                          <span style={{ fontSize: 20 }}>🕳️</span>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ color: open ? acc : "#6f6a90", fontWeight: 800, fontSize: 13.5 }}>
+                              {abyssLabel(p)} {done && <span style={{ color: "#7CFC9E", fontSize: 11 }}>✓</span>}
+                            </div>
+                            <div style={{ color: "#8a83b8", fontSize: 10.5 }}>
+                              enemies ×{t.hp.toFixed(1)} health, ×{t.off.toFixed(1)} damage · +{Math.round(ABYSS.goldPerPlus * p * 100)}% gold · secondaries +{Math.round((abyssMult(p) - 1) * 100)}%
+                            </div>
+                          </div>
+                        </div>
+                        <Bar current={Math.min(kills, ABYSS.killGoal)} max={ABYSS.killGoal} color={acc} height={6}
+                             label={done ? "Complete" : "Progress"} sub={`${Math.min(kills, ABYSS.killGoal).toLocaleString()}/${ABYSS.killGoal.toLocaleString()}`} />
+                        {/* Parking. The Abyss is where a geared player leaves their character, so
+                            the option belongs beside the descend button, not buried in a settings
+                            screen — and only ranks already reached can be parked in. */}
+                        {open && geared && (
+                          <button onClick={() => toggleOfflineAbyss(p)} aria-label={`Park in ${abyssLabel(p)}`}
+                            style={{ width: "100%", marginTop: 8, background: char.offlineAbyss === p ? "#12261c" : "#15122a",
+                              border: `1px solid ${char.offlineAbyss === p ? "#2a6a44" : "#2a2550"}`, borderRadius: 8,
+                              color: char.offlineAbyss === p ? "#7CFC9E" : "#8a83b8", fontSize: 11.5, fontWeight: 700,
+                              padding: "8px 0", cursor: "pointer" }}>
+                            {char.offlineAbyss === p ? `🌙 Parked here — tap to stop` : "🌙 Park here while away"}
+                          </button>
+                        )}
+                        <button disabled={!canRun} onClick={() => startAbyss(p)} aria-label={`Enter ${abyssLabel(p)}`}
+                          style={{ width: "100%", marginTop: 8, background: canRun ? "linear-gradient(135deg,#3a1a50,#24103a)" : "#15122a",
+                            border: `1px solid ${canRun ? acc : "#2a2550"}`, borderRadius: 8, color: canRun ? "#e0b0f0" : "#6f6a90",
+                            fontSize: 12.5, fontWeight: 700, padding: "9px 0", cursor: canRun ? "pointer" : "default" }}>
+                          {!open ? `🔒 Complete ${abyssLabel(p - 1)} first` : !geared ? `🔒 Requires ilvl ${ABYSS.reqIlvl}`
+                            : battle ? "Finish current fight first" : `🕳️ Descend to ${abyssLabel(p)}`}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
 
             {difficulty === "hard" && (() => {
               const avg = avgEquippedIlvl(char);

@@ -4016,7 +4016,6 @@ function GameScreen({ character: initChar, onSave, onBack }) {
   // enemy casts a class skill at the player (direct damage, a DoT debuff, or a slow/stun debuff)
   // Diminishing returns on crowd control (stun/slow only): 1st full, 2nd 35%, 3rd+ immune. Refreshes count.
   // Resets per enemy. DoTs are exempt. (Warlock Hexer refreshes via autos and never calls this, so it's exempt.)
-  const resetDr = (w) => { w.drPlayer = {}; w.drEnemy = {}; };
   // Dungeon/Raid enrage: after 90s of the whole run, enemy damage ramps +5%/second until cleared or you die.
   const enrageMult = (w, now) => {
     const isRun = w.mode === "dungeon" || (w.mode === "hard" && w.hardKind && w.hardKind !== "zone");
@@ -4591,27 +4590,6 @@ function GameScreen({ character: initChar, onSave, onBack }) {
   // ---------- online co-op: join the authoritative server's room ----------
   // The server owns the seed, the party and every tick. We wait for `assigned` (which names our
   // combatant) before opening the combat screen, so the UI always knows which ally is ours.
-  const [onlineStatus, setOnlineStatus] = useState(null); // { busy?, label?, error? }
-  const startOnline = async (contentId, label, ilvl) => {
-    setOnlineStatus({ busy: true, label });
-    let room;
-    try {
-      room = await mpProvider.connectEncounter({ contentId, char, ilvl, uid: await ensureUid() });
-      const assigned = await new Promise((resolve, reject) => {
-        room.onMessage("assigned", resolve);
-        room.onMessage("error", (e) => reject(new Error(e?.message || "the encounter could not start")));
-        room.onError((code, msg) => reject(new Error(msg || `room error ${code}`)));
-        room.onLeave(() => reject(new Error("disconnected before the fight began")));
-        setTimeout(() => reject(new Error("timed out waiting for the party")), 40000);
-      });
-      setGroupRun({ online: true, room, myAllyId: assigned.allyId, ilvl, size: 4, raid: false, label });
-      setOnlineStatus(null);
-      setTab("group");
-    } catch (e) {
-      try { room?.leave(); } catch { /* already gone */ }
-      setOnlineStatus({ error: e?.message || String(e) });
-    }
-  };
   // Boss down → GDKP loot bid (Epic floor; Trials roll a 10% Legendary per item)
   const onGroupCleared = () => {
     const run = groupRunRef.current; if (!run) return;
@@ -4934,14 +4912,6 @@ function GameScreen({ character: initChar, onSave, onBack }) {
   // can the remembered dungeon/raid be run right now (not locked out)?
   const instanceRunnable = (c, id) => { const inst = instanceById(id); if (!inst) return false; return inst.raid ? raidCooldownLeft(c, id) <= 0 : dungeonRunsLeft(c, id) > 0; };
   const reEnterInstance = () => { const inst = instanceById(lastDungeonId); if (!inst) return; if (inst.raid) startRaid(inst); else startDungeon(inst); };
-  const travelZone = (z) => {
-    const c = charRef.current;
-    if (c.level < z.minLevel) { showNotif(`Requires level ${z.minLevel}`); return; }
-    const b = battleRef.current;
-    if (b && b.mode === "zone") commitBattle(null); // leave current hunt
-    commitChar({ ...c, currentZoneId: z.id });
-    showNotif(`Traveled to ${z.name}`);
-  };
 
   // ---------- consumables (stored per-tier; a potion keeps its tier forever) ----------
   // conCount/conTotal/bestTier now live at module scope so the offline simulator can drink from the
@@ -5657,12 +5627,6 @@ function GameScreen({ character: initChar, onSave, onBack }) {
   // and a tutorial lesson asked players to buy from a trainer that does not exist.
 
   // ---------- profession actions ----------
-  const learnProfession = (pid) => {
-    const c = charRef.current;
-    if (c.professions[pid]) return;
-    commitChar({ ...c, professions: { ...c.professions, [pid]: { level: 1, xp: 0, active: false } } });
-    showNotif(`📚 Learned ${PROFESSIONS.find((p) => p.id === pid)?.name}!`);
-  };
   const toggleProfession = (pid) => {
     const c = charRef.current;
     const turningOn = !c.professions[pid]?.active;
@@ -5753,12 +5717,6 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     const tick = setInterval(() => setGatherTick((t) => t + 1), 200); // live cooldown countdown
     return () => { clearInterval(swing); clearInterval(tick); };
   }, [tab, gatherId]);
-  const unlearnProfession = (pid) => {
-    const c = charRef.current;
-    const profs = { ...c.professions }; delete profs[pid];
-    commitChar({ ...c, professions: profs });
-    showNotif(`Unlearned ${PROFESSIONS.find((p) => p.id === pid)?.name} (points reset)`);
-  };
   const gainProfXp = (prof, amount) => {
     let p = { ...prof }; p.xp = (p.xp || 0) + amount;
     while (p.level < PROF_MAX && p.xp >= professionXpForLevel(p.level)) { p.xp -= professionXpForLevel(p.level); p.level += 1; }

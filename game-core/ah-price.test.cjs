@@ -219,6 +219,32 @@ js += `
     ok(zero.abyss === 0, "\\u2026proved: an Abyss +0 drop carries abyss = 0");
     ok(core.generateItem(71, core.rarityById("epic"), "head", "warrior").abyss === undefined,
        "\\u2026while a drop from anywhere else carries no rank at all");
+    // AN ENCHANT IS A FLAT MAP. enchantGear writes { agi: 28 } and effectiveStats reads it that
+    // way; both pricers read enchant.stats, which no item in this game has ever had. So every
+    // enchanted piece was priced as though its enchant granted zero, while still collecting the
+    // 10% enchanted premium. Client and server AGREED — both were wrong the same way — which is
+    // why the checks above passed while the price was wrong.
+    {
+      // Enchant with the stat the piece ALREADY mains. Adding a DIFFERENT main stat makes the
+      // item's Power dormant — itemPowerActive requires exactly one — so a focused piece can
+      // genuinely lose value by being enchanted, which is what wouldDormantPower warns about. The
+      // first version of this check used agi on a str piece and failed 4 runs in 5 for that
+      // reason: the code was right and the check was wrong.
+      const bare = { ...core.generateItem(71, core.rarityById("epic"), "head", "warrior"), abyss: undefined };
+      const main = (bare.mains && bare.mains[0]) || "str";
+      const ench = { ...bare, enchant: { [main]: 24 } };
+      const nested = { ...bare, enchant: { stats: { [main]: 24 } } };
+      const noStats = { ...bare, enchant: {} };
+      ok(ahBaseValue(ench) > ahBaseValue(noStats),
+         "a flat enchant raises the price beyond its 10% premium (" + ahBaseValue(noStats) + " -> " + ahBaseValue(ench) + ")");
+      ok(ahBaseValue(nested) === ahBaseValue(ench),
+         "\\u2026and the old nested shape still prices the same, so no stored row loses value");
+      ok(appSrc.indexOf("const s = item.stats || {}, en = item.enchant || {}, e = en.stats || en;") > 0,
+         "the client reads flat first and nested as a fallback");
+      const encSql = fs.readFileSync(path.join(dir, fs.readdirSync(dir).find((f) => /enchant_flat_shape/.test(f))), "utf8");
+      ok(/when v_e \\? 'stats' then coalesce\\(v_e->'stats'/.test(encSql), "\\u2026and so does the SQL");
+      ok(/when v_e = 'null'::jsonb then/.test(encSql), "\\u2026with a null enchant treated as none rather than crashing");
+    }
     ok(ahBaseValue({ ...zero }) - ahBaseValue({ ...zero, abyss: undefined }) === AH_PRICE.abyssBase,
        "\\u2026and is worth exactly " + AH_PRICE.abyssBase.toLocaleString() + " more than the same piece without it");
 

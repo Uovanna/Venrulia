@@ -221,6 +221,31 @@ js += `
        "\u2026but slower than the normal zone it borrows its creatures from (" + kZone + "), because the tier is real");
   }
 
+  // --- enchanting ------------------------------------------------------------------------------------------
+  sec("An Abyss rank makes an enchant stronger");
+  {
+    // +1 per rank, added on top of whatever the enchanter's own skill reaches. A level-100
+    // enchanter puts +24 Agility on ordinary gear and +28 on an Abyss +4 piece.
+    const at100 = (ab) => enchantAmount("agi", 100, ab);
+    ok(at100(undefined) === enchantCap("agi"),
+       "a level-100 enchanter reaches the cap on ordinary gear (+" + at100(undefined) + ")");
+    ok(at100(4) === at100(undefined) + 4,
+       "\\u2026and +4 more on an Abyss +4 piece (+" + at100(4) + ")");
+    ok(at100(0) === at100(undefined), "Abyss +0 adds nothing \\u2014 rank 0 is zero ranks");
+    ok(at100(10) === at100(undefined) + 10, "+10 adds ten (+" + at100(10) + ")");
+    ok(at100(99) === at100(undefined) + 10, "\\u2026and it clamps at the ladder's end");
+    // The bonus deliberately sits OUTSIDE the cap. Clamping it back under would make the whole
+    // feature invisible at max enchanting rank, which is the only rank that matters here.
+    ok(at100(5) > enchantCap("agi"), "the rank bonus exceeds the skill cap, which is the point");
+    // A lower-rank enchanter still benefits, so the feature is not endgame-only.
+    ok(enchantAmount("agi", 50, 6) === enchantAmount("agi", 50, undefined) + 6,
+       "a rank-50 enchanter gets the same +6 on an Abyss +6 piece");
+    ok(src.indexOf("const amount = enchantAmount(stat, prof.level, it.abyss);") > 0,
+       "the enchant actually passes the item's rank\\u2026");
+    ok(src.indexOf("prof.level, (char.equipment[enchantSlot] || {}).abyss)") > 0,
+       "\\u2026and the shop PREVIEWS the real number for the piece in that slot, not a generic one");
+  }
+
   // --- hard-mode parking ---------------------------------------------------------------------------------
   sec("Hard zones can be farmed while away; hard dungeons and the raid cannot");
   {

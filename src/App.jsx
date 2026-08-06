@@ -1079,7 +1079,13 @@ const DROP_RATE_MULT = 0.4; // gear drop rate greatly reduced
 // enchant scaling: never exceeds what an ilvl-65 legendary item can roll for that stat
 const ENCH_SIZE = { str: 1, agi: 1, int: 1, sta: 1, leech: 0.65, vers: 0.55, resil: 0.45 };
 const enchantCap = (stat) => Math.max(1, Math.round(gearStatBase(65, 5) * (ENCH_SIZE[stat] || 1)));
-const enchantAmount = (stat, enchLevel) => { const cap = enchantCap(stat); const frac = Math.min(1, ((enchLevel || 1) - 1) / 99); return Math.max(1, Math.min(cap, Math.round(1 + (cap - 1) * frac))); };
+// ABYSS ENCHANTING. A rank adds one point to whatever the enchanter would otherwise give, so the
+// same level-100 enchanter puts +24 Agility on ordinary gear and +28 on an Abyss +4 piece. The
+// bonus is added OUTSIDE the cap deliberately: the cap describes how far an enchanter's skill
+// reaches, and the extra comes from the item, not from them. Clamping it back under the cap would
+// make the whole feature invisible at max rank, which is the only rank that matters.
+const enchantAbyssBonus = (abyss) => (abyss == null ? 0 : Math.max(0, Math.min(ABYSS_MAX_PLUS, abyss)));
+const enchantAmount = (stat, enchLevel, abyss) => { const cap = enchantCap(stat); const frac = Math.min(1, ((enchLevel || 1) - 1) / 99); return Math.max(1, Math.min(cap, Math.round(1 + (cap - 1) * frac))) + enchantAbyssBonus(abyss); };
 
 
 // back-fill inherent armor / weapon range onto items from older saves
@@ -2384,7 +2390,11 @@ const AH_SCORED = ["str", "agi", "int", "sta", "armor", "leech", "resil", "vers"
                    "crit", "haste", "ap", "sp", "dmg"];
 function ahStatPoints(item) {
   if (!item) return 0;
-  const s = item.stats || {}, e = (item.enchant && item.enchant.stats) || {};
+  // An enchant is a FLAT stat map — { agi: 28 } — which is what enchantGear writes and what
+  // effectiveStats consumes. Reading enchant.stats found nothing on every item in the game, so
+  // every enchanted piece was priced as though its enchant granted zero while still collecting the
+  // 10% enchanted premium. The nested read is kept as a fallback in case any old row carries it.
+  const s = item.stats || {}, en = item.enchant || {}, e = en.stats || en;
   let pts = 0;
   for (const k of AH_SCORED) {
     // Power is dormant on dual-main-stat gear, and a buyer cannot spend what the item will not give.
@@ -6060,7 +6070,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     let stat, cost;
     if (dustKind === "dust") { cost = ARCANE_ENCHANT_COST; if ((c.materials.dust || 0) < cost) { showNotif(`Need ${cost} Arcane Dust`); return; } stat = pick(ENCHANT_STATS); }
     else { stat = dustKind.replace("dust_", ""); cost = 5; if ((c.materials[dustKind] || 0) < 5) { showNotif(`Need 5 ${STAT_DUST_META[stat].name}`); return; } }
-    const amount = enchantAmount(stat, prof.level);
+    const amount = enchantAmount(stat, prof.level, it.abyss);
     if (wouldDormantPower(it, stat) && !confirmed) { // adding a 2nd main stat trades the Power away
       setEnchantConfirm({ slotId, dustKind, stat, amount, item: it });
       return;
@@ -9024,9 +9034,9 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                     style={{ width: "100%", marginBottom: 14, background: (char.materials.dust || 0) >= ARCANE_ENCHANT_COST ? `linear-gradient(135deg,${pcol}33,${pcol}55)` : "#15130f", border: `2px solid ${(char.materials.dust || 0) >= ARCANE_ENCHANT_COST ? pcol : "#3a3520"}`, borderRadius: 10, color: (char.materials.dust || 0) >= ARCANE_ENCHANT_COST ? "#fff" : "#6a6450", fontSize: 13.5, fontWeight: 700, padding: 12, cursor: (char.materials.dust || 0) >= ARCANE_ENCHANT_COST ? "pointer" : "default" }}>
                     ✨ Random Enchant · {ARCANE_ENCHANT_COST} Arcane Dust
                   </button>
-                  <div style={{ color: "#8a83b8", fontSize: 10, textTransform: "uppercase", letterSpacing: 1, marginBottom: 5 }}>Guaranteed enchant (Dust of Stat) · costs 5 · +{enchantAmount("str", prof.level)} at your rank</div>
+                  <div style={{ color: "#8a83b8", fontSize: 10, textTransform: "uppercase", letterSpacing: 1, marginBottom: 5 }}>Guaranteed enchant (Dust of Stat) · costs 5 · +{enchantAmount("str", prof.level, (char.equipment[enchantSlot] || {}).abyss)} at your rank{(char.equipment[enchantSlot] || {}).abyss != null ? ` (+${enchantAbyssBonus(char.equipment[enchantSlot].abyss)} from ${abyssLabel(char.equipment[enchantSlot].abyss)})` : ""}</div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    {ENCHANT_STATS.map((s) => { const owned = char.materials[statDustId(s)] || 0; const ok = owned >= 5; const amt = enchantAmount(s, prof.level); const m = STAT_DUST_META[s]; return (
+                    {ENCHANT_STATS.map((s) => { const owned = char.materials[statDustId(s)] || 0; const ok = owned >= 5; const amt = enchantAmount(s, prof.level, (char.equipment[enchantSlot] || {}).abyss); const m = STAT_DUST_META[s]; return (
                       <button key={s} onClick={() => enchantGear(enchantSlot, statDustId(s))} disabled={!ok}
                         style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: ok ? "#100e1c" : "#0c0a14", border: `1px solid ${ok ? m.color + "66" : "#241f3c"}`, borderRadius: 8, padding: "8px 11px", cursor: ok ? "pointer" : "default" }}>
                         <span style={{ color: ok ? m.color : "#555", fontSize: 12, fontWeight: 600 }}>{m.icon} {m.name} <span style={{ color: ok ? "#888" : "#e0556a", fontWeight: 400 }}>{owned}/5</span></span>

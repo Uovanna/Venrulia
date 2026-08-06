@@ -284,6 +284,69 @@ js += `
        "where you parked survives a reload");
   }
 
+  // --- nothing throws away an Abyss item --------------------------------------------------------------------
+  sec("Abyss gear is never disposed of automatically");
+  {
+    // The number that makes this matter: overflowSellPrice is derived from an item's GENERATION
+    // value and knows nothing about where it came from. An Abyss +10 EPIC generates at ~1,412 and
+    // would have auto-sold for 211 gold while being worth about 700,000 on the auction house.
+    const ep = core.generateItem(71, core.rarityById("epic"), "head", "warrior", 10);
+    ok(ep.rarity === "epic" && ep.abyss === 10, "an Abyss +10 EPIC exists and is not a legendary");
+    ok(overflowGoesToMail(ep) === true,
+       "a full bank HOLDS it in the mail rather than vendoring it for " + overflowSellPrice(ep) + " gold");
+    ok(overflowGoesToMail(core.generateItem(71, core.rarityById("epic"), "head", "warrior", 0)) === true,
+       "\\u2026including rank 0, which still floors at 100,000 gold");
+    ok(overflowGoesToMail(core.generateItem(63, core.rarityById("epic"), "head", "warrior")) === false,
+       "\\u2026while an ordinary epic is still sold, as it always was");
+    ok(overflowGoesToMail(core.generateItem(71, core.rarityById("legendary"), "head", "warrior")) === true,
+       "\\u2026and legendaries are still held, unchanged");
+    // The other two doors out.
+    ok(src.indexOf("if (it.abyss != null) { toBag.push(it); if (!firstShown) firstShown = it; return; }") > 0,
+       "auto-sell-downgrades banks an Abyss piece instead of vendoring it");
+    ok(src.indexOf("!it.locked && it.abyss == null && RARITIES.findIndex") > 0,
+       "\\u2026and bulk salvage skips it entirely");
+    ok(overflowSellPrice(ep) < 1000 && ahBaseValue(ep) > 500000,
+       "the gap is real: " + overflowSellPrice(ep) + " gold against " + Math.round(ahBaseValue(ep)).toLocaleString());
+  }
+
+  // --- offline and live must pay the same ---------------------------------------------------------------------
+  sec("Parking a hard zone pays what playing it pays");
+  {
+    // Souls are the Hard Mode crafting reagent and drop per kill in a hard zone. Omitting them
+    // offline made parking strictly worse in a way nothing told the player.
+    ok(src.indexOf("if (hzSoul && Math.random() < SOUL_ZONE_CHANCE)") > 0,
+       "the offline hard branch rolls souls at the live per-kill rate");
+    ok(src.indexOf("const hzSoul = hz ? soulForZone(hz.id) : null;") > 0,
+       "\\u2026for the soul that zone actually drops");
+    let c = core.normalizeChar(core.createCharacter("S", "warrior", "human"));
+    c.level = 60; c.unlockedSkills = core.SKILLS.warrior.map((x) => x.name); c = core.normalizeChar(c);
+    for (const sl of core.GEAR_SLOTS.map((g) => g.id)) if (sl !== "relic")
+      c.equipment[sl] = core.generateItem(71, core.rarityById("legendary"), sl, "warrior");
+    c = core.armGambits(c); c.hp = core.maxHpFor(c); c.offlineHardId = HARD_ZONES[0].id;
+    const r = rngm.withRng(rngm.makeRng(77), () => simulateOffline(c, 12 * 60 * 60 * 1000));
+    ok(r && r.kills > 500, "a long parked stint racks up kills (" + (r ? r.kills : 0) + ")");
+    ok(r.soulsFound > 0, "\\u2026and finds souls (" + r.soulsFound + "), which it previously never did");
+    ok(Object.values(r.char.souls || {}).reduce((a, b) => a + b, 0) === r.soulsFound,
+       "\\u2026and they actually land on the character");
+  }
+
+  // --- one definition, two files ----------------------------------------------------------------------------
+  sec("The Abyss constants are not written twice");
+  {
+    // The recurring bug in this project is a constant living in two places and drifting. The stat
+    // scale and the ladder length exist in the core (where generateItem needs them) and are read by
+    // the client rather than restated, so this pins that they agree.
+    const coreSrc = require("fs").readFileSync("${path.join(__dirname, 'combat.mjs').replace(/\\/g, '/')}", "utf8");
+    const coreMax = /const ABYSS_MAX_PLUS = (\\d+);/.exec(coreSrc);
+    const coreStat = /const ABYSS_STAT_PER_PLUS = ([\\d.]+);/.exec(coreSrc);
+    ok(coreMax && Number(coreMax[1]) === ABYSS.maxPlus,
+       "ABYSS_MAX_PLUS in the core matches ABYSS.maxPlus in the client (" + ABYSS.maxPlus + ")");
+    ok(coreStat && Number(coreStat[1]) === ABYSS.statPerPlus,
+       "ABYSS_STAT_PER_PLUS matches ABYSS.statPerPlus (" + ABYSS.statPerPlus + ")");
+    ok(Math.abs(core.abyssMult(6) - (1 + ABYSS.statPerPlus * 6)) < 1e-9,
+       "\\u2026and the core's multiplier really is built from that number");
+  }
+
   // --- reachability --------------------------------------------------------------------------------------
   sec("A player can find it");
   {

@@ -2024,7 +2024,15 @@ const bankIsFull = (c) => bankFree(c) <= 0;
 // Vendor price, the same 15% of value the rest of the game pays.
 const overflowSellPrice = (it) => Math.max(1, Math.floor(((it && it.value) || 0) * 0.6 * 0.25));
 // Legendaries and artifacts are too valuable to vendor behind the player's back.
-const overflowGoesToMail = (it) => !!it && (it.rarity === "legendary" || it.rarity === "artifact" || it.artifact);
+// What is too valuable to be auto-sold when the bank is full. Rarity was the whole rule, which was
+// fine until the Abyss: an Abyss +10 EPIC is worth about 700,000 gold on the auction house and
+// overflowSellPrice would have paid 211 for it, because that price is derived from the item's
+// GENERATION value and knows nothing about where it came from. A 3,335x loss, silently, to a
+// player who simply had a full bank.
+//
+// Anything carrying an Abyss rank is held instead. That includes rank 0: a base Abyss piece still
+// floors at 100,000 gold.
+const overflowGoesToMail = (it) => !!it && (it.rarity === "legendary" || it.rarity === "artifact" || it.artifact || it.abyss != null);
 
 // The ONE way items enter the bank. Returns the new inventory, the gold from anything auto-sold,
 // the overflow mailbox, and a summary the caller can log or notify from.
@@ -2632,7 +2640,8 @@ const simulateOffline = (char, elapsedMs) => {
   // live one does. Copy the map first — `c` is a shallow clone of the caller's character.
   const autoPot = !!(c.upgrades && c.upgrades.autoPotion);
   let potionsDrunk = 0, lastPotionAt = -POTION_CD / 1000;   // first sip allowed immediately
-  let abyssKilled = 0, hardKilled = 0; const abyssDrops = [], hardDrops = [];
+  let abyssKilled = 0, hardKilled = 0; const abyssDrops = [], hardDrops = [], hardSouls = {};
+  const hzSoul = hz ? soulForZone(hz.id) : null;
   c.consumables = { ...(c.consumables || {}) };
 
   while (timeUsed < secs && guard++ < 500000) {
@@ -2693,6 +2702,10 @@ const simulateOffline = (char, elapsedMs) => {
         const rar = hz.dropIlvl >= 70 ? rollRarityForDungeon("stratholme") : rollRarityForZone(60);
         hardDrops.push(generateItem(hz.dropIlvl, rar, pickLootSlot(), c.cls));
       }
+      // SOULS, at the live per-kill rate. Leaving these out made parking strictly worse than
+      // playing in a way nothing told the player: twelve hours of hard-zone kills would have
+      // produced thousands of corpses and not one crafting reagent.
+      if (hzSoul && Math.random() < SOUL_ZONE_CHANCE) hardSouls[hzSoul.id] = (hardSouls[hzSoul.id] || 0) + 1;
     } else if (aPlus == null) {
       if (c.level >= MAX_LEVEL) { xpEarned = Math.floor(xpEarned * 0.05); gold = Math.floor(gold * 0.05); }
       for (const it of rollLoot({ level: enemyLevel, isBoss, dungeonId: null, guaranteed: false, clsId: c.cls, dropMult: rewardMult * (1 + _tb.drop) })) {
@@ -2739,6 +2752,7 @@ const simulateOffline = (char, elapsedMs) => {
     if (k >= hz.killGoal && !(c.hardZoneDone || {})[hz.id])
       c.hardZoneDone = { ...(c.hardZoneDone || {}), [hz.id]: true };
   }
+  for (const id in hardSouls) c.souls = { ...(c.souls || {}), [id]: ((c.souls || {})[id] || 0) + hardSouls[id] };
   if (hardDrops.length) {
     const dep = depositItems(c, hardDrops);
     c.inventory = dep.inventory; c.overflow = dep.overflow; c.gold = (c.gold || 0) + dep.gold;
@@ -2756,7 +2770,9 @@ const simulateOffline = (char, elapsedMs) => {
   c.lastActive = Date.now();
   return { char: c, kills, xpGained, goldGained, leveledTo: c.level, died, potionsDrunk,
            abyssPlus: aPlus, hardZoneId: hz ? hz.id : null,
-           gearKept: abyssDrops.length + hardDrops.length, secondsSimulated: Math.floor(timeUsed) };
+           gearKept: abyssDrops.length + hardDrops.length,
+           soulsFound: Object.values(hardSouls).reduce((a, b) => a + b, 0),
+           secondsSimulated: Math.floor(timeUsed) };
 };
 
 // Predict how long (ms) until the character would die in offline combat, or null if they
@@ -3905,6 +3921,9 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       // auto-sell downgrades upgrade: vendor anything not better than equipped
       if (c.autoSellDowngrades) {
         const eqp = equip[it.slotId];
+        // Never auto-sell Abyss gear. A +0 piece that scores below a +10 one is still a 125,000
+        // gold item, and vendoring it for a few hundred is not what "sell my downgrades" means.
+        if (it.abyss != null) { toBag.push(it); if (!firstShown) firstShown = it; return; }
         if (eqp && itemScore(it, c.cls) <= itemScore(eqp, c.cls)) {
           const price = Math.max(1, Math.floor(it.value * 0.6 * 0.25));
           gold += price;
@@ -4579,7 +4598,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
 
   // ---------- gathering idle tick (gives materials, no gold) ----------
   const lowestDowngradeGreenPlus = (c) => {
-    const eligible = c.inventory.filter((it) => it.slotId !== "relic" && !it.relicId && !it.locked && RARITIES.findIndex((r) => r.id === it.rarity) >= 2 && isDowngrade(c, it));
+    const eligible = c.inventory.filter((it) => it.slotId !== "relic" && !it.relicId && !it.locked && it.abyss == null && RARITIES.findIndex((r) => r.id === it.rarity) >= 2 && isDowngrade(c, it));
     if (!eligible.length) return null;
     return eligible.reduce((lo, it) => (it.value < lo.value ? it : lo), eligible[0]);
   };

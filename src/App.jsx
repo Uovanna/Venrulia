@@ -518,6 +518,49 @@ const HARD_DUNGEONS = [
 ];
 const HARD_RAID = { id: "hr_moltencore", base: "moltencore", name: "The Molten Heart", icon: "🌋", boss: "Ignaroth the Flamelord", dropIlvl: 71, enemyLvl: 72, waves: 8 };
 const HARD_BOSS_REQ = 10; // boss kills to unlock the next hard dungeon
+
+// ---------- THE ABYSS (endless solo endgame) ----------
+// One endless zone, entered at whatever + rank you have unlocked. There is no chain of instances
+// here: the ladder IS the content, and a rank is "completed" by a kill goal exactly as a Hard zone
+// is, which is what unlocks the next +.
+//
+// It opens only after Hard Mode is finished — the Molten Heart cleared — because it is tuned for
+// the gear that fight drops and nothing below it stands a chance.
+//
+// SCALING. Each + multiplies enemy health and offence and adds to their effective stat level, so
+// power grows along the same curve levelling does rather than as a flat number bolted on. The
+// multipliers are MEASURED against the gating requirements, not chosen — see abyss-tuning.cjs.
+const ABYSS = {
+  maxPlus: 10,
+  reqIlvl: 71,            // Hard raid gear or better
+  dropIlvl: 71,
+  killsPerDrop: 150,      // one piece every 150 kills, on average
+  legendaryChance: 0.05,  // the other 95% are epic
+  enemyLvl: 74,
+  killGoal: 2000,         // kills to complete a rank and unlock the next +
+  // Per + rank. Health and damage compound; the level bonus is additive because that is how the
+  // tier table already expresses "these things are simply further up the curve".
+  hpPerPlus: 1.18,
+  offPerPlus: 1.10,
+  lvlPerPlus: 1,
+  // What a + rank is worth to the player, beyond the fight being harder.
+  goldPerPlus: 0.35,      // +35% gold a kill, per rank
+  xpPerPlus: 0.25,
+  // SECONDARY STAT RANGE. The headline of the whole system: a line that caps at 24 on Hard rolls
+  // up to 35 at Abyss +5. 24 x (1 + 0.09 x 5) = 34.8. At +10 a line rolls to 1.9x its Hard value.
+  statPerPlus: 0.09,
+};
+// The multiplier a piece of gear carries for the rank it dropped in. Stored ON the item, so a
+// reroll at the Forge years later still rolls into the range the item was born with.
+const abyssStatMult = (plus) => 1 + ABYSS.statPerPlus * Math.max(0, Math.min(ABYSS.maxPlus, plus || 0));
+const abyssRec = (c) => (c && c.abyss) || { plus: 0, unlocked: 0, kills: {} };
+const abyssPlus = (c) => Math.max(0, Math.min(ABYSS.maxPlus, abyssRec(c).plus || 0));
+const abyssUnlocked = (c) => Math.max(0, Math.min(ABYSS.maxPlus, abyssRec(c).unlocked || 0));
+const abyssKills = (c, plus) => ((abyssRec(c).kills || {})[plus] || 0);
+const abyssRankDone = (c, plus) => abyssKills(c, plus) >= ABYSS.killGoal;
+// Hard Mode is finished when its raid boss has fallen. That is the gate.
+const abyssOpen = (c) => (((c && c.hardBossKills) || {})["Ignaroth the Flamelord"] || 0) > 0;
+
 const hardZoneById = (id) => HARD_ZONES.find((z) => z.id === id);
 const hardDungeonById = (id) => HARD_DUNGEONS.find((d) => d.id === id);
 const hardZoneUnlocked = (c, avgIlvl, hz) => avgIlvl >= hz.reqIlvl && (!hz.prev || !!c.hardZoneDone?.[hz.prev]);
@@ -2109,9 +2152,30 @@ const enemyArmorFor = (level, factor) =>
 const DIFFICULTY_TIERS = {
   normal: { name: "Normal", off: 1,  hp: 1, lvlBonus: 0 },
   hard:   { name: "Hard",   off: 4,  hp: 1.5, lvlBonus: 12 },
-  // hell: { name: "Hell",   off: 16, hp: 9, lvlBonus: 30 },  ← next tier drops in here
+  // THE ABYSS. Base rank (+0) is tuned so a player who has just cleared the Hard raid — ilvl 71
+  // gear, no tempering, whatever secondaries happened to roll — can farm it, and no further. Every
+  // + rank multiplies it from here; see ABYSS below.
+  abyss:  { name: "Abyss",  off: 3.5, hp: 1.35, lvlBonus: 11 },
 };
 const diffTier = (id) => DIFFICULTY_TIERS[id] || DIFFICULTY_TIERS.normal;
+
+// Every + rank is registered as a REAL difficulty tier, keyed "abyss0".."abyss10". That matters
+// more than it looks: enemyStatBlock and makeEnemy both resolve a tier by ID, so anything that
+// derived a tier object on the side would have its offence and level bonus silently ignored by one
+// of them. Measured the hard way — the first version scaled only health offline, which made every
+// rank identical to fight and the tuning sweep pure noise.
+const abyssTierId = (plus) => `abyss${Math.max(0, Math.min(ABYSS.maxPlus, plus || 0))}`;
+for (let p = 0; p <= ABYSS.maxPlus; p++) {
+  const b = DIFFICULTY_TIERS.abyss;
+  DIFFICULTY_TIERS[`abyss${p}`] = {
+    name: p ? `Abyss +${p}` : "Abyss",
+    off: b.off * Math.pow(ABYSS.offPerPlus, p),
+    hp: b.hp * Math.pow(ABYSS.hpPerPlus, p),
+    lvlBonus: b.lvlBonus + ABYSS.lvlPerPlus * p,
+  };
+}
+const abyssTierFor = (plus) => DIFFICULTY_TIERS[abyssTierId(plus)];
+
 
 const enemyStatBlock = (level, cls, { rank = "normal", tier = "normal" } = {}) => {
   const c = CLASSES.find((x) => x.id === cls) || CLASSES[0];
@@ -2439,15 +2503,18 @@ const LocalNotify = {
 // casts. Offline has no per-kill creature, so it averages the zone's roster — that is what "a
 // typical fight here" means. Before this, offline fought a creature that existed nowhere in the
 // game: no archetype health, no armor, and a damage curve 27% below the live one.
-const zoneEnemyProfile = (zone, level) => {
+// `tier` and `hpMult` let the offline simulator model content harder than a normal zone. Without
+// them the Abyss could not be auto-farmed at all — which would make its entire gating design
+// meaningless, since "can this build park here" is the question the whole ladder is built around.
+const zoneEnemyProfile = (zone, level, tier = "normal", hpMult = 1) => {
   const names = (zone && zone.enemies && zone.enemies.length) ? zone.enemies : [null];
   const atRank = (rank) => {
     let hp = 0, mit = 0, dps = 0;
     for (const nm of names) {
       const cls = nm ? dispositionFor(nm) : CLASSES[0].id;
-      const st = enemyStatBlock(level, cls, { rank });
+      const st = enemyStatBlock(level, cls, { rank, tier });
       const e = { ...st, level, cls, isBoss: rank === "boss" };
-      hp += (ENEMY_ARCHETYPE[cls] || NEUTRAL_ARCHETYPE).hp;
+      hp += (ENEMY_ARCHETYPE[cls] || NEUTRAL_ARCHETYPE).hp * hpMult;
       mit += enemyMitigation(e, level);
       dps += enemyDpsOf(e);
     }
@@ -2462,7 +2529,11 @@ const zoneEnemyProfile = (zone, level) => {
 // Simulate up to `elapsedMs` (capped at 12h) of auto-combat in the character's chosen offline zone.
 // Returns null if nothing to do. Mirrors the live zone reward formulas. Loot is auto-sold for gold.
 const simulateOffline = (char, elapsedMs) => {
-  const zone = ZONES.find((z) => z.id === char.offlineZoneId);
+  // Parked in the Abyss? Then that is what is being fought, at the rank the player left it on.
+  // `offlineAbyss` is a + rank; null means the ordinary zone grind.
+  const aPlus = (char.offlineAbyss == null) ? null : Math.max(0, Math.min(ABYSS.maxPlus, char.offlineAbyss));
+  const zone = aPlus == null ? ZONES.find((z) => z.id === char.offlineZoneId)
+                             : ZONES.find((z) => z.id === "plaguelands") || ZONES[ZONES.length - 1];
   if (!zone || char.level < zone.minLevel) return null;
   const secs = Math.min(elapsedMs, OFFLINE_CAP_MS) / 1000;
   if (secs < 30) return null;
@@ -2471,7 +2542,7 @@ const simulateOffline = (char, elapsedMs) => {
   const eff = effectiveStats(c);
   const sp = secondaryPcts(eff);
   const maxHp0 = maxHpFor(c);
-  const enemyLevel = clamp(c.level, zone.minLevel, zone.maxLevel);
+  const enemyLevel = aPlus == null ? clamp(c.level, zone.minLevel, zone.maxLevel) : ABYSS.enemyLvl;
   const mit = mitigation(eff.armor, enemyLevel);
   const dps = offlinePlayerDps(c);
   const leechPct = sp.leech / 100;
@@ -2479,7 +2550,11 @@ const simulateOffline = (char, elapsedMs) => {
   // Enemy output now comes from the same stat block and cadence the live tick uses, not the legacy
   // per-level curve — the two were a flat 27% apart at every level, which made offline a measurably
   // easier game than the one being played. Casts count too; offline used to model autos only.
-  const prof = zoneEnemyProfile(zone, enemyLevel);
+  // Abyss foes are Champion-rank at the tier's health multiplier, matching what makeAbyssEnemy
+  // spawns live — the two must agree or a player's parked results would not match their played ones.
+  const aTier = aPlus == null ? null : abyssTierFor(aPlus);
+  const prof = aPlus == null ? zoneEnemyProfile(zone, enemyLevel)
+                             : zoneEnemyProfile(zone, enemyLevel, abyssTierId(aPlus), 8);
   const eDps = (boss) => Math.max(1, prof.dps(boss) * (1 - mit) * (1 - sp.vers / 200) * lowLvlMult);
   const normalHp = (enemyLevel * 26 + 50) * prof.hpMult + 10;
   const bossHp = (enemyLevel * 26 + 50) * 2.2 * prof.hpMult + 10;

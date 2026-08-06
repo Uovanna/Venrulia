@@ -1677,7 +1677,20 @@ const pickLootSlot = () => {
   return LOOT_SLOTS[i].id;
 };
 const emptyEquipment = () => GEAR_SLOTS.reduce((acc, s) => { acc[s.id] = null; return acc; }, {});
-function generateItem(ilvl, rarity, slotId, clsId) {
+// ABYSS SECONDARY SCALE. A line that caps at 24 on Hard rolls to 35 at Abyss +5 — this is that
+// multiplier, and it is the headline of the whole Abyss system. It lives in the core beside
+// secondaryNominal because the Forge's reroll has to use the SAME number years after the item
+// dropped: a copy of it anywhere else is a copy that will drift, which is how the auction house
+// broke and how the reroll shop broke before it.
+const ABYSS_STAT_PER_PLUS = 0.09;
+const ABYSS_MAX_PLUS = 10;
+const abyssMult = (plus) => 1 + ABYSS_STAT_PER_PLUS * Math.max(0, Math.min(ABYSS_MAX_PLUS, plus || 0));
+// What one secondary line is worth on a piece, including the Abyss rank it dropped in. Every
+// roller and re-roller goes through this rather than secondaryNominal directly.
+const secondaryFor = (ilvl, rarityIdx, stat, abyss) =>
+  Math.max(1, Math.round(secondaryNominal(ilvl, rarityIdx, stat) * abyssMult(abyss)));
+
+function generateItem(ilvl, rarity, slotId, clsId, abyss) {
   ilvl = Math.max(1, Math.floor(ilvl));
   // Rarity floors: Epic requires ilvl 60+, Legendary requires ilvl 64+ (applies to drops, crafting, and the Auction House)
   if (rarity.id === "legendary" && ilvl < 64) rarity = rarityById(ilvl >= 60 ? "epic" : "rare");
@@ -1724,7 +1737,7 @@ function generateItem(ilvl, rarity, slotId, clsId) {
     if (!k) break;
     chosen.push(k);
   }
-  chosen.forEach((k) => { stats[k] += secondaryNominal(ilvl, rarityIdx, k); });
+  chosen.forEach((k) => { stats[k] += secondaryFor(ilvl, rarityIdx, k, abyss); });
 
   // inherent Armor on all non-weapon gear; weapons instead carry a damage range
   if (!isWeapon) stats.armor += baseArmorFor(ilvl, rarityIdx, slotId);
@@ -1745,7 +1758,15 @@ function generateItem(ilvl, rarity, slotId, clsId) {
   const name = nameWithSuffix(`${prefix} ${base}`, mains);
   const value = Math.max(1, Math.round(ilvl * rarity.valueMult * (0.8 + rng() * 0.4)));
 
-  return { id: uid(), name, slotId, icon: slot.icon, rarity: rarity.id, ilvl, stats, value, enchant: null, wdmg, mains, sockets: emptySockets(socketCountFor(rarity.id, slotId)) };
+  const it = { id: uid(), name, slotId, icon: slot.icon, rarity: rarity.id, ilvl, stats, value, enchant: null, wdmg, mains, sockets: emptySockets(socketCountFor(rarity.id, slotId)) };
+  // The rank is stamped on the ITEM, not inferred from where it is. That is what lets a reroll
+  // years later still roll into the range the piece was born with, and what the tooltip reads.
+  //
+  // `!= null`, NOT a truthiness check. Abyss +0 is a real rank with a real 100,000 gold floor, and
+  // `if (abyss)` silently skipped it — every base-Abyss drop came out untagged, worth raid prices,
+  // with no rank on its tooltip. Rank 0 being falsy is the whole trap.
+  if (abyss != null) it.abyss = Math.max(0, Math.min(ABYSS_MAX_PLUS, abyss));
+  return it;
 }
 const createCharacter = (name, cls, race) => {
   const c = {
@@ -1755,6 +1776,8 @@ const createCharacter = (name, cls, race) => {
     honor: 0, honorXp: 0, attrPoints: 0, allocated: { str: 0, agi: 0, int: 0, sta: 0 },
     currentZoneId: "elwynn",
     offlineZoneId: null,
+    offlineAbyss: null,
+    offlineHardId: null,
     lastActive: Date.now(),
     professions: emptyProfessions(),
     gatherTier: {},
@@ -1806,6 +1829,7 @@ const createCharacter = (name, cls, race) => {
     pass: { base: 0, paid: false, claimedFree: {}, claimedPaid: {} },
     arena: { day: null, runs: 0, streak: 0 },
     loadouts: { active: 0, stash: null },
+    abyss: { plus: 0, unlocked: 0, kills: {} },
     buffs: {},
     hp: 0,
     createdAt: Date.now(),
@@ -2038,6 +2062,18 @@ const normalizeChar = (c) => ({
         stash: (c.loadouts.stash && typeof c.loadouts.stash === "object" && !Array.isArray(c.loadouts.stash))
           ? c.loadouts.stash : null }
     : { active: 0, stash: null },
+  // The Abyss: which + rank is selected, the highest unlocked, and kills banked per rank. Kills are
+  // held PER RANK so dropping back to farm an easier one cannot advance the rank above it.
+  abyss: (c.abyss && typeof c.abyss === "object" && !Array.isArray(c.abyss))
+    ? { plus: Math.max(0, Math.min(10, Number(c.abyss.plus) || 0)),
+        unlocked: Math.max(0, Math.min(10, Number(c.abyss.unlocked) || 0)),
+        kills: (c.abyss.kills && typeof c.abyss.kills === "object" && !Array.isArray(c.abyss.kills)) ? c.abyss.kills : {} }
+    : { plus: 0, unlocked: 0, kills: {} },
+  // Where the character is PARKED, if it is the Abyss. null means the ordinary zone grind. Without
+  // this on normalizeChar a player would park, close the tab, and come back to nothing having
+  // happened — the field would be dropped on load and applyOffline would find nowhere to fight.
+  offlineAbyss: (c.offlineAbyss == null) ? null : Math.max(0, Math.min(10, Number(c.offlineAbyss) || 0)),
+  offlineHardId: c.offlineHardId || null,
   consumables: (() => { const src = c.consumables || {}; const out = {}; const t = Math.min(6, Math.max(0, Math.floor((c.level || 1) / 10))); for (const k in src) { const v = src[k]; if (!v) continue; if (k.includes("@")) out[k] = (out[k] || 0) + v; else out[k + "@" + t] = (out[k + "@" + t] || 0) + v; } return out; })(),
   buffs: c.buffs || {},
   hp: typeof c.hp === "number" ? c.hp : maxHpFor(c),
@@ -2483,6 +2519,10 @@ export {
   baseArmorFor,
   gearStatBase,
   secondaryNominal,
+  secondaryFor,
+  abyssMult,
+  ABYSS_STAT_PER_PLUS,
+  ABYSS_MAX_PLUS,
   endgameClimb,
   ENDGAME_ILVL_FLOOR,
   ENDGAME_ILVL_GROWTH,

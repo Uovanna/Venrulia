@@ -162,6 +162,7 @@ import {
   secondaryNominal,
   secondaryFor,
   abyssMult,
+  ABYSS_MAX_PLUS,
   TRINITY_FILL,
   botTier,
   buildBotChar,
@@ -2358,6 +2359,17 @@ const AH_ECON = {
 const AH_PRICE = {
   perPoint: 7.4,   // gold at one weighted stat point; calibrated below
   exponent: 1.8,   // progressive — doubling an item's power raises its price ~3.5x
+  // ABYSS PREMIUM. A flat floor added on top of whatever the piece's stats are worth, so an Abyss
+  // item is never priced like the ilvl 71 raid drop it superficially resembles. 100,000 at rank 0
+  // and 50,000 more for every + above it: an Abyss +7 legendary floors at 450,000 before its stats
+  // are counted at all.
+  //
+  // Added AFTER the socket and enchant multipliers, deliberately. Folding it in first would have
+  // those multipliers act on the floor as well — three sockets would add 24,000 gold to a piece
+  // for holes that are still empty — and the premium is meant to be a property of where the item
+  // came from, not something sockets can amplify.
+  abyssBase: 100000,
+  abyssPerPlus: 50000,
 };
 // Calibration: perPoint is set so a best-in-slot epic (ilvl 70, ~94 weighted points) lands at about
 // two hours of measured endgame income (~13,300 g/h) => ~25,000g. Re-measure with
@@ -2395,8 +2407,14 @@ function ahBaseValue(item) {
   const sockets = Array.isArray(item.sockets) ? item.sockets.length : 0;
   if (sockets) v = Math.round(v * (1 + 0.08 * sockets));   // socket premium: power the buyer can add
   if (item.enchant) v = Math.round(v * 1.10);              // enchant premium, on top of its stats
+  if (item.abyss != null) v += ahAbyssPremium(item.abyss); // where it came from, on top of what it is
   return Math.max(1, v);
 }
+// The premium a piece carries for the depth it was pulled from. Its own function because the
+// server has to compute the same number in plpgsql, and a formula written out twice in two
+// languages is the exact shape of every pricing bug this project has already had.
+const ahAbyssPremium = (plus) =>
+  AH_PRICE.abyssBase + AH_PRICE.abyssPerPlus * Math.max(0, Math.min(ABYSS_MAX_PLUS, plus || 0));
 const ahBand = (base) => [Math.max(1, Math.ceil(base * (1 - AH_ECON.bandPct))), Math.floor(base * (1 + AH_ECON.bandPct))];
 const ahPostFee = (base) => Math.max(1, Math.floor(base * AH_ECON.postFeePct));
 const ahNetAfterTax = (price) => Math.max(1, Math.floor(price * (1 - AH_ECON.saleTaxPct)));

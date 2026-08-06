@@ -1761,7 +1761,11 @@ function generateItem(ilvl, rarity, slotId, clsId, abyss) {
   const it = { id: uid(), name, slotId, icon: slot.icon, rarity: rarity.id, ilvl, stats, value, enchant: null, wdmg, mains, sockets: emptySockets(socketCountFor(rarity.id, slotId)) };
   // The rank is stamped on the ITEM, not inferred from where it is. That is what lets a reroll
   // years later still roll into the range the piece was born with, and what the tooltip reads.
-  if (abyss) it.abyss = Math.max(0, Math.min(ABYSS_MAX_PLUS, abyss));
+  //
+  // `!= null`, NOT a truthiness check. Abyss +0 is a real rank with a real 100,000 gold floor, and
+  // `if (abyss)` silently skipped it — every base-Abyss drop came out untagged, worth raid prices,
+  // with no rank on its tooltip. Rank 0 being falsy is the whole trap.
+  if (abyss != null) it.abyss = Math.max(0, Math.min(ABYSS_MAX_PLUS, abyss));
   return it;
 }
 const createCharacter = (name, cls, race) => {

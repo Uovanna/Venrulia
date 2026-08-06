@@ -186,6 +186,42 @@ js += `
     ok(num(/update ah_config set deposit_pct = ([\\d.]+)/) === AH_ECON.postFeePct,
        "SQL deposit_pct matches the client's posting fee (" + AH_ECON.postFeePct + ")");
 
+    // THE ABYSS PREMIUM, on both sides. This is the one that would have shipped the Abyss with its
+    // headline item unsellable: ah_list_gear recomputes the base value server-side and refuses
+    // anything outside the band, so a client that prices an Abyss +7 piece at 542,433 while the
+    // server thinks 92,433 gets the listing rejected and no explanation.
+    const abFile = fs.readdirSync(dir).find((f) => /ah_abyss_value/.test(f));
+    ok(!!abFile, "the Abyss pricing migration exists (" + (abFile || "MISSING") + ")");
+    const abSql = fs.readFileSync(path.join(dir, abFile), "utf8");
+    const abNum = (re) => { const m = abSql.match(re); return m ? Number(m[1]) : null; };
+    ok(abNum(/abyss_base\\s+bigint\\s+not null default (\\d+)/) === AH_PRICE.abyssBase,
+       "SQL abyss_base matches the client (" + AH_PRICE.abyssBase.toLocaleString() + ")");
+    ok(abNum(/abyss_per_plus\\s+bigint\\s+not null default (\\d+)/) === AH_PRICE.abyssPerPlus,
+       "SQL abyss_per_plus matches the client (" + AH_PRICE.abyssPerPlus.toLocaleString() + ")");
+    // ORDER matters as much as the numbers. Both must add the premium AFTER the socket and enchant
+    // multipliers; adding it first would let three empty sockets inflate the floor by 24,000 gold
+    // on one side and not the other.
+    const sqlOrder = abSql.indexOf("v := v + cfg.abyss_base") > abSql.indexOf("v := round(v * 1.10)");
+    ok(sqlOrder, "SQL adds the premium after the socket and enchant multipliers");
+    const cliBody = appSrc.slice(appSrc.indexOf("function ahBaseValue"), appSrc.indexOf("function ahBaseValue") + 900);
+    ok(cliBody.indexOf("ahAbyssPremium(item.abyss)") > cliBody.indexOf("item.enchant) v = Math.round(v * 1.10)"),
+       "\\u2026and so does the client");
+    // And the clamp, or a forged save claiming Abyss +9999 mints a price out of nothing.
+    ok(/least\\(10, coalesce\\(\\(p_data->>'abyss'\\)::int, 0\\)\\)/.test(abSql),
+       "SQL clamps the rank to the ladder, so a forged item cannot mint a price");
+    ok(appSrc.indexOf("Math.max(0, Math.min(ABYSS_MAX_PLUS, plus || 0))") > 0, "\\u2026and the client clamps identically");
+    // Rank 0 is a REAL rank worth 100,000. A truthiness check skipped it, 0 being falsy: every
+    // base-Abyss drop came out untagged, priced as a raid drop, with no rank on its tooltip.
+    const coreSrc2 = fs.readFileSync(path.join(dir, "..", "..", "game-core", "combat.mjs"), "utf8");
+    ok(coreSrc2.indexOf("if (abyss != null) it.abyss =") > 0,
+       "a drop is tagged when the rank is 0 too \\u2014 not a truthiness check");
+    const zero = core.generateItem(71, core.rarityById("epic"), "head", "warrior", 0);
+    ok(zero.abyss === 0, "\\u2026proved: an Abyss +0 drop carries abyss = 0");
+    ok(core.generateItem(71, core.rarityById("epic"), "head", "warrior").abyss === undefined,
+       "\\u2026while a drop from anywhere else carries no rank at all");
+    ok(ahBaseValue({ ...zero }) - ahBaseValue({ ...zero, abyss: undefined }) === AH_PRICE.abyssBase,
+       "\\u2026and is worth exactly " + AH_PRICE.abyssBase.toLocaleString() + " more than the same piece without it");
+
     // Every weight, read out of the INSERT rather than restated here.
     const block = sql.slice(sql.indexOf("insert into ah_stat_weight"), sql.indexOf("on conflict (stat)"));
     const sqlW = {};

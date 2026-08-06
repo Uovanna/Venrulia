@@ -2538,12 +2538,38 @@ const zoneEnemyProfile = (zone, level, tier = "normal", hpMult = 1) => {
 
 // Simulate up to `elapsedMs` (capped at 12h) of auto-combat in the character's chosen offline zone.
 // Returns null if nothing to do. Mirrors the live zone reward formulas. Loot is auto-sold for gold.
+// WHERE A PARKED CHARACTER IS FIGHTING. Exactly one of three places, resolved once so nothing
+// downstream has to re-derive it:
+//
+//   a normal zone   the ordinary levelling grind
+//   a HARD zone     endless kill-goal farm; hard dungeons and the raid are NOT parkable, because
+//                   they are lockout content and a lockout cannot be spent while nobody is there
+//   the Abyss at +0 and only +0. Deeper ranks must be played, not left running.
+//
+// OFFLINE_ABYSS_MAX is the whole of that last rule. It is a constant rather than a literal 0
+// because "you can park at the bottom and nowhere else" is a design decision, and a bare 0 buried
+// in a clamp reads like an accident.
+const OFFLINE_ABYSS_MAX = 0;
+const offlineSpot = (char) => {
+  if (!char) return null;
+  if (char.offlineAbyss != null)
+    return { kind: "abyss", plus: Math.max(0, Math.min(OFFLINE_ABYSS_MAX, char.offlineAbyss)) };
+  const hz = hardZoneById(char.offlineHardId);
+  if (hz) return { kind: "hard", hz };
+  const z = ZONES.find((x) => x.id === char.offlineZoneId);
+  return z ? { kind: "zone", zone: z } : null;
+};
+
 const simulateOffline = (char, elapsedMs) => {
-  // Parked in the Abyss? Then that is what is being fought, at the rank the player left it on.
-  // `offlineAbyss` is a + rank; null means the ordinary zone grind.
-  const aPlus = (char.offlineAbyss == null) ? null : Math.max(0, Math.min(ABYSS.maxPlus, char.offlineAbyss));
-  const zone = aPlus == null ? ZONES.find((z) => z.id === char.offlineZoneId)
-                             : ZONES.find((z) => z.id === "plaguelands") || ZONES[ZONES.length - 1];
+  const spot = offlineSpot(char);
+  if (!spot) return null;
+  const aPlus = spot.kind === "abyss" ? spot.plus : null;
+  const hz = spot.kind === "hard" ? spot.hz : null;
+  // Hard zones and the Abyss both borrow the flavour of a real zone for enemy names and
+  // dispositions; only their tier, level and health multiplier differ.
+  const zone = spot.kind === "zone" ? spot.zone
+             : hz ? (ZONES.find((z) => z.id === hz.base) || ZONES[ZONES.length - 1])
+                  : (ZONES.find((z) => z.id === "plaguelands") || ZONES[ZONES.length - 1]);
   if (!zone || char.level < zone.minLevel) return null;
   const secs = Math.min(elapsedMs, OFFLINE_CAP_MS) / 1000;
   if (secs < 30) return null;
@@ -2552,7 +2578,7 @@ const simulateOffline = (char, elapsedMs) => {
   const eff = effectiveStats(c);
   const sp = secondaryPcts(eff);
   const maxHp0 = maxHpFor(c);
-  const enemyLevel = aPlus == null ? clamp(c.level, zone.minLevel, zone.maxLevel) : ABYSS.enemyLvl;
+  const enemyLevel = hz ? hz.enemyLvl : aPlus != null ? ABYSS.enemyLvl : clamp(c.level, zone.minLevel, zone.maxLevel);
   const mit = mitigation(eff.armor, enemyLevel);
   const dps = offlinePlayerDps(c);
   const leechPct = sp.leech / 100;
@@ -2562,9 +2588,12 @@ const simulateOffline = (char, elapsedMs) => {
   // easier game than the one being played. Casts count too; offline used to model autos only.
   // Abyss foes are Champion-rank at the tier's health multiplier, matching what makeAbyssEnemy
   // spawns live — the two must agree or a player's parked results would not match their played ones.
-  const aTier = aPlus == null ? null : abyssTierFor(aPlus);
-  const prof = aPlus == null ? zoneEnemyProfile(zone, enemyLevel)
-                             : zoneEnemyProfile(zone, enemyLevel, abyssTierId(aPlus), 8);
+  // Hard-zone and Abyss foes are Champion-rank at x8 health, matching what makeHardEnemy and
+  // makeAbyssEnemy spawn live. The two MUST agree: a parked result that does not match a played
+  // one is the offline simulator lying about the game.
+  const prof = hz ? zoneEnemyProfile(zone, enemyLevel, "hard", 8)
+             : aPlus != null ? zoneEnemyProfile(zone, enemyLevel, abyssTierId(aPlus), 8)
+             : zoneEnemyProfile(zone, enemyLevel);
   const eDps = (boss) => Math.max(1, prof.dps(boss) * (1 - mit) * (1 - sp.vers / 200) * lowLvlMult);
   const normalHp = (enemyLevel * 26 + 50) * prof.hpMult + 10;
   const bossHp = (enemyLevel * 26 + 50) * 2.2 * prof.hpMult + 10;
@@ -2575,7 +2604,7 @@ const simulateOffline = (char, elapsedMs) => {
   // live one does. Copy the map first — `c` is a shallow clone of the caller's character.
   const autoPot = !!(c.upgrades && c.upgrades.autoPotion);
   let potionsDrunk = 0, lastPotionAt = -POTION_CD / 1000;   // first sip allowed immediately
-  let abyssKilled = 0; const abyssDrops = [];
+  let abyssKilled = 0, hardKilled = 0; const abyssDrops = [], hardDrops = [];
   c.consumables = { ...(c.consumables || {}) };
 
   while (timeUsed < secs && guard++ < 500000) {
@@ -2624,7 +2653,19 @@ const simulateOffline = (char, elapsedMs) => {
     // earned the pre-cap rate forever. That one omission made parking the most profitable activity
     // in the game by a factor of 33, and it is why item prices read as worthless next to a purse.
     // Loot is deliberately NOT cut here, matching resolveDeath, which cuts XP and gold only.
-    if (aPlus == null) {
+    if (hz) {
+      // HARD ZONE, mirroring the live rule: the max-level cut does not apply (Hard Mode IS the
+      // endgame), gold is doubled at 60, and gear drops at the zone's own 10% x 1.6-for-elites
+      // rate rather than the normal-zone table. Kept, not auto-sold — an ilvl 65-70 piece is the
+      // entire reason to be here.
+      gold = Math.floor(gold * 2);
+      hardKilled++;
+      const rate = 0.10 * 1.6 * (1 + _tb.drop);   // every hard-zone foe is a Champion or a Lord
+      if (Math.random() < rate) {
+        const rar = hz.dropIlvl >= 70 ? rollRarityForDungeon("stratholme") : rollRarityForZone(60);
+        hardDrops.push(generateItem(hz.dropIlvl, rar, pickLootSlot(), c.cls));
+      }
+    } else if (aPlus == null) {
       if (c.level >= MAX_LEVEL) { xpEarned = Math.floor(xpEarned * 0.05); gold = Math.floor(gold * 0.05); }
       for (const it of rollLoot({ level: enemyLevel, isBoss, dungeonId: null, guaranteed: false, clsId: c.cls, dropMult: rewardMult * (1 + _tb.drop) })) {
         gold += Math.max(1, Math.floor(it.value * 0.6 * 0.25)); // offline loot auto-sold
@@ -2662,6 +2703,18 @@ const simulateOffline = (char, elapsedMs) => {
     if (kills2[aPlus] >= ABYSS.killGoal && aPlus >= unlocked && unlocked < ABYSS.maxPlus) unlocked = aPlus + 1;
     c.abyss = { ...rec, kills: kills2, unlocked };
   }
+  if (hz && hardKilled) {
+    const k = ((c.hardKills || {})[hz.id] || 0) + hardKilled;
+    c.hardKills = { ...(c.hardKills || {}), [hz.id]: k };
+    // The kill goal completes offline too. A player who parked in a hard zone overnight and came
+    // back to an un-ticked zone would have farmed it for nothing.
+    if (k >= hz.killGoal && !(c.hardZoneDone || {})[hz.id])
+      c.hardZoneDone = { ...(c.hardZoneDone || {}), [hz.id]: true };
+  }
+  if (hardDrops.length) {
+    const dep = depositItems(c, hardDrops);
+    c.inventory = dep.inventory; c.overflow = dep.overflow; c.gold = (c.gold || 0) + dep.gold;
+  }
   if (abyssDrops.length) {
     // Through depositItems, so the bank cap, the overflow sale and the mail all behave exactly as
     // they do live rather than the drops appearing from nowhere.
@@ -2671,16 +2724,17 @@ const simulateOffline = (char, elapsedMs) => {
   c.unlockedSkills = (SKILLS[c.cls] || []).filter((s) => s.unlockLevel <= c.level).map((s) => s.name);
   c.selectedSkills = padSelectedSkills(c, c.selectedSkills);
   c.hp = maxHpFor(c); // revive ready for play
-  if (died) { c.offlineZoneId = null; c.offlineAbyss = null; } // defeat pauses offline combat until re-enabled
+  if (died) { c.offlineZoneId = null; c.offlineHardId = null; c.offlineAbyss = null; } // defeat pauses offline combat until re-enabled
   c.lastActive = Date.now();
   return { char: c, kills, xpGained, goldGained, leveledTo: c.level, died, potionsDrunk,
-           abyssPlus: aPlus, abyssDrops: abyssDrops.length, secondsSimulated: Math.floor(timeUsed) };
+           abyssPlus: aPlus, hardZoneId: hz ? hz.id : null,
+           gearKept: abyssDrops.length + hardDrops.length, secondsSimulated: Math.floor(timeUsed) };
 };
 
 // Predict how long (ms) until the character would die in offline combat, or null if they
 // survive the full 12h cap. Death timing is deterministic, so this matches the real run.
 const predictOfflineDeath = (char) => {
-  if (!char.offlineZoneId && char.offlineAbyss == null) return null;
+  if (!offlineSpot(char)) return null;
   const res = simulateOffline(char, OFFLINE_CAP_MS);
   if (res && res.died) return Math.max(1000, res.secondsSimulated * 1000);
   return null;
@@ -3644,13 +3698,16 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     const c = charRef.current; if (!c) return;
     const t = Date.now();
     const elapsed = t - (c.lastActive || t);
-    if ((!c.offlineZoneId && c.offlineAbyss == null) || elapsed < 60000) { commitChar({ ...c, lastActive: t }); return; }
+    if (!offlineSpot(c) || elapsed < 60000) { commitChar({ ...c, lastActive: t }); return; }
     const startLevel = c.level;
     const res = simulateOffline(c, elapsed);
     if (!res || res.kills === 0) { commitChar({ ...c, lastActive: t }); return; }
     commitChar(res.char);
+    const sp = offlineSpot(c);
     setOfflineReport({ ...res, levelsGained: res.leveledTo - startLevel,
-      zoneName: c.offlineAbyss != null ? abyssLabel(c.offlineAbyss) : (ZONES.find((z) => z.id === c.offlineZoneId) || {}).name || "" });
+      zoneName: sp && sp.kind === "abyss" ? abyssLabel(sp.plus)
+              : sp && sp.kind === "hard" ? `${sp.hz.name} (Hard)`
+              : (ZONES.find((z) => z.id === c.offlineZoneId) || {}).name || "" });
     if (res.died) { showNotif("💀 Offline combat ended — you were defeated"); notifyDefeat(); }
     else if (bankIsFull(res.char)) {
       const waiting = (res.char.overflow || []).length;
@@ -3666,18 +3723,32 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     if (enabling) LocalNotify.ensurePermission(); // ask for notification permission up front
     // Parking somewhere clears the other place. A character is in ONE place; leaving both set
     // would make which one they actually farmed depend on the order of two ifs.
-    commitChar({ ...c, offlineZoneId: enabling ? zoneId : null, offlineAbyss: null, lastActive: Date.now() });
+    commitChar({ ...c, offlineZoneId: enabling ? zoneId : null, offlineHardId: null, offlineAbyss: null, lastActive: Date.now() });
     showNotif(enabling ? "🌙 Offline combat enabled" : "Offline combat disabled");
   }, [commitChar, showNotif]);
   // Park in the Abyss at a given rank. Only ranks already unlocked, so a player cannot leave a
   // character grinding a depth they have never reached.
+  // Only the BOTTOM of the Abyss can be parked in. Deeper ranks are meant to be played, and the
+  // clamp is here rather than in the caller so no future button can route around it.
   const toggleOfflineAbyss = useCallback((plus) => {
     const c = charRef.current; if (!c) return;
-    const p = Math.max(0, Math.min(abyssUnlocked(c), plus));
+    const p = Math.max(0, Math.min(OFFLINE_ABYSS_MAX, Math.min(abyssUnlocked(c), plus)));
+    if (plus > OFFLINE_ABYSS_MAX) { showNotif(`Only ${abyssLabel(OFFLINE_ABYSS_MAX)} can be farmed while away — deeper ranks must be played.`); return; }
     const enabling = c.offlineAbyss !== p;
     if (enabling) LocalNotify.ensurePermission();
-    commitChar({ ...c, offlineAbyss: enabling ? p : null, offlineZoneId: null, lastActive: Date.now() });
+    commitChar({ ...c, offlineAbyss: enabling ? p : null, offlineZoneId: null, offlineHardId: null, lastActive: Date.now() });
     showNotif(enabling ? `🌙 Parked in ${abyssLabel(p)}` : "Offline combat disabled");
+  }, [commitChar, showNotif]);
+  // Park in a hard ZONE. Hard dungeons and the raid are deliberately absent: they are lockout
+  // content, and a lockout cannot be spent by someone who is not there to spend it.
+  const toggleOfflineHard = useCallback((hzId) => {
+    const c = charRef.current; if (!c) return;
+    const hz = hardZoneById(hzId); if (!hz) return;
+    if (!hardZoneUnlocked(c, avgEquippedIlvl(c), hz)) { showNotif("🔒 Not unlocked yet"); return; }
+    const enabling = c.offlineHardId !== hzId;
+    if (enabling) LocalNotify.ensurePermission();
+    commitChar({ ...c, offlineHardId: enabling ? hzId : null, offlineZoneId: null, offlineAbyss: null, lastActive: Date.now() });
+    showNotif(enabling ? `🌙 Parked in ${hz.name} (Hard)` : "Offline combat disabled");
   }, [commitChar, showNotif]);
 
   // run offline progress on open & when returning; schedule a defeat notification when leaving
@@ -3687,7 +3758,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       markActive();
       const c = charRef.current;
       LocalNotify.cancelScheduled(); LocalNotify.cancelBankFull();
-      if (c && (c.offlineZoneId || c.offlineAbyss != null)) {
+      if (c && offlineSpot(c)) {
         const ms = predictOfflineDeath(c);
         if (ms != null) LocalNotify.scheduleDefeat(Date.now() + ms); // fires at the predicted defeat time
         // Idle-battling with nowhere to put anything: warn on the way out, so the player knows
@@ -8462,7 +8533,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                         {/* Parking. The Abyss is where a geared player leaves their character, so
                             the option belongs beside the descend button, not buried in a settings
                             screen — and only ranks already reached can be parked in. */}
-                        {open && geared && (
+                        {open && geared && (p <= OFFLINE_ABYSS_MAX ? (
                           <button onClick={() => toggleOfflineAbyss(p)} aria-label={`Park in ${abyssLabel(p)}`}
                             style={{ width: "100%", marginTop: 8, background: char.offlineAbyss === p ? "#12261c" : "#15122a",
                               border: `1px solid ${char.offlineAbyss === p ? "#2a6a44" : "#2a2550"}`, borderRadius: 8,
@@ -8470,7 +8541,11 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                               padding: "8px 0", cursor: "pointer" }}>
                             {char.offlineAbyss === p ? `🌙 Parked here — tap to stop` : "🌙 Park here while away"}
                           </button>
-                        )}
+                        ) : (
+                          <div style={{ color: "#6f6a90", fontSize: 10.5, marginTop: 8, textAlign: "center" }}>
+                            Cannot be farmed while away — only {abyssLabel(OFFLINE_ABYSS_MAX)} can be parked in
+                          </div>
+                        ))}
                         <button disabled={!canRun} onClick={() => startAbyss(p)} aria-label={`Enter ${abyssLabel(p)}`}
                           style={{ width: "100%", marginTop: 8, background: canRun ? "linear-gradient(135deg,#3a1a50,#24103a)" : "#15122a",
                             border: `1px solid ${canRun ? acc : "#2a2550"}`, borderRadius: 8, color: canRun ? "#e0b0f0" : "#6f6a90",
@@ -8508,6 +8583,17 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                             <div style={{ color: "#8a83b8", fontSize: 10, marginTop: 2 }}>{kills.toLocaleString()} / {hz.killGoal.toLocaleString()} kills</div>
                           </div>
                           <button disabled={!canRun} onClick={() => startHard(hz, "zone")} style={hardBtn(canRun)}>{!unlocked ? `🔒 ilvl ${hz.reqIlvl}${hz.prev ? " + prev zone" : ""}` : battle ? "Finish current fight first" : done ? "🔁 Farm again" : "🔥 Enter Hard Zone"}</button>
+                        {/* Hard ZONES are parkable — they are endless kill-goal farm with nothing
+                            on a lockout. Hard dungeons and the raid deliberately are not. */}
+                        {unlocked && (
+                          <button onClick={() => toggleOfflineHard(hz.id)} aria-label={`Park in ${hz.name}`}
+                            style={{ width: "100%", marginTop: 7, background: char.offlineHardId === hz.id ? "#12261c" : "#15122a",
+                              border: `1px solid ${char.offlineHardId === hz.id ? "#2a6a44" : "#3a2018"}`, borderRadius: 8,
+                              color: char.offlineHardId === hz.id ? "#7CFC9E" : "#9a7a6a", fontSize: 11.5, fontWeight: 700,
+                              padding: "8px 0", cursor: "pointer" }}>
+                            {char.offlineHardId === hz.id ? "🌙 Parked here — tap to stop" : "🌙 Park here while away"}
+                          </button>
+                        )}
                         </div>
                       );
                     })}

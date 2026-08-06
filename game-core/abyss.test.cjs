@@ -153,20 +153,25 @@ js += `
   // --- parking -----------------------------------------------------------------------------------------
   sec("A character is parked in exactly one place");
   {
-    ok(src.indexOf("commitChar({ ...c, offlineZoneId: enabling ? zoneId : null, offlineAbyss: null, lastActive: Date.now() });") > 0,
-       "parking in a zone clears the Abyss\\u2026");
-    ok(src.indexOf("commitChar({ ...c, offlineAbyss: enabling ? p : null, offlineZoneId: null, lastActive: Date.now() });") > 0,
-       "\\u2026and parking in the Abyss clears the zone");
-    ok(src.indexOf("const p = Math.max(0, Math.min(abyssUnlocked(c), plus));") > 0,
-       "you cannot park at a depth you have never reached");
-    // The gates that ask "is this character parked at all" must accept the Abyss, or parking there
-    // would be silently ignored on return.
-    ok(src.indexOf("if ((!c.offlineZoneId && c.offlineAbyss == null) || elapsed < 60000)") > 0,
-       "applyOffline runs for an Abyss-parked character");
-    ok(src.indexOf("if (!char.offlineZoneId && char.offlineAbyss == null) return null;") > 0,
-       "\\u2026and so does the death prediction");
-    ok(src.indexOf("if (died) { c.offlineZoneId = null; c.offlineAbyss = null; }") > 0,
-       "dying unparks from BOTH, so a corpse does not keep farming what killed it");
+    // THREE places, and offlineSpot resolves which exactly once. Every gate asks it rather than
+    // re-deriving the answer, so no two gates can disagree about whether a character is parked.
+    ok(src.indexOf("const offlineSpot = (char) => {") > 0, "one function decides where a parked character is");
+    for (const [call, what] of [["if (!offlineSpot(char)) return null;", "the death prediction"],
+                                ["if (!offlineSpot(c) || elapsed < 60000)", "applyOffline"],
+                                ["if (c && offlineSpot(c)) {", "the leave-the-page notifier"]])
+      ok(src.indexOf(call) > 0, what + " asks offlineSpot rather than checking fields itself");
+    // Mutually exclusive, all three ways. Leaving two set would make which one was farmed depend
+    // on the order of the ifs inside offlineSpot.
+    ok(src.indexOf("offlineZoneId: enabling ? zoneId : null, offlineHardId: null, offlineAbyss: null") > 0,
+       "parking in a zone clears the hard zone AND the Abyss");
+    ok(src.indexOf("offlineAbyss: enabling ? p : null, offlineZoneId: null, offlineHardId: null") > 0,
+       "parking in the Abyss clears both the others");
+    ok(src.indexOf("offlineHardId: enabling ? hzId : null, offlineZoneId: null, offlineAbyss: null") > 0,
+       "\\u2026and parking in a hard zone clears both of those");
+    ok(src.indexOf("const p = Math.max(0, Math.min(OFFLINE_ABYSS_MAX, Math.min(abyssUnlocked(c), plus)));") > 0,
+       "you cannot park at a depth you have never reached, nor past the offline cap");
+    ok(src.indexOf("if (died) { c.offlineZoneId = null; c.offlineHardId = null; c.offlineAbyss = null; }") > 0,
+       "dying unparks from ALL THREE, so a corpse does not keep farming what killed it");
     ok(core.normalizeChar({ ...core.createCharacter("D","warrior","human"), offlineAbyss: 4 }).offlineAbyss === 4,
        "where you parked survives a reload");
   }
@@ -185,9 +190,17 @@ js += `
     ok(src.indexOf("c.gold = (c.gold || 0) + dep.gold;") > 0,
        "\\u2026with overflow proceeds ADDED to the purse, not replacing it");
     // Harder ranks must actually kill slower. Anything else means the tier is not reaching the sim.
-    // AVERAGED over seeds. A single run compares two stochastic numbers that happen to be close
-    // for a very strong build, and the comparison flipped on noise — the check failed on a
-    // codebase with nothing wrong with it, which is worse than not having it.
+    // ONLY THE BOTTOM OF THE ABYSS IS PARKABLE. Deeper ranks are meant to be played, so parking at
+    // +10 must fight +0 — and that makes the old check here (compare kills at +0 against +10)
+    // measure nothing at all, since both would be the same fight. It is replaced by the rule.
+    ok(OFFLINE_ABYSS_MAX === 0, "the offline cap is Abyss +0");
+    const spotAt = (p) => offlineSpot({ offlineAbyss: p });
+    ok(spotAt(0).kind === "abyss" && spotAt(0).plus === 0, "parking at +0 fights +0");
+    ok(spotAt(7).plus === 0 && spotAt(10).plus === 0,
+       "\\u2026and a save claiming +7 or +10 is clamped to +0 rather than honoured");
+    ok(src.indexOf("if (plus > OFFLINE_ABYSS_MAX) { showNotif(") > 0,
+       "\u2026and the button says so instead of silently parking somewhere else");
+    // The fight still has to be a real Abyss fight, not a normal zone wearing its name.
     const kills = (p, seeds) => {
       let total = 0;
       for (let s = 0; s < seeds; s++) {
@@ -195,16 +208,55 @@ js += `
         c.level = 60; c.unlockedSkills = core.SKILLS.warrior.map((x) => x.name); c = core.normalizeChar(c);
         for (const sl of core.GEAR_SLOTS.map((g) => g.id)) if (sl !== "relic")
           c.equipment[sl] = core.generateItem(71, core.rarityById("legendary"), sl, "warrior", 9);
-        c = core.armGambits(c); c.offlineAbyss = p; c.hp = core.maxHpFor(c);
+        c = core.armGambits(c); c.hp = core.maxHpFor(c);
+        if (p == null) c.offlineZoneId = "plaguelands"; else c.offlineAbyss = p;
         const r = rngm.withRng(rngm.makeRng(400 + s * 977), () => simulateOffline(c, 60 * 60 * 1000));
         total += r ? r.kills : 0;
       }
       return Math.round(total / seeds);
     };
-    const k0 = kills(0, 6), k10 = kills(10, 6);
-    ok(k0 > 0, "a strong build kills things at +0 (" + k0 + " an hour, averaged over 6 seeds)");
-    ok(k10 < k0 * 0.95,
-       "\\u2026and measurably fewer at +10 (" + k10 + "), because the foes really are tougher");
+    const kZone = kills(null, 4), kAbyss = kills(0, 4);
+    ok(kAbyss > 0, "a strong build clears Abyss +0 offline (" + kAbyss + " kills an hour)");
+    ok(kAbyss < kZone,
+       "\u2026but slower than the normal zone it borrows its creatures from (" + kZone + "), because the tier is real");
+  }
+
+  // --- hard-mode parking ---------------------------------------------------------------------------------
+  sec("Hard zones can be farmed while away; hard dungeons and the raid cannot");
+  {
+    const hz = HARD_ZONES[0];
+    const sp = offlineSpot({ offlineHardId: hz.id });
+    ok(sp && sp.kind === "hard" && sp.hz.id === hz.id, "parking in a hard zone resolves to that zone");
+    // Lockout content is deliberately absent. A dungeon run cannot be spent by someone who is not
+    // there to spend it, and the raid is on a 24h cooldown for the same reason.
+    ok(offlineSpot({ offlineHardId: "hd_deadmines" }) === null, "a hard DUNGEON is not a parking spot");
+    ok(offlineSpot({ offlineHardId: "hr_moltencore" }) === null, "\\u2026nor is the hard raid");
+    ok(offlineSpot({}) === null, "and a character parked nowhere is parked nowhere");
+
+    const run = (id) => {
+      let c = core.normalizeChar(core.createCharacter("H", "warrior", "human"));
+      c.level = 60; c.unlockedSkills = core.SKILLS.warrior.map((x) => x.name); c = core.normalizeChar(c);
+      for (const sl of core.GEAR_SLOTS.map((g) => g.id)) if (sl !== "relic")
+        c.equipment[sl] = core.generateItem(71, core.rarityById("legendary"), sl, "warrior");
+      c = core.armGambits(c); c.hp = core.maxHpFor(c); c.offlineHardId = id;
+      return rngm.withRng(rngm.makeRng(31), () => simulateOffline(c, 4 * 60 * 60 * 1000));
+    };
+    const r = run(hz.id);
+    ok(!!r && r.kills > 0, "a geared character parked in a hard zone actually fights (" + (r ? r.kills : 0) + " kills)");
+    ok(r.hardZoneId === hz.id, "\\u2026and the report says which zone");
+    ok((r.char.hardKills || {})[hz.id] > 0, "kills bank against that zone's goal");
+    ok(r.gearKept > 0 || (r.char.inventory || []).length > 0,
+       "\\u2026and its gear is KEPT, not auto-sold like normal-zone loot");
+    // The kill goal must complete offline, or a player who farmed one overnight comes back to an
+    // un-ticked zone and a chain that has not advanced.
+    ok(src.indexOf("if (k >= hz.killGoal && !(c.hardZoneDone || {})[hz.id])") > 0,
+       "the zone's kill goal completes offline too");
+    ok(src.indexOf('zoneEnemyProfile(zone, enemyLevel, "hard", 8)') > 0,
+       "hard-zone foes are modelled at the HARD tier, matching makeHardEnemy");
+    ok(src.indexOf("gold = Math.floor(gold * 2);") > 0,
+       "\\u2026and paid at the Hard Mode doubling, with no max-level cut \\u2014 Hard Mode IS the endgame");
+    ok(core.normalizeChar({ ...core.createCharacter("H","warrior","human"), offlineHardId: "hz_green" }).offlineHardId === "hz_green",
+       "where you parked survives a reload");
   }
 
   // --- reachability --------------------------------------------------------------------------------------

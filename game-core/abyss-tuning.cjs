@@ -7,6 +7,11 @@
  * simulateOffline is the gambit/auto-farm engine, so "survives an hour with no deaths" is the
  * real definition of auto-farmable rather than a guess from a damage formula.
  *
+ * OFFLINE PARKING IS CAPPED AT ABYSS +0. Deeper ranks must be played, so this harness measures
+ * them by making rank 0 temporarily BE rank N — which models "a character fighting rank-N foes
+ * with gambits running" and is exactly what the gating requirements are about. It does not reach
+ * past the product's clamp.
+ *
  * WHAT IT CANNOT MEASURE: manual play. There is no simulator for a human using cooldowns and
  * potions perfectly, so the brief's "can manually farm +5 but not +7" is not verified here — only
  * the auto-farm ceilings are. Manual play is strictly stronger than parked play, so an auto
@@ -160,9 +165,17 @@ js += `
       c = core.armGambits(c);
       c.consumables = { [conKey("heal", 6)]: 9999 };
       c.upgrades = { autoPotion: true };
-      c.offlineAbyss = plus;                    // park in the Abyss at this + rank
+      // Offline parking is capped at Abyss +0 by design, so measuring a deeper rank means making
+      // rank 0 BE that rank for the duration rather than reaching past the cap. Measurement tool,
+      // not a back door: the product's clamp is untouched.
+      // Save and restore, or the override leaks: without this the NEXT measurement inherits the
+      // previous rank's tier and the +0 column reads as harder than +5.
+      const savedT0 = DIFFICULTY_TIERS.abyss0;
+      DIFFICULTY_TIERS.abyss0 = DIFFICULTY_TIERS["abyss" + plus];
+      c.offlineAbyss = 0;
       c.hp = maxHpFor(c);
       const r = rngm.withRng(rngm.makeRng(500 + s * 131), () => simulateOffline(c, 60 * 60 * 1000));
+      DIFFICULTY_TIERS.abyss0 = savedT0;
       if (!r) continue;
       if (r.died) deaths++;
       kills += r.kills || 0; hours += (r.secondsSimulated || 0) / 3600;

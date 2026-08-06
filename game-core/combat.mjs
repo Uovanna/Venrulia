@@ -1773,6 +1773,7 @@ const createCharacter = (name, cls, race) => {
     currentZoneId: "elwynn",
     offlineZoneId: null,
     offlineAbyss: null,
+    offlineHardId: null,
     lastActive: Date.now(),
     professions: emptyProfessions(),
     gatherTier: {},
@@ -2068,6 +2069,7 @@ const normalizeChar = (c) => ({
   // this on normalizeChar a player would park, close the tab, and come back to nothing having
   // happened — the field would be dropped on load and applyOffline would find nowhere to fight.
   offlineAbyss: (c.offlineAbyss == null) ? null : Math.max(0, Math.min(10, Number(c.offlineAbyss) || 0)),
+  offlineHardId: c.offlineHardId || null,
   consumables: (() => { const src = c.consumables || {}; const out = {}; const t = Math.min(6, Math.max(0, Math.floor((c.level || 1) / 10))); for (const k in src) { const v = src[k]; if (!v) continue; if (k.includes("@")) out[k] = (out[k] || 0) + v; else out[k + "@" + t] = (out[k + "@" + t] || 0) + v; } return out; })(),
   buffs: c.buffs || {},
   hp: typeof c.hp === "number" ? c.hp : maxHpFor(c),

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { rng, makeRng, withRng, pick, rngPick, rngInt, makeClock } from "../game-core/rng.mjs";
 import { IconSprite, Icon, EmojiIcon, withIcons } from "./icons.jsx";
+import { ChronicleStyles, Chronicle, loadTheme, saveTheme, themeClass } from "./chronicle.jsx";
 import {
   CLASSES,
   RACES,
@@ -3805,6 +3806,9 @@ function GameScreen({ character: initChar, onSave, onBack }) {
   const showNotif = useCallback((msg) => { setNotification(msg); setTimeout(() => setNotification(null), 2400); }, []);
   const chatState = useGlobalChat(char, showNotif); // shared global chat (town float + combat tab + guild)
   const [combatSide, setCombatSide] = useState("log"); // combat panel tab: log | chat
+  // Which way round the light is. Per DEVICE, not per character — it follows the
+  // reader's system preference until they say otherwise.
+  const [chronicleTheme, setChronicleTheme] = useState(loadTheme);
   const [townChatOpen, setTownChatOpen] = useState(false);
   const [groupBoss, setGroupBoss] = useState("ashen"); // chosen Trinity Trial boss
   const [groupRun, setGroupRun] = useState(null); // active Guild/Trial run (Trinity engine)
@@ -6851,137 +6855,136 @@ function GameScreen({ character: initChar, onSave, onBack }) {
         {/* ============ COMBAT TAB ============ */}
         {tab === "combat" && (
           <div>
+          <div className={`cpage chronicle-ground ${themeClass(chronicleTheme)}`}>
+            {/* ---- the adversary ---- */}
             {battle ? (
-              <div style={{ background: battle.mode === "hard" ? "linear-gradient(135deg,#1a0505,#250808)" : "linear-gradient(135deg,#1a0a0a,#200d0d)", border: `1.5px solid ${battle.mode === "hard" ? "#ff450088" : battle.enemy.isBoss ? "#FFD70066" : battle.enemy.isChampion ? "#c9a24855" : "#5a1a1a"}`, borderRadius: 10, padding: 14, marginBottom: 12 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                  <div>
-                    <div style={{ color: battle.enemy.isBoss ? "#FFD700" : battle.enemy.isLord ? "#d08bff" : battle.enemy.isChampion ? "#e0b352" : "#ff6644", fontWeight: 700, fontSize: 14 }}>
-                      {battle.mode === "hard" && <span style={{ fontSize: 10, background: "#3a0a0a", border: "1px solid #ff4500", color: "#ff8a5a", borderRadius: 4, padding: "1px 5px", marginRight: 6, verticalAlign: "middle" }}><Icon name="flame" /> HARD</span>}
-                      {battle.enemy.isLord && <span style={{ fontSize: 10, background: "#2a0f3a", border: "1px solid #b06bff", color: "#d08bff", borderRadius: 4, padding: "1px 5px", marginRight: 6, verticalAlign: "middle" }}><Icon name="crown" /> LORD</span>}
-                      {battle.enemy.isChampion && !battle.enemy.isLord && !battle.enemy.isBoss && <span style={{ fontSize: 10, background: "#3a2d0a", border: "1px solid #c9a248", color: "#e0b352", borderRadius: 4, padding: "1px 5px", marginRight: 6, verticalAlign: "middle" }}><Icon name="star" /> CHAMPION</span>}
+              <>
+                <div className="foe">
+                  <span className="foe-cut">
+                    <GameIcon icon={battle.enemy.icon} imgKey={battle.enemy.iconKey} size={46} />
+                  </span>
+                  <div className="foe-body">
+                    <h3 className="foe-name">
+                      {battle.mode === "hard" && <span className="foe-rank is-hard">Hard</span>}
+                      {battle.enemy.isLord && <span className="foe-rank is-lord">Lord</span>}
+                      {battle.enemy.isChampion && !battle.enemy.isLord && !battle.enemy.isBoss && <span className="foe-rank is-champion">Champion</span>}
                       {battle.enemy.name}
-                    </div>
-                    <div style={{ color: "#888", fontSize: 11 }}>Level {battle.enemy.level}{battle.mode === "hard" ? ` · ${(hardZoneById(battle.hardId) || hardDungeonById(battle.hardId) || HARD_RAID).name} (Hard)` : battle.mode === "dungeon" ? ` · ${instanceById(battle.dungeonId)?.name} (Wave ${battle.wave})` : ` · ${zone.name}`}</div>
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    {(battle.enemyEffects || []).length > 0 && (
-                      <div style={{ display: "flex", gap: 4, flexWrap: "wrap", justifyContent: "flex-end", maxWidth: 130 }}>
-                        {battle.enemyEffects.map((e, i) => (
-                          <span key={i} title={`${e.name} · ${fmtClock(e.expires - now)}`} style={{ background: e.kind === "slow" ? "#1a1030" : "#2a1010", border: `1px solid ${e.kind === "slow" ? "#9482C9" : "#a05"}`, borderRadius: 6, padding: "1px 5px", fontSize: 11, color: "#ddd", display: "flex", alignItems: "center", gap: 2 }}>
-                            <EmojiIcon emoji={e.icon} /><span style={{ color: "#999", fontFamily: "ui-monospace, monospace", fontSize: 9.5 }}>{Math.ceil((e.expires - now) / 1000)}s</span>
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                    <GameIcon icon={battle.enemy.icon} imgKey={battle.enemy.iconKey} size={34} />
+                    </h3>
+                    <p className="foe-where">
+                      Lv {battle.enemy.level}
+                      {battle.mode === "hard" ? ` · ${(hardZoneById(battle.hardId) || hardDungeonById(battle.hardId) || HARD_RAID).name}`
+                        : battle.mode === "dungeon" ? ` · ${instanceById(battle.dungeonId)?.name} · wave ${battle.wave}`
+                        : ` · ${zone.name}`}
+                    </p>
+                    <div className="foe-wounds"><i style={{ width: `${clamp((battle.enemy.hp / battle.enemy.maxHp) * 100, 0, 100)}%` }} /></div>
+                    <p className="foe-tally">{battle.enemy.hp} / {battle.enemy.maxHp}</p>
                   </div>
                 </div>
-                <Bar current={battle.enemy.hp} max={battle.enemy.maxHp} color={battle.enemy.isBoss ? "#FFD700" : battle.enemy.isLord ? "#c86bff" : battle.enemy.isChampion ? "#e0b352" : "#cc4400"} height={9} label={`❤️ ${battle.enemy.hp}/${battle.enemy.maxHp}`} />
-              </div>
+                {/* what is riding on the fight — yours and its */}
+                {((battle.enemyEffects || []).length > 0 || activeBuffList.length > 0) && (
+                  <div className="wards">
+                    {activeBuffList.map((b) => {
+                      const meta = BUFF_META[b.stat];
+                      return (
+                        <span key={`b${b.stat}`} className="ward">
+                          {meta ? <EmojiIcon emoji={meta.icon} size={12} /> : <Icon name="scroll" size={12} />}
+                          {meta ? meta.label(b.amount) : `+${b.amount} ${STAT_LABEL[b.stat]}`} · {fmtClock(b.expires - now)}
+                        </span>
+                      );
+                    })}
+                    {(battle.enemyEffects || []).map((e, i) => (
+                      <span key={`e${i}`} className="ward" title={e.name}>
+                        <EmojiIcon emoji={e.icon} size={12} />{e.name} · {Math.ceil((e.expires - now) / 1000)}s
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </>
             ) : (() => {
               const reHardInst = difficulty === "hard" && lastHard ? (lastHard.kind === "zone" ? hardZoneById(lastHard.id) : lastHard.kind === "raid" ? HARD_RAID : hardDungeonById(lastHard.id)) : null;
-              if (reHardInst) return (
-                <div style={{ background: "#1a0f0a", border: "1.5px solid #ff450088", borderRadius: 10, padding: 18, marginBottom: 12, textAlign: "center" }}>
-                  <div style={{ fontSize: 30, marginBottom: 6 }}><EmojiIcon emoji={reHardInst.icon} /></div>
-                  <div style={{ color: "#ff6a33", fontWeight: 700, fontFamily: "Georgia, serif" }}><Icon name="flame" /> {reHardInst.name} (Hard)</div>
-                  <div style={{ color: "#c9a99a", fontSize: 11, marginTop: 2 }}>Hard Mode — enter again</div>
-                </div>
-              );
-              const reDn = lastDungeonId && instanceRunnable(char, lastDungeonId) ? instanceById(lastDungeonId) : null;
-              return reDn ? (
-                <div style={{ background: "#12102a", border: `1px solid ${reDn.color}66`, borderRadius: 10, padding: 18, marginBottom: 12, textAlign: "center" }}>
-                  <div style={{ fontSize: 30, marginBottom: 6 }}><EmojiIcon emoji={reDn.icon} /></div>
-                  <div style={{ color: reDn.color, fontWeight: 700, fontFamily: "Georgia, serif" }}>{reDn.name}</div>
-                  <div style={{ color: "#888", fontSize: 11, marginTop: 2 }}>{reDn.raid ? "Cleared — enter again" : `Cleared — ${dungeonRunsLeft(char, reDn.id)} run${dungeonRunsLeft(char, reDn.id) === 1 ? "" : "s"} left`}</div>
-                </div>
-              ) : (
-                <div style={{ background: "#12102a", border: "1px solid #2a2550", borderRadius: 10, padding: 18, marginBottom: 12, textAlign: "center" }}>
-                  <div style={{ fontSize: 30, marginBottom: 6 }}>⚔️</div>
-                  <div style={{ color: "#888" }}>Ready to fight in {zone.name}</div>
-                </div>
-              );
-            })()}
-
-            {(() => {
-              const reHardInst = !battle && difficulty === "hard" && lastHard ? (lastHard.kind === "zone" ? hardZoneById(lastHard.id) : lastHard.kind === "raid" ? HARD_RAID : hardDungeonById(lastHard.id)) : null;
-              const reDn = !battle && !reHardInst && lastDungeonId && instanceRunnable(char, lastDungeonId) ? instanceById(lastDungeonId) : null;
-              const onClick = battle ? stopCombat : reHardInst ? () => startHard(reHardInst, lastHard.kind) : reDn ? reEnterInstance : startZone;
-              const label = battle ? (battle.mode === "dungeon" ? "🏃 Leave Dungeon" : "⏸ Retreat") : reHardInst ? `🔥 Enter Hard — ${reHardInst.name}` : reDn ? `⚔️ Enter Combat — ${reDn.name}` : "⚔️ Enter Combat";
+              const reDn = !reHardInst && lastDungeonId && instanceRunnable(char, lastDungeonId) ? instanceById(lastDungeonId) : null;
+              const where = reHardInst || reDn;
               return (
-                <button onClick={onClick}
-                  style={{ width: "100%", background: battle ? "linear-gradient(135deg,#1a0a0a,#2a0f0f)" : reHardInst ? "linear-gradient(135deg,#2a1206,#3d1c0a)" : "linear-gradient(135deg,#0a1a0a,#0f2a0f)", border: `2px solid ${battle ? "#cc2200" : reHardInst ? "#ff4500" : reDn ? reDn.color : "#4a7c3f"}`, borderRadius: 10, color: battle ? "#cc2200" : reHardInst ? "#ffb454" : reDn ? reDn.color : "#ABD473", fontSize: 15, fontWeight: 700, padding: 13, cursor: "pointer", marginBottom: 12 }}>
-                  {label}
-                </button>
+                <div className="cempty">
+                  <h3>{where ? where.name : zone.name}</h3>
+                  <p style={{ margin: 0 }}>
+                    {reHardInst ? "Hard Mode — the page is open again."
+                      : reDn ? (reDn.raid ? "Cleared. Enter again." : `Cleared. ${dungeonRunsLeft(char, reDn.id)} run${dungeonRunsLeft(char, reDn.id) === 1 ? "" : "s"} left today.`)
+                      : "Nothing written yet."}
+                  </p>
+                </div>
               );
             })()}
 
-            {/* Active player skill buffs (haste/dodge/hot) and debuffs now show on the top banner */}
+            {/* ---- THE CHRONICLE ---- */}
+            {combatSide === "log"
+              ? <Chronicle log={combatLog} height={188} />
+              : <div style={{ padding: "0 13px" }}><ChatPanel chatState={chatState} myName={char.name} height={172} /></div>}
 
-            {/* Active buff timers */}
-            {activeBuffList.length > 0 && (
-              <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
-                {activeBuffList.map((b) => {
-                  const meta = BUFF_META[b.stat];
-                  const color = meta ? meta.color : consumableById(b.stat)?.color;
-                  const text = meta ? meta.label(b.amount) : `+${b.amount} ${STAT_LABEL[b.stat]}`;
-                  return (
-                    <div key={b.stat} style={{ background: "#100e1c", border: `1px solid ${color || "#555"}66`, borderRadius: 8, padding: "5px 9px", display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ fontSize: 14 }}>{meta ? meta.icon : "📜"}</span>
-                      <span style={{ color, fontSize: 11, fontWeight: 700 }}>{text}</span>
-                      <span style={{ color: "#888", fontSize: 11, fontFamily: "ui-monospace, monospace" }}><Icon name="hourglass" /> {fmtClock(b.expires - now)}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* Quick consumables: heal + antivenom */}
-            <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+            {/* ---- the hand ---- */}
+            <div className="seals">
+              {knownSkills.map((sk) => {
+                const cdEnd = battle?.cooldowns?.[sk.name] || 0;
+                const nowMs = Date.now();
+                const onCd = cdEnd > nowMs;
+                const effCd = Math.max(1, Math.round(sk.cd * (1 - cdrFracFor(char)) - gemFlatCd(char)));
+                const remain = onCd ? Math.min(effCd, Math.max(1, Math.ceil((cdEnd - nowMs) / 1000))) : 0;
+                const auto = gambitFiresSkill(char, sk.name);
+                return (
+                  <div key={sk.name} className={`seal-slot${onCd ? " is-sealed" : ""}${auto ? " is-auto" : ""}`}>
+                    <button className={`seal${onCd ? " is-sealed" : ""}`} onClick={() => useSkill(sk)}
+                      disabled={!battle || onCd} title={auto ? `${sk.desc} — cast by a gambit` : sk.desc}
+                      style={!battle ? { opacity: .55 } : undefined}>
+                      {onCd ? <span className="seal-wait">{remain}</span> : <EmojiIcon emoji={sk.icon} size={19} />}
+                    </button>
+                    <span className="seal-name">{sk.name}</span>
+                  </div>
+                );
+              })}
               {(() => {
                 const def = consumableById("heal");
                 const qty = conTotal(char, "heal");
                 const onCd = potionCdLeft > 0;
                 const disabled = !battle || qty <= 0 || onCd;
                 return (
-                  <button onClick={() => useConsumable(def)} disabled={disabled}
-                    style={{ flex: 1, background: disabled ? "#0d0b16" : "#2a0f12", border: `1.5px solid ${disabled ? "#333" : "#ff5544"}`, borderRadius: 9, padding: "9px", cursor: disabled ? "default" : "pointer", opacity: !battle ? 0.5 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}>
-                    <span style={{ fontSize: 18 }}>🧪</span>
-                    <span style={{ color: onCd ? "#888" : "#ff8877", fontSize: 12, fontWeight: 700 }}>
-                      {onCd ? `Ready in ${fmtClock(potionCdLeft)}` : `Heal (×${qty})`}
-                    </span>
-                  </button>
+                  <div className="seal-slot">
+                    <button className="seal seal-draught" onClick={() => useConsumable(def)} disabled={disabled}
+                      title={onCd ? `Ready in ${fmtClock(potionCdLeft)}` : `Healing draught (${qty} left)`}
+                      style={disabled ? { opacity: .55 } : undefined}>
+                      <Icon name="flask" size={18} />
+                      {qty > 0 && !onCd && <span className="seal-count">{qty}</span>}
+                    </button>
+                    <span className="seal-name">{onCd ? fmtClock(potionCdLeft) : "Draught"}</span>
+                  </div>
                 );
               })()}
             </div>
 
-            {/* Active skill bar */}
-            <div style={{ marginBottom: 4, color: "#666", fontSize: 11, textTransform: "uppercase", letterSpacing: 1 }}>Abilities — tap to cast</div>
-            <div style={{ display: "flex", gap: 7, marginBottom: 12, flexWrap: "wrap" }}>
-              {knownSkills.length === 0 && <div style={{ color: "#555", fontSize: 12 }}>No abilities yet.</div>}
-              {knownSkills.map((sk) => {
-                const cdEnd = battle?.cooldowns?.[sk.name] || 0;
-                const nowMs = Date.now();
-                const onCd = cdEnd > nowMs;
-                const effCd = Math.max(1, Math.round(sk.cd * (1 - cdrFracFor(char)) - gemFlatCd(char))); // cooldown after CDR + power gems
-                const remain = onCd ? Math.min(effCd, Math.max(1, Math.ceil((cdEnd - nowMs) / 1000))) : 0;
-                const auto = gambitFiresSkill(char, sk.name); // a gambit rule casts this without a tap
-                return (
-                  <button key={sk.name} onClick={() => useSkill(sk)} disabled={!battle || onCd} title={sk.desc}
-                    style={{ flex: "1 1 30%", minWidth: 92, background: onCd ? "#0d0b16" : "#1a1530", border: `1.5px solid ${onCd ? "#333" : cls?.color || "#f0b429"}`, borderRadius: 9, padding: "8px 6px", cursor: battle && !onCd ? "pointer" : "default", opacity: !battle ? 0.5 : 1, textAlign: "center", position: "relative" }}>
-                    {auto && <span style={{ position: "absolute", top: 3, right: 5, fontSize: 9, color: "#5fd35f" }}>AUTO</span>}
-                    <div style={{ fontSize: 20 }}><EmojiIcon emoji={sk.icon} /></div>
-                    <div style={{ color: onCd ? "#666" : "#fff", fontSize: 10, fontWeight: 600, lineHeight: 1.1, marginTop: 2 }}>{sk.name}</div>
-                    <div style={{ color: onCd ? "#ff8877" : cls?.color, fontSize: 9, fontFamily: onCd ? "ui-monospace, monospace" : "inherit" }}>{onCd ? `⏳ ${remain}s` : `${effCd}s cd`}</div>
-                  </button>
-                );
-              })}
+            {/* ---- leave / enter, and which way round the light is ---- */}
+            <div style={{ display: "flex", gap: 6, padding: "0 13px 13px", background: "var(--sunk)" }}>
+              {(() => {
+                const reHardInst = !battle && difficulty === "hard" && lastHard ? (lastHard.kind === "zone" ? hardZoneById(lastHard.id) : lastHard.kind === "raid" ? HARD_RAID : hardDungeonById(lastHard.id)) : null;
+                const reDn = !battle && !reHardInst && lastDungeonId && instanceRunnable(char, lastDungeonId) ? instanceById(lastDungeonId) : null;
+                const onClick = battle ? stopCombat : reHardInst ? () => startHard(reHardInst, lastHard.kind) : reDn ? reEnterInstance : startZone;
+                const label = battle ? (battle.mode === "dungeon" ? "Leave the dungeon" : "Close the page")
+                  : reHardInst ? `Enter ${reHardInst.name}` : reDn ? `Enter ${reDn.name}` : "Take up the quill";
+                return <button className={`leave${battle ? "" : " is-enter"}`} onClick={onClick}>{label}</button>;
+              })()}
+              <button className="leave" style={{ width: "auto", flex: "none", padding: "11px 13px" }}
+                title={`Reading by ${themeClass(chronicleTheme) === "theme-night" ? "candlelight" : "daylight"} — tap to change`}
+                onClick={() => {
+                  const next = themeClass(chronicleTheme) === "theme-night" ? "day" : "night";
+                  setChronicleTheme(next); saveTheme(next);
+                }}>
+                <Icon name={themeClass(chronicleTheme) === "theme-night" ? "shrine" : "abyss"} size={15} />
+              </button>
+              <button className="leave" style={{ width: "auto", flex: "none", padding: "11px 13px" }}
+                title={combatSide === "log" ? "Show chat" : "Show the chronicle"}
+                onClick={() => setCombatSide(combatSide === "log" ? "chat" : "log")}>
+                <Icon name={combatSide === "log" ? "tavern" : "scroll"} size={15} />
+              </button>
             </div>
-
-            <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
-              <button onClick={() => setCombatSide("log")} style={{ flex: 1, background: combatSide === "log" ? "#1a1730" : "transparent", border: `1px solid ${combatSide === "log" ? "#46407a" : "#2a2740"}`, borderRadius: 6, color: combatSide === "log" ? "#e8ddff" : "#8a83b8", fontSize: 10.5, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", padding: "5px 4px", cursor: "pointer" }}>Combat Log</button>
-              <button onClick={() => setCombatSide("chat")} style={{ flex: 1, background: combatSide === "chat" ? "#1a1730" : "transparent", border: `1px solid ${combatSide === "chat" ? "#46407a" : "#2a2740"}`, borderRadius: 6, color: combatSide === "chat" ? "#c8a0ff" : "#8a83b8", fontSize: 10.5, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", padding: "5px 4px", cursor: "pointer" }}>🌐 Chat</button>
-            </div>
-            {combatSide === "log" ? <CombatLog log={combatLog} /> : <ChatPanel chatState={chatState} myName={char.name} height={116} />}
+          </div>
 
             {(() => {
               if (groupParty) { // group content → party health instead of the quest tracker
@@ -11371,7 +11374,7 @@ export default function App() {
   // The sprite mounts ONCE, above everything. <use href="#id"> resolves against the
   // document, so a second copy would duplicate every symbol id and references would
   // bind to whichever happened to parse first.
-  return <><IconSprite /><GameErrorBoundary>{body}</GameErrorBoundary>{cloudButton}{cloudOverlay}{conflictModal}</>;
+  return <><ChronicleStyles /><IconSprite /><GameErrorBoundary>{body}</GameErrorBoundary>{cloudButton}{cloudOverlay}{conflictModal}</>;
 }
 
 const inpStyle = { width: "100%", boxSizing: "border-box", background: "#0e0c1a", border: "1px solid #35305a", borderRadius: 9, color: "#e8e4ff", fontSize: 13, padding: "10px 12px", marginBottom: 8, outline: "none" };

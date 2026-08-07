@@ -31,6 +31,7 @@ js = js.replace(/import\.meta\.env/g, '({})');
 // relative require would resolve against that dir and blow up. The icons are pure rendering
 // and no test asserts on them, so they are stubbed rather than compiled.
 js = js.replace(/require\("\.\/icons\.jsx"\)/g, '({IconSprite:function(){return null},Icon:function(){return null},EmojiIcon:function(){return null},withIcons:function(t){return t}})');
+js = js.replace(/require\("\.\/chronicle\.jsx"\)/g, '({ChronicleStyles:function(){return null},Chronicle:function(){return null},loadTheme:function(){return "auto"},saveTheme:function(){},themeClass:function(){return "theme-day"}})');
 
 js += `
 ;(function(){

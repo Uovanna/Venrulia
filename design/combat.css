@@ -18,16 +18,23 @@
    paragraph and heading margins have to be cleared explicitly — left in, they
    added ~15px between chronicle entries and halved how much of the account fits
    on screen, which is the one thing this layout exists to maximise. */
-.screen :where(p, h1, h2, h3, h4) { margin: 0; }
+.screen :where(p, h1, h2, h3, h4), .cpage :where(p, h1, h2, h3, h4) { margin: 0; }
 
-.screen {
-  height: 100%;              /* the page is the viewport; the chronicle takes what is left */
-  display: flex;
-  flex-direction: column;
+/* The base has to name BOTH roots. .screen is the standalone specimen; .cpage is
+   the page inset into the app. Written for .screen alone, the in-game page
+   inherited the app's white text onto parchment — foe names and every enemy line
+   went invisible — and kept the browser's <p> margins, which tripled the gaps in
+   the chronicle. One missing selector, three bugs that looked unrelated. */
+.screen, .cpage {
   font-family: var(--serif);
   color: var(--ink);
   font-size: var(--step-0);
   line-height: 1.5;
+}
+.screen {
+  height: 100%;              /* the page is the viewport; the chronicle takes what is left */
+  display: flex;
+  flex-direction: column;
 }
 
 /* ---- the heading: who is writing, and what they hold --------------------- */
@@ -188,4 +195,72 @@
   .screen.is-spread > .vitals,
   .screen.is-spread > .foe   { grid-area: verso; }
   .screen.is-spread > .chronicle { grid-area: recto; border-left: 1px solid var(--rule); }
+}
+
+/* ============================================================================
+   IN-GAME ADDITIONS
+   ----------------------------------------------------------------------------
+   Things the sketch did not have to solve because it was a sketch. Kept in this
+   file rather than inline in the app so the preview and the game keep sharing
+   one definition.
+   ============================================================================ */
+
+/* The combat tab renders as a PAGE inset into the app rather than repainting the
+   whole shell. That is a staging decision with a reason: a parchment ground under
+   the dark panels every other screen still uses would look broken, whereas a page
+   you open reads as deliberate — and it is what the premise says the screen is.
+   The ground grows outward as the other screens convert. */
+.cpage {
+  border: 1px solid var(--rule); border-radius: var(--r-lg); overflow: hidden;
+  display: flex; flex-direction: column; margin-bottom: 12px;
+}
+
+/* Ability seals carry their name in the real game. The sketch relied on
+   recognition alone, which is fine for six circles in a specimen and not fine
+   for a player still learning a class. */
+.seals { flex-wrap: wrap; }
+.seal-slot { flex: 1 1 18%; min-width: 58px; display: flex; flex-direction: column; align-items: center; gap: var(--s-1); }
+.seal-slot .seal { flex: none; width: 100%; max-width: 46px; }
+.seal-name {
+  font-size: 9.5px; line-height: 1.15; text-align: center; color: var(--ink-soft);
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.seal-slot.is-sealed .seal-name { color: var(--ink-faint); }
+/* A gambit casts this without a tap. Marked with a rule under the name rather
+   than a coloured "AUTO" badge — the chronicle has no badges. */
+.seal-slot.is-auto .seal-name { border-bottom: 1px solid var(--verdigris); }
+
+/* The one destructive action on the screen. Struck through, the way a scribe
+   cancels an entry, rather than painted red. */
+.leave {
+  width: 100%; font-family: var(--serif); font-size: var(--step-0); color: var(--ink);
+  background: var(--raised); border: 1px solid var(--rule); border-radius: var(--r-md);
+  padding: 11px; cursor: pointer; letter-spacing: .01em;
+}
+.leave:focus-visible { outline: 2px solid var(--rubric); outline-offset: 2px; }
+.leave.is-enter { border-color: var(--verdigris); color: var(--verdigris); }
+
+/* Rank marks on the adversary — hard mode, lords, champions. Small caps in the
+   margin voice, not a coloured pill. */
+.foe-rank {
+  font-family: var(--mono); font-size: 8.5px; letter-spacing: .13em; text-transform: uppercase;
+  border: 1px solid currentColor; border-radius: var(--r-sm); padding: 0 4px; margin-right: var(--s-2);
+  vertical-align: 2px;
+}
+.foe-rank.is-hard { color: var(--rubric); }
+.foe-rank.is-lord { color: var(--gilt); }
+.foe-rank.is-champion { color: var(--bole); }
+
+/* The parchment page needs its own empty state; "Ready to fight" on a dark card
+   was the old one. */
+.cempty { padding: var(--s-6) var(--s-5); text-align: center; color: var(--ink-soft); }
+.cempty h3 { font-size: var(--step-2); margin: 0 0 var(--s-2); font-weight: 600; color: var(--ink); }
+
+/* Buff/debuff timers, in the margin voice. */
+.wards { display: flex; gap: var(--s-2); flex-wrap: wrap; padding: var(--s-3) var(--s-5) 0; }
+.ward {
+  display: flex; align-items: center; gap: var(--s-1);
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .04em;
+  border: 1px solid var(--hairline); border-radius: var(--r-sm); padding: 2px 5px;
+  color: var(--ink-soft); font-variant-numeric: tabular-nums;
 }

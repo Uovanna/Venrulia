@@ -8724,37 +8724,43 @@ function GameScreen({ character: initChar, onSave, onBack }) {
         {/* ============ WORLD TAB (zones + dungeons) ============ */}
         {tab === "world" && (
           <div>
-            <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-              {[["normal", "Normal"], ["hard", "🔥 Hard"], ...(abyssOpen(char) ? [["abyss", "🕳️ Abyss"]] : [])].map(([id, label]) => (
-                <button key={id} onClick={() => setDifficulty(id)} style={{ flex: 1, background: difficulty === id ? (id === "abyss" ? "var(--rar-epic)" : id === "hard" ? "var(--rubric)" : "var(--raised)") : "var(--verdigris)", border: `1.5px solid ${difficulty === id ? (id === "abyss" ? "var(--rar-epic)" : id === "hard" ? "var(--rubric)" : "var(--gilt)") : "var(--hairline)"}`, borderRadius: 9, color: difficulty === id ? (id === "abyss" ? "var(--rar-epic)" : id === "hard" ? "var(--rubric)" : "var(--gilt)") : "var(--ink-faint)", padding: "10px 4px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>{label}</button>
+            <div className="eyebrow">
+              <span>The adventure gate</span>
+              <span>Level {char.level}</span>
+            </div>
+            {/* Two strips, not two rows of filled pills. The register you are reading
+                in (Normal / Hard / Abyss) is the outer one and takes the leaves; what
+                kind of content you are looking at is a filter under it. */}
+            <div className="leaves">
+              {[["normal", "Normal"], ["hard", "Hard"], ...(abyssOpen(char) ? [["abyss", "The Abyss"]] : [])].map(([id, label]) => (
+                <button key={id} onClick={() => setDifficulty(id)} className={`leaf${difficulty === id ? " is-open" : ""}`}>{label}</button>
               ))}
             </div>
             {difficulty !== "abyss" && (
-            <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-              {[["zones", "🗺️ Zones"], ["dungeons", "🏰 Dungeons"], ["raids", "🌋 Raids"]].map(([id, label]) => (
-                <button key={id} onClick={() => setWorldTab(id)} style={{ flex: 1, background: worldTab === id ? "var(--raised)" : "var(--sunk)", border: `1px solid ${worldTab === id ? (difficulty === "hard" ? "var(--rubric)" : "var(--gilt)") : "var(--hairline)"}`, borderRadius: 8, color: worldTab === id ? (difficulty === "hard" ? "var(--rubric)" : "var(--gilt)") : "var(--ink-faint)", padding: "9px 4px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{label}</button>
+            <div className="toggles" style={{ marginBottom: 14 }}>
+              {[["zones", "Zones"], ["dungeons", "Dungeons"], ["raids", "Raids"]].map(([id, label]) => (
+                <button key={id} onClick={() => setWorldTab(id)} className={`toggle${worldTab === id ? " is-on" : ""}`}>{label}</button>
               ))}
             </div>
             )}
 
             {/* ============ THE ABYSS ============ */}
             {difficulty === "abyss" && (() => {
-              const acc = "#b06ad0";
               const avg = avgEquippedIlvl(char);
               const geared = avg >= ABYSS.reqIlvl;
               const unlocked = abyssUnlocked(char), sel = abyssPlus(char);
               return (
                 <div>
-                  <div style={{ background: "var(--raised)", border: `1.5px solid ${acc}`, borderRadius: 12, padding: "13px 14px", marginBottom: 12 }}>
-                    <div style={{ color: acc, fontFamily: "Georgia, serif", fontSize: 16, fontWeight: 700, marginBottom: 4 }}><Icon name="abyss" /> The Abyss</div>
-                    <div style={{ color: "var(--ink-soft)", fontSize: 11.5, lineHeight: 1.55 }}>
+                  <div className="aside-note">
+                    <b><Icon name="abyss" size={14} /> The Abyss</b>
+                    <span>
                       Endless. No waves, no boss, nothing to clear — only how deep you can stand to go.
                       Every kill banks against the rank you are on; {ABYSS.killGoal.toLocaleString()} of them opens the next.
+                    </span>
+                    <div className="item-meta" style={{ marginTop: 6 }}>
+                      <span className={geared ? "state is-open" : "state is-shut"}>ilvl {avg} · requires {ABYSS.reqIlvl}</span>
                     </div>
-                    <div style={{ color: geared ? "var(--verdigris)" : "var(--rubric)", fontSize: 11, marginTop: 7 }}>
-                      Average item level {avg} · requires {ABYSS.reqIlvl}
-                    </div>
-                    <div style={{ color: "var(--ink-faint)", fontSize: 10.5, marginTop: 4 }}>
+                    <div className="ledger-note">
                       ilvl {ABYSS.dropIlvl} drops, about one every {ABYSS.killsPerDrop} kills · {Math.round((1 - ABYSS.legendaryChance) * 100)}% epic, {Math.round(ABYSS.legendaryChance * 100)}% legendary
                     </div>
                   </div>
@@ -8763,43 +8769,41 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                     const t = abyssTierFor(p);
                     const canRun = open && geared && !battle;
                     return (
-                      <div key={p} style={{ background: p === sel ? "var(--verdigris)" : "var(--raised)", border: `1.5px solid ${p === sel ? acc : open ? "var(--rar-epic)" : "var(--verdigris)"}`, borderRadius: 10, padding: 12, marginBottom: 9, opacity: open ? 1 : 0.45 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 6 }}>
-                          <span style={{ fontSize: 20 }}>🕳️</span>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ color: open ? acc : "var(--ink-faint)", fontWeight: 800, fontSize: 13.5 }}>
-                              {abyssLabel(p)} {done && <span style={{ color: "var(--verdigris)", fontSize: 11 }}>✓</span>}
+                      <div key={p} className={`dest${p === sel ? " is-here" : done ? " is-done" : ""}${open ? "" : " is-shut"}`}>
+                        <div className="dest-head">
+                          <span className="mark"><Icon name="abyss" size={20} /></span>
+                          <div className="dest-body">
+                            <div className="dest-name">
+                              {abyssLabel(p)}
+                              {p === sel && <span className="state is-open">current</span>}
+                              {done && p !== sel && <span className="state is-open">cleared</span>}
                             </div>
-                            <div style={{ color: "var(--ink-soft)", fontSize: 10.5 }}>
-                              enemies ×{t.hp.toFixed(1)} health, ×{t.off.toFixed(1)} damage · +{Math.round(ABYSS.goldPerPlus * p * 100)}% gold · secondaries +{Math.round((abyssMult(p) - 1) * 100)}%
+                            <div className="item-meta">
+                              ×{t.hp.toFixed(1)} health · ×{t.off.toFixed(1)} damage · +{Math.round(ABYSS.goldPerPlus * p * 100)}% gold · secondaries +{Math.round((abyssMult(p) - 1) * 100)}%
                             </div>
                           </div>
                         </div>
-                        <Bar current={Math.min(kills, ABYSS.killGoal)} max={ABYSS.killGoal} color={acc} height={6}
-                             label={done ? "Complete" : "Progress"} sub={`${Math.min(kills, ABYSS.killGoal).toLocaleString()}/${ABYSS.killGoal.toLocaleString()}`} />
+                        <div className="dest-bar">
+                          <Bar current={Math.min(kills, ABYSS.killGoal)} max={ABYSS.killGoal} color="var(--rar-epic)" height={6}
+                               label={done ? "Complete" : "Progress"} sub={`${Math.min(kills, ABYSS.killGoal).toLocaleString()}/${ABYSS.killGoal.toLocaleString()}`} />
+                        </div>
+                        <button disabled={!canRun} onClick={() => startAbyss(p)} aria-label={`Enter ${abyssLabel(p)}`} className="go">
+                          {!open ? `Complete ${abyssLabel(p - 1)} first` : !geared ? `Requires ilvl ${ABYSS.reqIlvl}`
+                            : battle ? "Finish current fight first" : `Descend to ${abyssLabel(p)}`}
+                        </button>
                         {/* Parking. The Abyss is where a geared player leaves their character, so
                             the option belongs beside the descend button, not buried in a settings
                             screen — and only ranks already reached can be parked in. */}
                         {open && geared && (p <= OFFLINE_ABYSS_MAX ? (
                           <button onClick={() => toggleOfflineAbyss(p)} aria-label={`Park in ${abyssLabel(p)}`}
-                            style={{ width: "100%", marginTop: 8, background: char.offlineAbyss === p ? "var(--verdigris)" : "var(--verdigris)",
-                              border: `1px solid ${char.offlineAbyss === p ? "var(--verdigris)" : "var(--hairline)"}`, borderRadius: 8,
-                              color: char.offlineAbyss === p ? "var(--verdigris)" : "var(--ink-soft)", fontSize: 11.5, fontWeight: 700,
-                              padding: "8px 0", cursor: "pointer" }}>
-                            {char.offlineAbyss === p ? `🌙 Parked here — tap to stop` : "🌙 Park here while away"}
+                            className={`go is-quiet${char.offlineAbyss === p ? " is-on" : ""}`}>
+                            {char.offlineAbyss === p ? "Parked here — tap to stop" : "Park here while away"}
                           </button>
                         ) : (
-                          <div style={{ color: "var(--ink-faint)", fontSize: 10.5, marginTop: 8, textAlign: "center" }}>
+                          <div className="ledger-note" style={{ marginTop: 8, textAlign: "center" }}>
                             Cannot be farmed while away — only {abyssLabel(OFFLINE_ABYSS_MAX)} can be parked in
                           </div>
                         ))}
-                        <button disabled={!canRun} onClick={() => startAbyss(p)} aria-label={`Enter ${abyssLabel(p)}`}
-                          style={{ width: "100%", marginTop: 8, background: canRun ? "var(--raised)" : "var(--verdigris)",
-                            border: `1px solid ${canRun ? acc : "var(--hairline)"}`, borderRadius: 8, color: canRun ? "var(--rar-epic)" : "var(--ink-faint)",
-                            fontSize: 12.5, fontWeight: 700, padding: "9px 0", cursor: canRun ? "pointer" : "default" }}>
-                          {!open ? `🔒 Complete ${abyssLabel(p - 1)} first` : !geared ? `🔒 Requires ilvl ${ABYSS.reqIlvl}`
-                            : battle ? "Finish current fight first" : `🕳️ Descend to ${abyssLabel(p)}`}
-                        </button>
                       </div>
                     );
                   })}
@@ -8809,60 +8813,63 @@ function GameScreen({ character: initChar, onSave, onBack }) {
 
             {difficulty === "hard" && (() => {
               const avg = avgEquippedIlvl(char);
-              const hardBtn = (canRun, label) => ({ width: "100%", background: "var(--raised)", border: `1.5px solid ${canRun ? "var(--rubric)" : "var(--rule)"}`, borderRadius: 8, color: canRun ? "var(--gilt)" : "var(--ink-faint)", fontSize: 12, fontWeight: 700, padding: 9, cursor: canRun ? "pointer" : "default" });
               if (worldTab === "zones") return (
                 <div>
-                  <div style={{ background: "var(--sunk)", border: "1px solid var(--rubric)", borderRadius: 10, padding: "9px 12px", marginBottom: 12, color: "var(--rubric)", fontSize: 11, lineHeight: 1.5 }}><Icon name="flame" /> Hard Zones drop ilvl 65–70. Grind each kill goal to unlock the next. Avg ilvl: <b style={{ color: avg >= 64 ? "var(--verdigris)" : "var(--rubric)" }}>{avg}</b> (need 64).</div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    {HARD_ZONES.map((hz) => {
-                      const done = !!char.hardZoneDone?.[hz.id]; const unlocked = hardZoneUnlocked(char, avg, hz); const kills = char.hardKills?.[hz.id] || 0; const canRun = unlocked && !battle;
-                      return (
-                        <div key={hz.id} style={{ background: "var(--sunk)", border: `1.5px solid ${done ? "var(--verdigris)" : unlocked ? "var(--rubric)" : "var(--hairline)"}`, borderRadius: 10, padding: 11, opacity: unlocked || done ? 1 : 0.6 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-                            <div style={{ fontSize: 22 }}><EmojiIcon emoji={hz.icon} /></div>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ color: "var(--ink)", fontWeight: 700, fontSize: 13 }}>{hz.name} {done && <span style={{ color: "var(--verdigris)", fontSize: 10 }}>✓ COMPLETE</span>}</div>
-                              <div style={{ color: "var(--ink-soft)", fontSize: 10.5 }}>Drops ilvl {hz.dropIlvl} · req ilvl {hz.reqIlvl}{hz.prev ? ` + ${hardZoneById(hz.prev)?.name}` : ""}</div>
-                            </div>
+                  <div className="aside-note is-warn">
+                    <b><Icon name="flame" size={14} /> Hard Zones</b>
+                    <span>Drop ilvl 65–70. Grind each kill goal to unlock the next.</span>
+                    <div className="item-meta" style={{ marginTop: 6 }}>
+                      <span className={avg >= 64 ? "state is-open" : "state is-shut"}>ilvl {avg} · requires 64</span>
+                    </div>
+                  </div>
+                  {HARD_ZONES.map((hz) => {
+                    const done = !!char.hardZoneDone?.[hz.id]; const unlocked = hardZoneUnlocked(char, avg, hz); const kills = char.hardKills?.[hz.id] || 0; const canRun = unlocked && !battle;
+                    return (
+                      <div key={hz.id} className={`dest${done ? " is-done" : ""}${unlocked || done ? "" : " is-shut"}`}>
+                        <div className="dest-head">
+                          <span className="mark"><EmojiIcon emoji={hz.icon} size={20} /></span>
+                          <div className="dest-body">
+                            <div className="dest-name">{hz.name} {done && <span className="state is-open">complete</span>}</div>
+                            <div className="item-meta">Drops ilvl {hz.dropIlvl} · req ilvl {hz.reqIlvl}{hz.prev ? ` + ${hardZoneById(hz.prev)?.name}` : ""}</div>
                           </div>
-                          <div style={{ margin: "7px 0 8px" }}>
-                            <Bar current={Math.min(kills, hz.killGoal)} max={hz.killGoal} color={done ? "#5fd35f" : "#ff4500"} height={6} />
-                            <div style={{ color: "var(--ink-soft)", fontSize: 10, marginTop: 2 }}>{kills.toLocaleString()} / {hz.killGoal.toLocaleString()} kills</div>
-                          </div>
-                          <button disabled={!canRun} onClick={() => startHard(hz, "zone")} style={hardBtn(canRun)}>{!unlocked ? `🔒 ilvl ${hz.reqIlvl}${hz.prev ? " + prev zone" : ""}` : battle ? "Finish current fight first" : done ? "🔁 Farm again" : "🔥 Enter Hard Zone"}</button>
+                        </div>
+                        <div className="dest-bar">
+                          <Bar current={Math.min(kills, hz.killGoal)} max={hz.killGoal} color={done ? "var(--verdigris)" : "var(--rubric)"} height={6}
+                               label="Kill goal" sub={`${kills.toLocaleString()} / ${hz.killGoal.toLocaleString()}`} />
+                        </div>
+                        <button disabled={!canRun} onClick={() => startHard(hz, "zone")} className="go">{!unlocked ? `Requires ilvl ${hz.reqIlvl}${hz.prev ? " + the zone before it" : ""}` : battle ? "Finish current fight first" : done ? "Farm again" : "Enter Hard Zone"}</button>
                         {/* Hard ZONES are parkable — they are endless kill-goal farm with nothing
                             on a lockout. Hard dungeons and the raid deliberately are not. */}
                         {unlocked && (
                           <button onClick={() => toggleOfflineHard(hz.id)} aria-label={`Park in ${hz.name}`}
-                            style={{ width: "100%", marginTop: 7, background: char.offlineHardId === hz.id ? "var(--verdigris)" : "var(--verdigris)",
-                              border: `1px solid ${char.offlineHardId === hz.id ? "var(--verdigris)" : "var(--rubric)"}`, borderRadius: 8,
-                              color: char.offlineHardId === hz.id ? "var(--verdigris)" : "var(--bole)", fontSize: 11.5, fontWeight: 700,
-                              padding: "8px 0", cursor: "pointer" }}>
-                            {char.offlineHardId === hz.id ? "🌙 Parked here — tap to stop" : "🌙 Park here while away"}
+                            className={`go is-quiet${char.offlineHardId === hz.id ? " is-on" : ""}`}>
+                            {char.offlineHardId === hz.id ? "Parked here — tap to stop" : "Park here while away"}
                           </button>
                         )}
-                        </div>
-                      );
-                    })}
-                  </div>
+                      </div>
+                    );
+                  })}
                 </div>
               );
               if (worldTab === "dungeons") return (
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <div>
                   {HARD_DUNGEONS.map((hd) => {
                     const unlocked = hardDungeonUnlocked(char, avg, hd); const bk = char.hardBossKills?.[hd.boss] || 0; const done = !!char.hardDungeonDone?.[hd.id]; const runsLeft = dungeonRunsLeft(char, hd.id); const canRun = unlocked && !battle && runsLeft > 0; const prevKills = hd.prevBoss ? (char.hardBossKills?.[hd.prevBoss] || 0) : null;
                     const hasTicket = (char.tickets?.dungeonReset || 0) > 0; const canTicket = unlocked && !battle && runsLeft <= 0 && hasTicket;
                     return (
-                      <div key={hd.id} style={{ background: "var(--sunk)", border: `1.5px solid ${done ? "var(--verdigris)" : unlocked ? "var(--rubric)" : "var(--hairline)"}`, borderRadius: 10, padding: 11, opacity: unlocked || done ? 1 : 0.6 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-                          <div style={{ fontSize: 22 }}><EmojiIcon emoji={hd.icon} /></div>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ color: "var(--ink)", fontWeight: 700, fontSize: 13 }}>{hd.name} {done && <span style={{ color: "var(--verdigris)", fontSize: 10 }}>✓</span>}</div>
-                            <div style={{ color: "var(--ink-soft)", fontSize: 10.5 }}>Drops ilvl {hd.dropIlvl} · Boss: {hd.boss} · {hd.waves} waves</div>
-                            <div style={{ color: "var(--ink-soft)", fontSize: 10 }}>{hd.reqIlvl ? `Unlock: ilvl ${hd.reqIlvl}` : `Unlock: ${prevKills}/${HARD_BOSS_REQ} ${hd.prevBoss}`}{hd.prevZone ? <> · <span style={{ color: char.hardZoneDone?.[hd.prevZone] ? "var(--verdigris)" : "var(--rubric)" }}>{char.hardZoneDone?.[hd.prevZone] ? "✓" : "✗"} {hardZoneById(hd.prevZone)?.name}</span></> : null}{hd.completeCount ? ` · clear: ${bk}/${hd.completeCount}` : ` · ${hd.boss}: ${bk}`} · {runsLeft}/{DUNGEON_RUN_LIMIT} runs</div>
+                      <div key={hd.id} className={`dest${done ? " is-done" : ""}${unlocked || done ? "" : " is-shut"}`}>
+                        <div className="dest-head">
+                          <span className="mark"><EmojiIcon emoji={hd.icon} size={20} /></span>
+                          <div className="dest-body">
+                            <div className="dest-name">
+                              {hd.name} {done && <span className="state is-open">cleared</span>}
+                              <span className={`state ${runsLeft > 0 ? "is-open" : "is-shut"}`}>{runsLeft}/{DUNGEON_RUN_LIMIT} runs</span>
+                            </div>
+                            <div className="item-meta">Drops ilvl {hd.dropIlvl} · Boss: {hd.boss} · {hd.waves} waves</div>
+                            <div className="ledger-note">{hd.reqIlvl ? `Unlock: ilvl ${hd.reqIlvl}` : `Unlock: ${prevKills}/${HARD_BOSS_REQ} ${hd.prevBoss}`}{hd.prevZone ? <> · <span className={char.hardZoneDone?.[hd.prevZone] ? "state is-open" : "state is-shut"}>{hardZoneById(hd.prevZone)?.name}{char.hardZoneDone?.[hd.prevZone] ? " done" : " unfinished"}</span></> : null}{hd.completeCount ? ` · clear: ${bk}/${hd.completeCount}` : ` · ${hd.boss}: ${bk}`}</div>
                           </div>
                         </div>
-                        <button disabled={!canRun && !canTicket} onClick={() => startHard(hd, "dungeon", canTicket && !canRun)} style={{ ...hardBtn(canRun || canTicket), marginTop: 8 }}>{!unlocked ? (hd.reqIlvl && avg < hd.reqIlvl ? `🔒 Requires ilvl ${hd.reqIlvl}` : (hd.prevZone && !char.hardZoneDone?.[hd.prevZone]) ? `🔒 Complete ${hardZoneById(hd.prevZone)?.name}` : `🔒 ${HARD_BOSS_REQ} ${hd.prevBoss} kills`) : battle ? "Finish current fight first" : runsLeft <= 0 ? (canTicket ? "🎟️ Use Reset Ticket" : "⏳ No runs left") : "🔥 Enter Hard Dungeon"}</button>
+                        <button disabled={!canRun && !canTicket} onClick={() => startHard(hd, "dungeon", canTicket && !canRun)} className="go">{!unlocked ? (hd.reqIlvl && avg < hd.reqIlvl ? `Requires ilvl ${hd.reqIlvl}` : (hd.prevZone && !char.hardZoneDone?.[hd.prevZone]) ? `Complete ${hardZoneById(hd.prevZone)?.name}` : `${HARD_BOSS_REQ} ${hd.prevBoss} kills`) : battle ? "Finish current fight first" : runsLeft <= 0 ? (canTicket ? "Use a Reset Ticket" : "No runs left") : "Enter Hard Dungeon"}</button>
                       </div>
                     );
                   })}
@@ -8871,16 +8878,19 @@ function GameScreen({ character: initChar, onSave, onBack }) {
               // raids
               const unlocked = hardRaidUnlocked(char); const done = !!char.hardDungeonDone?.[HARD_RAID.id]; const bk = char.hardBossKills?.[HARD_RAID.boss] || 0; const cd = raidCooldownLeft(char, HARD_RAID.id); const canRun = unlocked && !battle && cd <= 0;
               return (
-                <div style={{ background: "var(--raised)", border: `2px solid ${done ? "var(--verdigris)" : unlocked ? "var(--rubric)" : "var(--rar-epic)"}`, borderRadius: 10, padding: 12, opacity: unlocked || done ? 1 : 0.6 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <div style={{ fontSize: 28 }}><EmojiIcon emoji={HARD_RAID.icon} /></div>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ color: "var(--ink)", fontWeight: 700, fontSize: 14 }}>{HARD_RAID.name} {done && <span style={{ color: "var(--verdigris)", fontSize: 10 }}>✓</span>}</div>
-                      <div style={{ color: "var(--ink-soft)", fontSize: 11 }}>Drops ilvl {HARD_RAID.dropIlvl} · Boss: {HARD_RAID.boss} · {HARD_RAID.waves} waves</div>
-                      <div style={{ color: "var(--ink-soft)", fontSize: 10 }}>Requires all Hard Mode complete · {bk}/{HARD_BOSS_REQ} kills{done ? " · unlocks HELL mode" : ""}{cd > 0 ? ` · ⏳ ${fmtClock(cd)}` : ""}</div>
+                <div className={`dest${done ? " is-done" : ""}${unlocked || done ? "" : " is-shut"}`}>
+                  <div className="dest-head">
+                    <span className="mark"><EmojiIcon emoji={HARD_RAID.icon} size={24} /></span>
+                    <div className="dest-body">
+                      <div className="dest-name">
+                        {HARD_RAID.name} {done && <span className="state is-open">cleared</span>}
+                        {cd > 0 && <span className="state is-shut">{fmtClock(cd)}</span>}
+                      </div>
+                      <div className="item-meta">Drops ilvl {HARD_RAID.dropIlvl} · Boss: {HARD_RAID.boss} · {HARD_RAID.waves} waves</div>
+                      <div className="ledger-note">Requires all Hard Mode complete · {bk}/{HARD_BOSS_REQ} kills{done ? " · unlocks HELL mode" : ""}</div>
                     </div>
                   </div>
-                  <button disabled={!canRun} onClick={() => startHard(HARD_RAID, "raid")} style={{ ...hardBtn(canRun), marginTop: 8, fontSize: 12.5, padding: 10 }}>{!unlocked ? "🔒 Complete Hard Mode first" : battle ? "Finish current fight first" : cd > 0 ? `⏳ On cooldown ${fmtClock(cd)}` : "🔥 Enter Hard Raid"}</button>
+                  <button disabled={!canRun} onClick={() => startHard(HARD_RAID, "raid")} className="go">{!unlocked ? "Complete Hard Mode first" : battle ? "Finish current fight first" : cd > 0 ? `On cooldown — ${fmtClock(cd)}` : "Enter Hard Raid"}</button>
                 </div>
               );
             })()}
@@ -8890,37 +8900,37 @@ function GameScreen({ character: initChar, onSave, onBack }) {
               const current = z.id === char.currentZoneId;
               const completed = char.level > z.maxLevel;
               return (
-                <div key={z.id} style={{ background: current ? `${z.color}22` : "var(--raised)", border: `2px solid ${current ? z.color : completed ? "var(--verdigris)" : "var(--hairline)"}`, borderRadius: 10, padding: 13, marginBottom: 10, opacity: unlocked ? 1 : 0.5 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-                    <div style={{ fontSize: 24 }}><EmojiIcon emoji={z.icon} /></div>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        <span style={{ color: "var(--ink)", fontWeight: 700, fontSize: 13 }}>{z.name}</span>
-                        {current && <span style={{ background: z.color, color: "var(--ink)", borderRadius: 8, padding: "1px 8px", fontSize: 10, fontWeight: 700 }}>CURRENT</span>}
-                        {completed && <span style={{ color: "var(--verdigris)", fontSize: 11 }}>✓</span>}
+                <div key={z.id} className={`dest${current ? " is-here" : completed ? " is-done" : ""}${unlocked ? "" : " is-shut"}`}>
+                  <div className="dest-head">
+                    <span className="mark"><EmojiIcon emoji={z.icon} size={22} /></span>
+                    <div className="dest-body">
+                      <div className="dest-name">
+                        {z.name}
+                        {current && <span className="state is-open">you are here</span>}
+                        {completed && !current && <span className="state is-open">outgrown</span>}
                       </div>
-                      <div style={{ color: "var(--ink-faint)", fontSize: 11 }}>Levels {z.minLevel}–{z.maxLevel}</div>
+                      <div className="item-meta">Levels {z.minLevel}–{z.maxLevel}</div>
                     </div>
                   </div>
-                  <div style={{ color: "var(--ink-soft)", fontSize: 11, marginBottom: 8 }}>{z.desc}</div>
-                  {current && <Bar current={Math.max(0, char.level - z.minLevel)} max={z.maxLevel - z.minLevel} color={z.color} height={6} label="Zone progress" sub={`${char.level}/${z.maxLevel}`} />}
-                  <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 4 }}>
-                    {z.enemies.map((e) => <span key={e} style={{ background: "var(--raised)", border: "1px solid var(--ink)", borderRadius: 4, padding: "2px 6px", fontSize: 10, color: "var(--ink-soft)" }}>{e}</span>)}
+                  <div className="dest-desc">{z.desc}</div>
+                  {current && <div className="dest-bar"><Bar current={Math.max(0, char.level - z.minLevel)} max={z.maxLevel - z.minLevel} height={6} label="Zone progress" sub={`${char.level}/${z.maxLevel}`} /></div>}
+                  <div className="tags" style={{ marginTop: 8 }}>
+                    {z.enemies.map((e) => <span key={e} className="tag">{e}</span>)}
                   </div>
-                  {unlocked && (
-                    <button onClick={() => huntZone(z)} style={{ width: "100%", marginTop: 10, background: "var(--raised)", border: `1.5px solid ${z.color}`, borderRadius: 8, color: z.color, fontSize: 12.5, fontWeight: 700, padding: 9, cursor: "pointer" }}><Icon name="sword" /> Travel &amp; Hunt</button>
+                  {unlocked ? (
+                    <>
+                      <button onClick={() => huntZone(z)} className="go"><Icon name="sword" size={14} /> Travel &amp; Hunt</button>
+                      <button onClick={() => toggleOfflineZone(z.id)} aria-pressed={char.offlineZoneId === z.id}
+                        className={`go is-quiet${char.offlineZoneId === z.id ? " is-on" : ""}`}>
+                        {char.offlineZoneId === z.id ? "Hunting here while away — tap to stop" : "Hunt here while away"}
+                      </button>
+                      {char.offlineZoneId === z.id && (
+                        <div className="ledger-note" style={{ marginTop: 5 }}>Earns XP &amp; gold while the app is closed (up to 12h). Uses only purchased auto-skills. Stops on defeat.</div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="ledger-note" style={{ marginTop: 8, textAlign: "center" }}><Icon name="lock" size={12} /> Unlocks at level {z.minLevel}</div>
                   )}
-                  {unlocked && (
-                    <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 9, padding: "7px 9px", background: char.offlineZoneId === z.id ? "var(--verdigris)" : "var(--verdigris)", border: `1px solid ${char.offlineZoneId === z.id ? "var(--verdigris)" : "var(--hairline)"}`, borderRadius: 8, cursor: "pointer" }}>
-                      <input type="checkbox" checked={char.offlineZoneId === z.id} onChange={() => toggleOfflineZone(z.id)} style={{ width: 16, height: 16, accentColor: "var(--verdigris)" }} />
-                      <span style={{ flex: 1, color: char.offlineZoneId === z.id ? "var(--verdigris)" : "var(--verdigris)", fontSize: 11.5, fontWeight: 600 }}><Icon name="abyss" /> Offline auto-combat here</span>
-                      {char.offlineZoneId === z.id && <span style={{ color: "var(--verdigris)", fontSize: 10 }}>ACTIVE</span>}
-                    </label>
-                  )}
-                  {unlocked && char.offlineZoneId === z.id && (
-                    <div style={{ color: "var(--ink-faint)", fontSize: 9.5, marginTop: 5, lineHeight: 1.4 }}>Earns XP &amp; gold while the app is closed (up to 12h). Uses only purchased auto-skills. Stops on defeat.</div>
-                  )}
-                  {!unlocked && <div style={{ marginTop: 8, color: "var(--ink-faint)", fontSize: 11, textAlign: "center" }}><Icon name="lock" /> Unlocks at level {z.minLevel}</div>}
                 </div>
               );
             })}
@@ -8932,22 +8942,23 @@ function GameScreen({ character: initChar, onSave, onBack }) {
               const onCd = runsLeft <= 0 && resetLeft > 0;
               const canRun = unlocked && !battle && runsLeft > 0;
               return (
-                <div key={d.id} style={{ background: "var(--raised)", border: `2px solid ${unlocked ? d.color : "var(--hairline)"}`, borderRadius: 10, padding: 13, marginBottom: 10, opacity: unlocked ? 1 : 0.55 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <div style={{ fontSize: 26 }}><EmojiIcon emoji={d.icon} /></div>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ color: "var(--ink)", fontWeight: 700, fontSize: 13 }}>{d.name}</div>
-                      <div style={{ color: "var(--ink-faint)", fontSize: 11 }}>Req. Lvl {d.minLevel} · {d.waves} waves · Boss: {d.boss}</div>
-                      <div style={{ color: onCd ? "var(--rubric)" : "var(--ink-soft)", fontSize: 10.5 }}>{onCd ? (
-                        <span onClick={() => setResetPrompt(d)} style={{ cursor: "pointer", textDecoration: "underline", textDecorationStyle: "dotted", textUnderlineOffset: 2 }}><Icon name="hourglass" /> Runs reset in {fmtClock(resetLeft)} · 🎟️ tap to use ticket</span>
-                      ) : (
-                        `Runs left: ${runsLeft}/${DUNGEON_RUN_LIMIT}${resetLeft > 0 ? ` · resets in ${fmtClock(resetLeft)}` : ""}`
-                      )}</div>
+                <div key={d.id} className={`dest${unlocked ? "" : " is-shut"}`}>
+                  <div className="dest-head">
+                    <span className="mark"><EmojiIcon emoji={d.icon} size={22} /></span>
+                    <div className="dest-body">
+                      <div className="dest-name">
+                        {d.name}
+                        {!onCd && <span className={`state ${runsLeft > 0 ? "is-open" : "is-shut"}`}>{runsLeft}/{DUNGEON_RUN_LIMIT} runs</span>}
+                        {onCd && <span className="state is-soon">{fmtClock(resetLeft)}</span>}
+                      </div>
+                      <div className="item-meta">Req. Lvl {d.minLevel} · {d.waves} waves · Boss: {d.boss}</div>
+                      {onCd
+                        ? <button className="link" style={{ marginTop: 3 }} onClick={() => setResetPrompt(d)}>Runs reset in {fmtClock(resetLeft)} — use a ticket?</button>
+                        : resetLeft > 0 ? <div className="ledger-note">Resets in {fmtClock(resetLeft)}</div> : null}
                     </div>
                   </div>
-                  <button disabled={!unlocked || !!battle || (!canRun && !onCd)} onClick={() => { if (canRun) startDungeon(d); else if (onCd) setResetPrompt(d); }}
-                    style={{ width: "100%", marginTop: 10, background: (canRun || onCd) ? "var(--raised)" : "var(--verdigris)", border: `1.5px solid ${canRun ? d.color : onCd ? "var(--verdigris)" : "var(--ink)"}`, borderRadius: 8, color: canRun ? d.color : onCd ? "var(--ink-soft)" : "var(--ink-faint)", fontSize: 12.5, fontWeight: 700, padding: 10, cursor: (canRun || onCd) ? "pointer" : "default" }}>
-                    {!unlocked ? `🔒 Requires Level ${d.minLevel}` : battle ? "Finish current fight first" : onCd ? `🎟️ Runs reset in ${fmtClock(resetLeft)} — use ticket?` : runsLeft <= 0 ? "No runs left" : "⚔️ Travel — Run Dungeon"}
+                  <button disabled={!unlocked || !!battle || (!canRun && !onCd)} onClick={() => { if (canRun) startDungeon(d); else if (onCd) setResetPrompt(d); }} className="go">
+                    {!unlocked ? `Requires Level ${d.minLevel}` : battle ? "Finish current fight first" : onCd ? `Runs reset in ${fmtClock(resetLeft)} — use a ticket?` : runsLeft <= 0 ? "No runs left" : "Travel — Run Dungeon"}
                   </button>
                 </div>
               );
@@ -8960,27 +8971,27 @@ function GameScreen({ character: initChar, onSave, onBack }) {
               const onCd = cdLeft > 0;
               const canRun = meetsIlvl && !onCd && !battle;
               return (
-                <div key={rd.id} style={{ background: `${rd.color}14`, border: `2px solid ${meetsIlvl ? rd.color : "var(--rar-epic)"}`, borderRadius: 10, padding: 13, marginBottom: 10, opacity: meetsIlvl ? 1 : 0.6 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <div style={{ fontSize: 28 }}><EmojiIcon emoji={rd.icon} /></div>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        <span style={{ color: "var(--ink)", fontWeight: 700, fontSize: 14 }}>{rd.name}</span>
-                        <span style={{ background: "var(--ground)", color: "var(--ink)", borderRadius: 8, padding: "1px 7px", fontSize: 9, fontWeight: 700 }}>RAID</span>
+                <div key={rd.id} className={`dest${meetsIlvl ? "" : " is-shut"}`}>
+                  <div className="dest-head">
+                    <span className="mark"><EmojiIcon emoji={rd.icon} size={24} /></span>
+                    <div className="dest-body">
+                      <div className="dest-name">
+                        {rd.name}
+                        <span className="chip">Raid</span>
+                        {onCd && <span className="state is-shut">{fmtClock(cdLeft)}</span>}
                       </div>
-                      <div style={{ color: "var(--ink-faint)", fontSize: 11 }}>Req. ilvl {rd.reqIlvl} · {rd.waves} waves · Boss: {rd.boss}</div>
-                      <div style={{ color: meetsIlvl ? "var(--ink-soft)" : "var(--rubric)", fontSize: 10.5 }}>Your avg ilvl: {avg}{meetsIlvl ? "" : ` (need ${rd.reqIlvl})`}</div>
+                      <div className="item-meta">Req. ilvl {rd.reqIlvl} · {rd.waves} waves · Boss: {rd.boss}</div>
+                      <div className={meetsIlvl ? "state is-open" : "state is-shut"} style={{ marginTop: 2 }}>Your ilvl {avg}{meetsIlvl ? "" : ` · need ${rd.reqIlvl}`}</div>
                     </div>
                   </div>
-                  <div style={{ color: "var(--ink-soft)", fontSize: 11, margin: "8px 0" }}>{rd.desc}</div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
-                    <span style={{ background: "var(--raised)", border: "1px solid var(--rar-epic)", borderRadius: 6, padding: "2px 7px", fontSize: 10, color: "var(--rar-epic)" }}>🟣 90% Epic</span>
-                    <span style={{ background: "var(--raised)", border: "1px solid var(--bole)", borderRadius: 6, padding: "2px 7px", fontSize: 10, color: "var(--gilt)" }}>🟠 10% Legendary</span>
-                    <span style={{ background: "var(--sunk)", border: "1px solid var(--hairline)", borderRadius: 6, padding: "2px 7px", fontSize: 10, color: "var(--ink-soft)" }}><Icon name="hourglass" /> 24h lockout</span>
+                  <div className="dest-desc">{rd.desc}</div>
+                  <div className="tags" style={{ marginTop: 8 }}>
+                    <span className="tag is-given rar-epic">90% epic</span>
+                    <span className="tag is-given rar-legendary">10% legendary</span>
+                    <span className="tag"><Icon name="hourglass" size={11} /> 24h lockout</span>
                   </div>
-                  <button disabled={!canRun} onClick={() => startRaid(rd)}
-                    style={{ width: "100%", background: canRun ? "var(--raised)" : "var(--verdigris)", border: `1.5px solid ${canRun ? rd.color : "var(--ink)"}`, borderRadius: 8, color: canRun ? "var(--gilt)" : "var(--ink-faint)", fontSize: 12.5, fontWeight: 700, padding: 10, cursor: canRun ? "pointer" : "default" }}>
-                    {!meetsIlvl ? `🔒 Requires avg ilvl ${rd.reqIlvl}` : onCd ? `On cooldown (${fmtClock(cdLeft)})` : battle ? "Finish current fight first" : "🌋 Travel — Enter Raid"}
+                  <button disabled={!canRun} onClick={() => startRaid(rd)} className="go">
+                    {!meetsIlvl ? `Requires avg ilvl ${rd.reqIlvl}` : onCd ? `On cooldown — ${fmtClock(cdLeft)}` : battle ? "Finish current fight first" : "Travel — Enter Raid"}
                   </button>
                 </div>
               );
@@ -9645,21 +9656,26 @@ function GameScreen({ character: initChar, onSave, onBack }) {
         {/* ============ HERO TAB (stats + skills) ============ */}
         {tab === "hero" && (
           <div>
-            <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-              {[["stats", "📊 Stats"], ["skills", "✨ Skills"]].map(([id, label]) => (
-                <button key={id} onClick={() => setHeroTab(id)} style={{ flex: 1, background: heroTab === id ? "var(--raised)" : "var(--sunk)", border: `1px solid ${heroTab === id ? "var(--gilt)" : "var(--hairline)"}`, borderRadius: 8, color: heroTab === id ? "var(--gilt)" : "var(--ink-faint)", padding: 9, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{label}</button>
+            <div className="leaves">
+              {[["stats", "Stats"], ["skills", "Skills"]].map(([id, label]) => (
+                <button key={id} onClick={() => setHeroTab(id)} className={`leaf${heroTab === id ? " is-open" : ""}`}>{label}</button>
               ))}
             </div>
 
             {heroTab === "stats" && (
               <>
-                <div style={{ background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 10, padding: 14, marginBottom: 12 }}>
-                  <div style={{ textAlign: "center", marginBottom: 12 }}>
-                    <div style={{ fontSize: 36 }}>{cls?.icon}</div>
-                    <div style={{ color: "var(--ink)", fontWeight: 700, fontSize: 16 }}>{char.name}</div>
-                    <div style={{ color: cls?.color }}>{race?.name} {cls?.name}</div>
+                {/* The plate at the foot of the statue: who this is, in one line. */}
+                <div style={{ display: "flex", alignItems: "center", gap: 11, marginBottom: 14 }}>
+                  <span className="mark" style={{ padding: 5 }}><EmojiIcon emoji={cls?.icon} size={26} /></span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: "var(--step-1)", fontWeight: 600, lineHeight: 1.15 }}>{char.name}</div>
+                    <div className="item-meta">{race?.name} {cls?.name}</div>
                     <Faction faction={race?.faction} />
                   </div>
+                </div>
+
+                <div className="eyebrow"><span>The record</span></div>
+                <div className="ledger">
                   {[
                     { label: "Level", value: char.level, icon: "⭐" },
                     { label: "Health", value: maxHP, icon: "❤️" },
@@ -9668,26 +9684,30 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                     { label: "Attack Speed", value: `+${Math.round(agiAtkSpeed(char) * 100)}%`, icon: "🏃" },
                     { label: "Crit Chance", value: `${Math.round(critChanceFor(char) * 100)}%`, icon: "⚡" },
                     { label: "Armor", value: eff.armor, icon: "🛡️" },
-                    { label: "Gold", value: `${char.gold}g`, icon: "💰" },
-                    { label: "Kills", value: char.kills, icon: "☠️" },
-                    { label: "Boss Kills", value: char.bossKills, icon: "💀" },
+                    { label: "Gold", value: `${char.gold.toLocaleString()}g`, icon: "💰" },
+                    { label: "Kills", value: (char.kills || 0).toLocaleString(), icon: "☠️" },
+                    { label: "Boss Kills", value: (char.bossKills || 0).toLocaleString(), icon: "💀" },
                     { label: "Dungeons Cleared", value: char.dungeonClears || 0, icon: "🏰" },
                   ].map((row) => (
-                    <div key={row.label} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: "1px solid var(--verdigris)" }}>
-                      <span style={{ color: "var(--ink-faint)", fontSize: 13 }}><EmojiIcon emoji={row.icon} /> {row.label}</span>
-                      <span style={{ color: "var(--ink)", fontSize: 13, fontWeight: 600 }}>{row.value}</span>
+                    <div key={row.label} className="ledger-row">
+                      <div className="ledger-line">
+                        <span className="ledger-label"><EmojiIcon emoji={row.icon} size={14} /> {row.label}</span>
+                        <span className="ledger-val">{row.value}</span>
+                      </div>
                     </div>
                   ))}
                 </div>
-                <div style={{ background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 10, padding: 14, marginBottom: 12 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                    <div style={{ color: "var(--gilt)", fontWeight: 700, fontSize: 13 }}>Attributes{(char.attrPoints || 0) > 0 ? <span style={{ color: "var(--bole)", marginLeft: 8, fontSize: 11 }}><Icon name="star" /> {char.attrPoints} to spend</span> : null}</div>
-                    <div style={{ display: "flex", gap: 6 }}>
-                      {[["base", "Base"], ["gear", "With gear"]].map(([id, lbl]) => (
-                        <button key={id} onClick={() => setAttrWithGear(id === "gear")} style={{ background: (attrWithGear === (id === "gear")) ? "var(--raised)" : "var(--sunk)", border: `1px solid ${(attrWithGear === (id === "gear")) ? "var(--gilt)" : "var(--hairline)"}`, borderRadius: 6, color: (attrWithGear === (id === "gear")) ? "var(--gilt)" : "var(--ink-faint)", fontSize: 10.5, padding: "3px 9px", cursor: "pointer" }}>{lbl}</button>
-                      ))}
-                    </div>
-                  </div>
+
+                <div className="eyebrow">
+                  <span>Attributes{(char.attrPoints || 0) > 0 ? ` — ${char.attrPoints} to spend` : ""}</span>
+                  <span className="toggles">
+                    {[["base", "Base"], ["gear", "With gear"]].map(([id, lbl]) => (
+                      <button key={id} onClick={() => setAttrWithGear(id === "gear")}
+                        className={`toggle${attrWithGear === (id === "gear") ? " is-on" : ""}`}>{lbl}</button>
+                    ))}
+                  </span>
+                </div>
+                <div className="ledger">
                   {(() => {
                     const base = char.stats; const lvlB = Math.floor(char.level * 0.5);
                     const baseVals = { str: base.str + lvlB, agi: base.agi + lvlB, int: base.int + lvlB, sta: base.sta + lvlB };
@@ -9698,16 +9718,17 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                       ["sta", "❤️ Stamina", "Increases maximum health"],
                     ];
                     return meta.map(([k, label, desc]) => (
-                      <div key={k} style={{ padding: "7px 0", borderBottom: "1px solid var(--verdigris)" }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                          <span style={{ color: "var(--ink)", fontSize: 13, fontWeight: 600 }}>{label}</span>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <span style={{ color: "var(--verdigris)", fontSize: 13, fontWeight: 700 }}>{attrWithGear ? eff[k] : baseVals[k]}{attrWithGear && eff[k] !== baseVals[k] ? ` (${eff[k] - baseVals[k] >= 0 ? "+" : ""}${eff[k] - baseVals[k]})` : ""}</span>
-                            {(char.allocated?.[k] || 0) > 0 && <span style={{ color: "var(--bole)", fontSize: 10 }}>⭐{char.allocated[k]}</span>}
-                            {(char.attrPoints || 0) > 0 && <button onClick={() => allocateAttr(k)} style={{ background: "var(--raised)", border: "1px solid var(--bole)", borderRadius: 6, color: "var(--bole)", fontWeight: 700, fontSize: 13, width: 24, height: 24, lineHeight: "1", cursor: "pointer" }}>+</button>}
-                          </div>
+                      <div key={k} className="ledger-row">
+                        <div className="ledger-line">
+                          <span className="ledger-label">{withIcons(label, 14)}</span>
+                          <span className="ledger-val">
+                            {attrWithGear ? eff[k] : baseVals[k]}
+                            {attrWithGear && eff[k] !== baseVals[k] ? <span className="is-gear">({eff[k] - baseVals[k] >= 0 ? "+" : ""}{eff[k] - baseVals[k]})</span> : null}
+                            {(char.allocated?.[k] || 0) > 0 && <span className="is-spent" title="Points you placed"><Icon name="star" size={10} />{char.allocated[k]}</span>}
+                            {(char.attrPoints || 0) > 0 && <button className="mini is-gain" onClick={() => allocateAttr(k)} aria-label={`Spend a point on ${label.replace(/^\S+\s*/, "")}`}>+</button>}
+                          </span>
                         </div>
-                        <div style={{ color: "var(--ink-faint)", fontSize: 10.5 }}>{desc}</div>
+                        <div className="ledger-note">{desc}</div>
                       </div>
                     ));
                   })()}
@@ -9724,22 +9745,24 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                     ["💥 Crit Damage", `+${sp.csd.toFixed(0)}%`, `Critical strikes deal ${(180 + sp.csd).toFixed(0)}% weapon damage (base 180%, cap +200%)`],
                   ];
                   return (
-                    <div style={{ background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 10, padding: 14, marginBottom: 12 }}>
-                      <div style={{ color: "var(--gilt)", fontWeight: 700, fontSize: 13, marginBottom: 6 }}>Secondary Stats</div>
-                      {rows.map(([label, val, desc]) => (
-                        <div key={label} style={{ padding: "7px 0", borderBottom: "1px solid var(--verdigris)" }}>
-                          <div style={{ display: "flex", justifyContent: "space-between" }}>
-                            <span style={{ color: "var(--ink)", fontSize: 13, fontWeight: 600 }}>{label}</span>
-                            <span style={{ color: "var(--verdigris)", fontSize: 13, fontWeight: 700 }}>{val}</span>
+                    <>
+                      <div className="eyebrow"><span>What the gear adds</span></div>
+                      <div className="ledger">
+                        {rows.map(([label, val, desc]) => (
+                          <div key={label} className="ledger-row">
+                            <div className="ledger-line">
+                              <span className="ledger-label">{withIcons(label, 14)}</span>
+                              <span className="ledger-val">{val}</span>
+                            </div>
+                            <div className="ledger-note">{desc}</div>
                           </div>
-                          <div style={{ color: "var(--ink-faint)", fontSize: 10.5 }}>{desc}</div>
-                        </div>
-                      ))}
-                    </div>
+                        ))}
+                      </div>
+                    </>
                   );
                 })()}
 
-                <button onClick={onBack} style={{ width: "100%", background: "var(--raised)", border: "1px solid var(--ink-faint)", borderRadius: 8, color: "var(--ink-soft)", padding: 12, cursor: "pointer", fontSize: 13 }}>← Save & Character Select</button>
+                <button onClick={onBack} className="go is-quiet">&#8592; Save &amp; Character Select</button>
               </>
             )}
 
@@ -9751,31 +9774,34 @@ function GameScreen({ character: initChar, onSave, onBack }) {
               const activeSpec = specById(char.spec);
               return (
                 <>
-                  <div style={{ color: "var(--ink-soft)", fontSize: 11, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Ability Slots — {sel.length}/{cap} filled</div>
-                  <div style={{ color: "var(--ink-faint)", fontSize: 11, marginBottom: 10, lineHeight: 1.5 }}>
+                  <div className="eyebrow">
+                    <span>Ability slots</span>
+                    <span className={sel.length >= cap ? "state is-shut" : "state is-open"}>{sel.length}/{cap} filled</span>
+                  </div>
+                  <div className="dest-desc" style={{ marginTop: 0, marginBottom: 12 }}>
                     Choose up to {cap} of your {MAX_SKILL_SLOTS} abilities to take into battle. {nextSlot ? `Next slot unlocks at level ${nextSlot}. ` : "All slots unlocked. "}
-                    {activeSpec ? <>Specialization: <span style={{ color: cls?.color }}>{activeSpec.name}</span> — its signature skills are granted automatically.</> : (char.level >= SPEC_LEVEL ? "Choose a Specialization in the Class Hall to unlock signature skills." : `Specializations unlock at level ${SPEC_LEVEL} (Class Hall).`)}
+                    {activeSpec ? <>Specialization: <b>{activeSpec.name}</b> — its signature skills are granted automatically.</> : (char.level >= SPEC_LEVEL ? "Choose a Specialization in the Class Hall to unlock signature skills." : `Specializations unlock at level ${SPEC_LEVEL} (Class Hall).`)}
                   </div>
                   {pool.map((skill) => {
                     const selected = sel.includes(skill.name);
                     const fromSpec = !!skill.spec; // a signature skill of the active spec
-                    const srcColor = cls?.color || "#888";
                     const canAdd = selected || sel.length < cap;
                     return (
-                      <div key={skill.name} onClick={() => toggleSelectedSkill(skill.name)} style={{ background: selected ? "var(--verdigris)" : "var(--sunk)", border: `1.5px solid ${selected ? srcColor : "var(--hairline)"}`, borderRadius: 8, padding: "11px 13px", marginBottom: 8, cursor: "pointer", opacity: canAdd ? 1 : 0.5 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                          <div style={{ fontSize: 26 }}><EmojiIcon emoji={skill.icon} /></div>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ color: "var(--ink)", fontWeight: 600, fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>{skill.name}{fromSpec && <span style={{ color: srcColor, fontSize: 8.5, fontWeight: 700, textTransform: "uppercase", border: `1px solid ${srcColor}`, borderRadius: 4, padding: "1px 4px" }}>Signature</span>}</div>
-                            <div style={{ color: "var(--ink-soft)", fontSize: 9.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}>{skillTypeLabel(skill.name)}</div>
-                            <div style={{ color: "var(--ink-soft)", fontSize: 11 }}>{skill.desc}</div>
-                            <div style={{ color: "var(--ink-faint)", fontSize: 10 }}>{skill.cd}s cd</div>
+                      <div key={skill.name} onClick={() => toggleSelectedSkill(skill.name)}
+                        className={`choice${selected ? " is-on" : ""}${canAdd ? "" : " is-shut"}`} role="button" tabIndex={0}>
+                        <div className="choice-head">
+                          <span className="mark"><EmojiIcon emoji={skill.icon} size={22} /></span>
+                          <div className="choice-name">
+                            {skill.name}
+                            {fromSpec && <span className="chip" style={{ marginLeft: 6 }}>Signature</span>}
+                            <small>{skillTypeLabel(skill.name)} · {skill.cd}s cd</small>
                           </div>
-                          <span style={{ color: selected ? srcColor : (canAdd ? "var(--verdigris)" : "var(--ink-faint)"), fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>{selected ? "✓ Slotted" : canAdd ? "+ Slot" : "Full"}</span>
+                          <span className={selected ? "state is-open" : canAdd ? "state" : "state is-shut"}>{selected ? "slotted" : canAdd ? "free slot" : "full"}</span>
                         </div>
+                        <div className="choice-body">{skill.desc}</div>
                         {selected && (
-                          <div style={{ marginTop: 9, display: "flex", justifyContent: "flex-end" }} onClick={(e) => e.stopPropagation()}>
-                            <button onClick={() => setTab("gambits")} style={{ background: "var(--raised)", border: "1px solid var(--rule)", borderRadius: 8, color: "var(--rar-epic)", fontSize: 10.5, fontWeight: 700, padding: "6px 11px", cursor: "pointer" }}><Icon name="target" /> Automate via Gambit</button>
+                          <div style={{ marginTop: 9 }} onClick={(e) => e.stopPropagation()}>
+                            <button onClick={() => setTab("gambits")} className="link"><Icon name="target" size={12} /> Automate via Gambit</button>
                           </div>
                         )}
                       </div>

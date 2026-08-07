@@ -314,6 +314,62 @@ sec("Class Hall and the Guild, on the shared vocabulary");
   ok(!/\.cpage \{[^}]*border: 1px solid var\(--rule\)/s.test(combat), "…and is no longer boxed");
 }
 
+sec("The Adventure Gate and the Hero's Statue");
+{
+  // Three more patterns, and each replaced a whole family of hand-written ones.
+  for (const [cls, what] of [
+    ["go", "the one action a panel exists for"],
+    ["dest", "a place you can go"],
+    ["ledger", "a label and a number, ruled off from the next"],
+  ]) ok(panels.includes("." + cls + " "), `panels.css defines ${what}`);
+
+  // THE GATE. Both strips were rows of filled pills whose colour changed with the
+  // difficulty selected — three treatments describing one selection.
+  ok(app.includes('className={`leaf${difficulty === id ? " is-open" : ""}`}'),
+     "the register you are reading in is a leaf of the book");
+  ok(app.includes('className={`toggle${worldTab === id ? " is-on" : ""}`}'),
+     "…and what you are looking at is a filter under it");
+  ok(!/borderRadius: 9, color: difficulty === id/.test(app), "…not a row of pills that restyle themselves");
+
+  // Every destination on the Gate is the same shape now, and none of them is
+  // tinted with its own colour. A tinted card per zone is the single loudest
+  // "app" gesture the game had left.
+  ok(app.split('className={`dest').length - 1 >= 6,
+     "zones, dungeons, raids, hard zones, hard dungeons and Abyss ranks are all destinations");
+  ok(!app.includes("background: current ? `${z.color}22`"), "a zone is no longer a card tinted with its own colour");
+  ok(!app.includes("background: `${rd.color}14`"), "…nor is a raid");
+
+  // One departure treatment. There were five, differing in border width, radius,
+  // colour, weight and padding, all saying "go here".
+  ok(app.split('className="go"').length - 1 >= 6, "every departure is written the same way");
+  ok(app.split("go is-quiet").length - 1 >= 4, "…and the second action on a panel is quieter than the first");
+
+  // The park toggles carried `x === y ? A : A` after the colour sweep collapsed
+  // their two branches, so being parked looked exactly like not being parked.
+  ok(!/(offlineZoneId === z\.id|offlineAbyss === p|offlineHardId === hz\.id) \? "var\(--verdigris\)" : "var\(--verdigris\)"/.test(app),
+     "parking here reads differently from not parking here");
+  ok(app.includes('${char.offlineZoneId === z.id ? " is-on" : ""}'), "…because the state is a class, not a colour");
+
+  // THE STATUE. Twenty label/value pairs in three bordered boxes.
+  ok(app.split('className="ledger-row"').length - 1 >= 3, "the character sheet is a ledger");
+  ok(app.includes('className="ledger-val"') && app.includes('className="ledger-note"'),
+     "…numbers in the margin hand, what they do underneath");
+  ok(/\.ledger-val \{[^}]*font-family: var\(--mono\)/s.test(panels), "…and that hand is mono, always");
+  ok(app.includes('className={`leaf${heroTab === id ? " is-open" : ""}`}'), "Stats and Skills are leaves");
+  ok(app.includes('className={`choice${selected ? " is-on" : ""}'), "a slotted ability is ruled down its edge");
+  ok(!app.includes('const srcColor = cls?.color || "#888"'), "…rather than bordered in the class colour");
+
+  // A full-width block with padding overflows its column by exactly its padding
+  // unless it is told to include it. Every pattern below survived only because
+  // Chromium's UA sheet makes <button> border-box for free — .choice is a <div>
+  // (it has to be: it contains another button), and it hung 30px off the page.
+  for (const [sheet, cls] of [[panels, "choice"], [panels, "gateway"], [panels, "slot-wide"], [combat, "leave"]]) {
+    const rule = new RegExp("\\." + cls + " \\{[^}]*\\}", "s").exec(sheet);
+    ok(rule && /width: 100%/.test(rule[0]) && /box-sizing: border-box/.test(rule[0]),
+       `.${cls} counts its own padding inside its width`);
+  }
+}
+
 sec("The shell is bound in the same hand");
 {
   // Converting the shell is what decides whether the game reads as one object or

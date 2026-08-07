@@ -528,7 +528,7 @@ js += `
   // --- reachability --------------------------------------------------------------------------------------
   sec("A player can find it");
   {
-    ok(src.indexOf('abyssOpen(char) ? [["abyss", "🕳️ Abyss"]] : []') > 0,
+    ok(src.indexOf('abyssOpen(char) ? [["abyss", "The Abyss"]] : []') > 0,
        "the Adventure Gate grows an Abyss tab once Hard Mode is done \\u2014 and not before");
     ok(src.indexOf('{difficulty === "abyss" && (() => {') > 0, "\\u2026and the screen renders");
     ok(src.indexOf("onClick={() => startAbyss(p)}") > 0, "every unlocked rank can be entered");

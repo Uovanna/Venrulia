@@ -131,7 +131,7 @@
 }
 /* The weapon gets a full row because it is the one slot with numbers worth reading. */
 .slot-wide {
-  width: 100%; height: 52px; justify-content: flex-start; padding: 0 var(--s-3);
+  width: 100%; box-sizing: border-box; height: 52px; justify-content: flex-start; padding: 0 var(--s-3);
   display: flex; align-items: center; gap: var(--s-3);
 }
 .slot-wide .item-body { text-align: left; }
@@ -192,7 +192,7 @@
 
 /* ---- a row that opens something else ------------------------------------- */
 .gateway {
-  width: 100%; display: flex; align-items: center; gap: var(--s-3);
+  width: 100%; box-sizing: border-box; display: flex; align-items: center; gap: var(--s-3);
   background: var(--raised); border: 1px solid var(--rule); border-radius: var(--r-md);
   padding: var(--s-3) var(--s-4); cursor: pointer; margin-bottom: var(--s-4);
   font-family: var(--serif); color: var(--ink); text-align: left;
@@ -302,7 +302,8 @@ select.field { cursor: pointer; }
    uses for your own hand. Not a filled card: filling it makes the unchosen ones
    look disabled, which they are not. */
 .choice {
-  display: block; width: 100%; text-align: left; font-family: var(--serif); color: var(--ink);
+  display: block; width: 100%; box-sizing: border-box;
+  text-align: left; font-family: var(--serif); color: var(--ink);
   background: var(--raised); border: 1px solid var(--rule); border-left: 3px solid transparent;
   border-radius: 0 var(--r-md) var(--r-md) 0; padding: var(--s-3) var(--s-4);
   margin-bottom: var(--s-3); cursor: pointer;
@@ -328,6 +329,74 @@ select.field { cursor: pointer; }
   display: inline-flex; align-items: center; gap: var(--s-1);
 }
 .tag.is-given { color: var(--ink); border-bottom-color: var(--rule); }
+
+/* ---- a departure --------------------------------------------------------- */
+/* The one action a panel exists for: travel, descend, enter, run. Every screen
+   had hand-written its own full-width button, so there were as many treatments
+   as there were destinations. One rule and the rubric hand — the same red the
+   chronicle uses for what YOU do, because leaving is a deed.
+   Shut is drawn, not hidden: a locked door is still a door, and a player needs
+   to read what it wants before they can go and get it. */
+.go {
+  display: block; width: 100%; box-sizing: border-box; margin-top: var(--s-3);
+  background: var(--raised); border: 1px solid var(--rubric); border-radius: var(--r-md);
+  color: var(--rubric); font-family: var(--serif); font-size: var(--step-0);
+  padding: 9px var(--s-4); cursor: pointer; text-align: center; line-height: 1.3;
+}
+.go:hover { background: var(--ground); }
+.go:focus-visible { outline: 2px solid var(--rubric); outline-offset: 2px; }
+.go[disabled], .go.is-shut {
+  border-color: var(--hairline); color: var(--ink-faint); cursor: default; background: var(--raised);
+}
+/* The second action on a panel — parking, a ticket, an alternative. Same shape,
+   ordinary ink, so only one thing per panel is written in red. */
+.go.is-quiet { border-color: var(--rule); color: var(--ink-soft); font-size: var(--step--1); padding: 7px var(--s-4); }
+.go.is-quiet.is-on { border-color: var(--verdigris); color: var(--verdigris); }
+
+/* ---- a destination ------------------------------------------------------- */
+/* A place you can go — a zone, a dungeon, a raid, a rank of the Abyss. These
+   were 2px-bordered rounded cards tinted with the zone's own colour, which is
+   the single most "app" thing left in the game. An itinerary is a ruled list:
+   the entries are separated, not boxed, and the one you are in is marked in the
+   margin rather than filled in. */
+.dest { padding: var(--s-4) 0; border-bottom: 1px solid var(--rule); }
+.dest:last-child { border-bottom: 0; }
+.dest.is-shut { opacity: .55; }
+/* Where you are now. A rule down the edge, like a reader's mark. */
+.dest.is-here { border-left: 3px solid var(--rubric); padding-left: var(--s-3); margin-left: -3px; }
+.dest.is-done { border-left: 3px solid var(--verdigris); padding-left: var(--s-3); margin-left: -3px; }
+.dest-head { display: flex; align-items: flex-start; gap: var(--s-3); }
+.dest-body { flex: 1; min-width: 0; }
+.dest-name {
+  font-size: var(--step-0); font-weight: 600; color: var(--ink); line-height: 1.2;
+  display: flex; align-items: baseline; gap: var(--s-2); flex-wrap: wrap;
+}
+.dest-desc { font-size: var(--step--1); color: var(--ink-soft); line-height: 1.45; margin-top: var(--s-2); }
+.dest-bar { margin-top: var(--s-3); }
+
+/* ---- a ledger row -------------------------------------------------------- */
+/* A label and a number, ruled off from the next one. The Hero's Statue is
+   twenty of these in a row, and so is every character sheet ever written down.
+   The number is always mono and always tabular so the column reads as a column
+   even though nothing is laid out as one. */
+.ledger { border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); margin-bottom: var(--s-4); }
+.ledger-row { padding: var(--s-3) 0; border-bottom: 1px solid var(--hairline); }
+.ledger-row:last-child { border-bottom: 0; }
+.ledger-line {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--s-3);
+}
+.ledger-label {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--s-2);
+  font-size: var(--step-0); color: var(--ink);
+}
+.ledger-val {
+  font-family: var(--mono); font-size: var(--step--1); font-variant-numeric: tabular-nums;
+  color: var(--ink); white-space: nowrap; display: flex; align-items: center; gap: var(--s-2);
+}
+.ledger-val .is-spent { color: var(--gilt); }
+.ledger-val .is-gear  { color: var(--verdigris); }
+/* What the stat actually does, in the marginal voice, under the number. */
+.ledger-note { font-size: var(--step--1); color: var(--ink-faint); line-height: 1.4; margin-top: 2px; }
 
 /* ---- a state ------------------------------------------------------------- */
 /* Whether a thing is open to you right now. The margin hand, so a lockout timer

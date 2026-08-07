@@ -237,7 +237,8 @@
 /* The one destructive action on the screen. Struck through, the way a scribe
    cancels an entry, rather than painted red. */
 .leave {
-  width: 100%; font-family: var(--serif); font-size: var(--step-0); color: var(--ink);
+  width: 100%; box-sizing: border-box;
+  font-family: var(--serif); font-size: var(--step-0); color: var(--ink);
   background: var(--raised); border: 1px solid var(--rule); border-radius: var(--r-md);
   padding: 11px; cursor: pointer; letter-spacing: .01em;
 }

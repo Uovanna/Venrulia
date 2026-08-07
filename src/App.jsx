@@ -2624,6 +2624,54 @@ const IDLE = {
 };
 const idleRate = (table, spotKind) => table[spotKind] || table.zone;
 
+// ---------- unattended live play ----------
+// Rationing the PARKED payout only moved the problem. The live tick pays a full per-kill wage, and
+// the same gambits and auto-potions fight either way, so once parking dropped to 900 gold an hour a
+// hard zone left running on an open tab was worth about 30,000 — roughly 34x better than the thing
+// it replaced. The optimal play became "leave the game open on a spare monitor", which is camping
+// with extra steps and exactly what this was all meant to stop.
+//
+// So the wage is not a property of being LIVE, it is a property of being THERE. A session with a
+// person in it pays per kill, as it always has. A session nobody has touched for ten minutes pays
+// the parked tranche and the parked five drops an hour — identical to leaving, because it is.
+//
+// Ten minutes is deliberately generous: this is a game you can win by setting up gambits and
+// watching, and any pointer, key, wheel or touch event anywhere in the app resets it. Hiding the
+// tab starts the clock immediately, because a backgrounded tab has definitionally nobody in it.
+const ATTENTION = { afkAfterMs: 10 * 60 * 1000 };
+// Pure, so the rule can be tested without a browser. A hidden tab is unattended AT ONCE rather than
+// after the grace period: the timers keep running when a tab is backgrounded, and there is nobody
+// there by definition, so serving out ten more minutes of full wages would just be the loophole
+// again in a smaller window.
+const isAttended = (lastInputAt, now, hidden) => !hidden && (now - (lastInputAt || 0)) < ATTENTION.afkAfterMs;
+
+// Only ENDLESS content can be left to run. Dungeons and hard raids finish and hand back an idle
+// screen, so there is nothing to leave running; PvP is another player's time and is never rationed.
+const endlessSpotOf = (b) =>
+  !b || b.pvp ? null
+  : b.mode === "abyss" ? "abyss"
+  : b.mode === "hard" ? (b.hardKind === "zone" ? "hard" : null)
+  : b.mode === "zone" ? "zone"
+  : null;
+
+// What an unattended stretch has earned but not yet been paid. Pure, so it can be tested without a
+// browser, and CUMULATIVE rather than per-kill: it pays the difference between what the stretch is
+// worth by now and what it has already handed over. That is what makes the payout independent of
+// how many things died in it — a fast character and a slow one reach the same total, and a kill
+// that arrives a millisecond after the last one is worth nothing extra.
+const afkAccrue = (rec, spot, now) => {
+  const since = (rec && rec.since) || now;
+  const paidGold = (rec && rec.gold) || 0, paidXp = (rec && rec.xp) || 0, kept = (rec && rec.drops) || 0;
+  const hours = Math.max(0, now - since) / 3600000;
+  const gold = Math.max(0, Math.floor(idleRate(IDLE.goldPerHour, spot) * hours) - paidGold);
+  const xp = Math.max(0, Math.floor(idleRate(IDLE.xpPerHour, spot) * hours) - paidXp);
+  // The same allowance simulateOffline uses, computed the same way, so an hour away and an hour
+  // ignored hand over the same number of items.
+  const budget = Math.floor(hours) * IDLE.dropsPerHour + IDLE.dropsPerHour;
+  return { gold, xp, budget, roomForDrop: kept < budget,
+           rec: { since, gold: paidGold + gold, xp: paidXp + xp, drops: kept } };
+};
+
 const simulateOffline = (char, elapsedMs) => {
   const spot = offlineSpot(char);
   if (!spot) return null;
@@ -3699,6 +3747,10 @@ function GameScreen({ character: initChar, onSave, onBack }) {
   const charRef = useRef(char);
   const battleRef = useRef(battle);
   const lastPotionRef = useRef(0);
+  // When the player last did anything at all. Drives the attended/unattended split in resolveDeath.
+  const lastInputRef = useRef(Date.now());
+  const attended = () => isAttended(lastInputRef.current, Date.now(),
+    typeof document !== "undefined" && document.visibilityState === "hidden");
   // Artifacts re-forge whenever the character's level moves, so their ilvl always tracks level + 5.
   const syncArtifacts = (c) => {
     const want = artifactIlvl(c.level);
@@ -3858,12 +3910,19 @@ function GameScreen({ character: initChar, onSave, onBack }) {
         }
       }
     };
-    const onShow = () => { LocalNotify.cancelScheduled(); LocalNotify.cancelBankFull(); applyOffline(); };
+    const onShow = () => { lastInputRef.current = Date.now(); LocalNotify.cancelScheduled(); LocalNotify.cancelBankFull(); applyOffline(); };
     const onVis = () => (document.visibilityState === "hidden" ? onHide() : onShow());
     document.addEventListener("visibilitychange", onVis);
     window.addEventListener("beforeunload", onHide);
+    // Any sign of life resets the attention clock. Listened for on the capture phase at the document
+    // so nothing can stop it short, and passively so it never costs a frame of scroll performance.
+    const onInput = () => { lastInputRef.current = Date.now(); };
+    const INPUTS = ["pointerdown", "keydown", "wheel", "touchstart"];
+    for (const ev of INPUTS) document.addEventListener(ev, onInput, { capture: true, passive: true });
     const iv = setInterval(markActive, 20000);
-    return () => { document.removeEventListener("visibilitychange", onVis); window.removeEventListener("beforeunload", onHide); clearInterval(iv); };
+    return () => { document.removeEventListener("visibilitychange", onVis); window.removeEventListener("beforeunload", onHide);
+      for (const ev of INPUTS) document.removeEventListener(ev, onInput, { capture: true });
+      clearInterval(iv); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -4029,7 +4088,33 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       xpEarned = Math.floor(xpEarned * (1 + ABYSS.xpPerPlus * ap));
     }
 
-    addLog(`✅ ${enemy.name} defeated! +${xpEarned} XP, +${goldBase}g`, "#ABD473");
+    // ----- attended, or merely running? -----
+    // Everything above computed the per-kill wage. If nobody has touched the game for ten minutes
+    // and this is endless content, that wage is replaced wholesale by the parked tranche — the same
+    // arithmetic simulateOffline uses, so an hour ignored is worth exactly an hour away. The kill
+    // itself is untouched below this line: it still counts, still banks toward goals, still drops
+    // souls and materials, and can still kill you.
+    const afkSpot = endlessSpotOf(b);
+    const unattended = !!afkSpot && !attended();
+    let afkRec = null, afkBudget = Infinity;
+    if (unattended) {
+      const acc = afkAccrue(c.afk, afkSpot, Date.now());
+      goldBase = acc.gold; xpEarned = acc.xp; afkRec = acc.rec; afkBudget = acc.budget;
+    }
+    // Gear obeys the parked five-an-hour allowance while nobody is looking, and gems are held back
+    // entirely, because a parked character earns none of either beyond that. Everything else a kill
+    // produces — souls, materials, bestiary progress, enemy drops, Ven — is progression rather than
+    // wealth, and is left exactly as it was.
+    const afkGear = (items) => {
+      if (!unattended) return items;
+      const out = [];
+      for (const it of items) { if (afkRec.drops >= afkBudget) break; afkRec.drops++; out.push(it); }
+      return out;
+    };
+
+    addLog(unattended
+      ? `✅ ${enemy.name} defeated! (idle — paid by the hour)`
+      : `✅ ${enemy.name} defeated! +${xpEarned} XP, +${goldBase}g`, "#ABD473");
 
     let nc = { ...c };
     const xpGain = c.race === "undead" ? Math.floor(xpEarned * 1.1) : xpEarned;
@@ -4053,6 +4138,10 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     if (unlockedSlotCount(newLevel) > beforeSlots) { nc.selectedSkills = padSelectedSkills(nc, c.selectedSkills); addLog(`🌟 New ability slot unlocked! (${unlockedSlotCount(newLevel)}/${MAX_SKILL_SLOTS})`, "#f0b429"); }
     nc.honor = newHonor; nc.honorXp = newHonorXp; nc.attrPoints = newAttrPoints;
     nc.gold = c.gold + goldBase;
+    // The stretch's running total, or nothing at all once somebody is back. Clearing it on the first
+    // attended kill is what makes the grace period repeatable: walk away again and a fresh stretch
+    // starts from that moment rather than resuming the old one's accrued hours.
+    nc.afk = afkRec;
     nc.kills = c.kills + 1;
     nc.bossKills = enemy.isBoss ? c.bossKills + 1 : c.bossKills;
 
@@ -4086,8 +4175,8 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       const guildBoss = guildRunRef.current && (enemy.isBoss || enemy.hardBoss);
       if (!isHardRun) {
         const rate = 0.10 * (enemy.isBoss || enemy.isLord ? 1.6 : 1) * (1 + townBonuses(nc).drop);
-        if (Math.random() < rate && !guildBoss) nc = grantLoot(nc, [generateItem(b.dropIlvl, hardRar(), pickLootSlot(), nc.cls)]);
-        nc = grantGem(nc, rollGem({ level: enemy.level, isBoss: enemy.isBoss || enemy.isLord, dungeonId: "stratholme", dropMult: 1 + townBonuses(nc).drop }));
+        if (Math.random() < rate && !guildBoss) nc = grantLoot(nc, afkGear([generateItem(b.dropIlvl, hardRar(), pickLootSlot(), nc.cls)]));
+        if (!unattended) nc = grantGem(nc, rollGem({ level: enemy.level, isBoss: enemy.isBoss || enemy.isLord, dungeonId: "stratholme", dropMult: 1 + townBonuses(nc).drop }));
       } else if (enemy.hardBoss && !guildBoss) { // Guild boss gear is awarded through the GDKP bid, not auto-looted
         nc = grantLoot(nc, Array.from({ length: DUNGEON_BOSS_DROPS }, () => generateItem(b.dropIlvl, hardRar(), pickLootSlot(), nc.cls)));
         nc = grantGem(nc, rollGem({ level: enemy.level, isBoss: true, dungeonId: "stratholme", dropMult: 1 + townBonuses(nc).drop }));
@@ -4117,8 +4206,8 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       // average that gates Hard Mode. Cutting it to two would close the only route out of normal
       // mode, the same reason zoneDropScale exempts it.
     } else {
-      if (!(guildRunRef.current && enemy.isBoss)) nc = grantLoot(nc, rollLoot({ level: enemy.level, isBoss: enemy.isBoss, dungeonId: isDungeon ? b.dungeonId : null, guaranteed: isDungeon && enemy.isBoss, clsId: nc.cls, dropMult: rewardMult * (1 + townBonuses(nc).drop), rolls: isDungeon && enemy.isBoss && !(instanceById(b.dungeonId) || {}).raid ? DUNGEON_BOSS_DROPS : 0 })); // Guild boss gear comes through the GDKP bid; the raid keeps its own drop maths
-      nc = grantGem(nc, rollGem({ level: enemy.level, isBoss: enemy.isBoss, dungeonId: isDungeon ? b.dungeonId : null, dropMult: rewardMult * (1 + townBonuses(nc).drop) }));
+      if (!(guildRunRef.current && enemy.isBoss)) nc = grantLoot(nc, afkGear(rollLoot({ level: enemy.level, isBoss: enemy.isBoss, dungeonId: isDungeon ? b.dungeonId : null, guaranteed: isDungeon && enemy.isBoss, clsId: nc.cls, dropMult: rewardMult * (1 + townBonuses(nc).drop), rolls: isDungeon && enemy.isBoss && !(instanceById(b.dungeonId) || {}).raid ? DUNGEON_BOSS_DROPS : 0 }))); // Guild boss gear comes through the GDKP bid; the raid keeps its own drop maths
+      if (!unattended) nc = grantGem(nc, rollGem({ level: enemy.level, isBoss: enemy.isBoss, dungeonId: isDungeon ? b.dungeonId : null, dropMult: rewardMult * (1 + townBonuses(nc).drop) }));
     }
 
     // Enemy-specific drop (for the upcoming quest & building systems): normal 50%, champions/bosses guaranteed & more
@@ -4181,9 +4270,13 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       if (Math.random() < 1 / ABYSS.killsPerDrop) {
         const rar = rarityById(Math.random() < ABYSS.legendaryChance ? "legendary" : "epic");
         const it = generateItem(ABYSS.dropIlvl, rar, pickLootSlot(), c.cls, ap);
-        nc = { ...nc, ...depositEarned(nc, it) };
-        addLog(`🕳️ ${it.name} — ${abyssLabel(ap)}, ilvl ${it.ilvl}`, rar.color);
-        showNotif(`🕳️ ${rar.name} drop: ${it.name}`);
+        // The roll happens either way — rate and rarity are never touched — and the allowance
+        // decides whether the piece is kept, exactly as it does while parked.
+        if (afkGear([it]).length) {
+          nc = { ...nc, ...depositEarned(nc, it) };
+          addLog(`🕳️ ${it.name} — ${abyssLabel(ap)}, ilvl ${it.ilvl}`, rar.color);
+          showNotif(`🕳️ ${rar.name} drop: ${it.name}`);
+        }
       }
     }
 

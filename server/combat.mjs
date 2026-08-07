@@ -1778,6 +1778,7 @@ const createCharacter = (name, cls, race) => {
     offlineZoneId: null,
     offlineAbyss: null,
     offlineHardId: null,
+    afk: null,
     lastActive: Date.now(),
     professions: emptyProfessions(),
     gatherTier: {},
@@ -2074,6 +2075,17 @@ const normalizeChar = (c) => ({
   // happened — the field would be dropped on load and applyOffline would find nowhere to fight.
   offlineAbyss: (c.offlineAbyss == null) ? null : Math.max(0, Math.min(10, Number(c.offlineAbyss) || 0)),
   offlineHardId: c.offlineHardId || null,
+  // An UNATTENDED stretch of live play: when it started, and what it has already been paid. Kept on
+  // the character so a reload cannot launder it — dropping the field would restart the accrual at
+  // zero hours, which is a full fresh allowance of gear and a clean slate on the tranche, and
+  // reloading is cheap. `since` is a timestamp, so it is clamped to sane numbers rather than
+  // trusted; the rest are counters that only ever go up within one stretch.
+  afk: (c.afk && typeof c.afk === "object" && !Array.isArray(c.afk) && Number(c.afk.since) > 0)
+    ? { since: Math.min(Date.now(), Number(c.afk.since)),
+        gold: Math.max(0, Number(c.afk.gold) || 0),
+        xp: Math.max(0, Number(c.afk.xp) || 0),
+        drops: Math.max(0, Number(c.afk.drops) || 0) }
+    : null,
   consumables: (() => { const src = c.consumables || {}; const out = {}; const t = Math.min(6, Math.max(0, Math.floor((c.level || 1) / 10))); for (const k in src) { const v = src[k]; if (!v) continue; if (k.includes("@")) out[k] = (out[k] || 0) + v; else out[k + "@" + t] = (out[k + "@" + t] || 0) + v; } return out; })(),
   buffs: c.buffs || {},
   hp: typeof c.hp === "number" ? c.hp : maxHpFor(c),

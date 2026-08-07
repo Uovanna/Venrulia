@@ -2883,34 +2883,52 @@ const predictOfflineDeath = (char) => {
   return null;
 };
 
+/* Rarity is expressed as a CLASS, not a hex. The colours in RARITIES are tuned
+   for a black ground and four of the seven are unreadable on parchment; the
+   theme decides the ink now, and the core data stays untouched because the
+   server has no opinion about what colour an epic is. */
+const rarClass = (r) => "rar-" + (typeof r === "string" ? r : (r && r.id) || "common");
+
 function ItemCard({ item, children, compare, cls, onClick }) {
   const r = rarityById(item.rarity);
   const merged = { ...item.stats };
   if (item.enchant) for (const k in item.enchant) merged[k] = (merged[k] || 0) + item.enchant[k];
   const statLine = Object.entries(merged).filter(([, v]) => v > 0).map(([k, v]) => `+${v} ${STAT_LABEL[k]}`).join(", ");
-  const dmgLine = item.wdmg ? `⚔️ ${item.wdmg.min}–${item.wdmg.max} Dmg` : "";
+  const dmgLine = item.wdmg ? `${item.wdmg.min}–${item.wdmg.max} damage` : "";
   const bodyLine = [dmgLine, statLine].filter(Boolean).join(" · ") || "—";
   const delta = compare !== undefined && compare !== null ? itemScore(item, cls) - compare : null;
   return (
-    <div style={{ background: "var(--sunk)", border: `1px solid ${r.color}55`, borderLeft: `3px solid ${r.color}`, borderRadius: 8, padding: "9px 11px", display: "flex", alignItems: "center", gap: 10 }}>
-      <div onClick={onClick} style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0, cursor: onClick ? "pointer" : "default" }}>
-        <GameIcon icon={item.icon} imgKey={item.iconKey} size={24} />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ color: r.color, fontWeight: 700, fontSize: 12.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.enchant ? "✨ " : ""}{item.name}{temperSuffix(item)}</div>
-          <div style={{ color: "var(--ink-soft)", fontSize: 10.5 }}>{slotById(item.slotId)?.name}{item.ilvl ? ` · ilvl ${item.ilvl}` : ""}{item.bound ? <span style={{ color: "#c9a6ff" }}> · 🔮 Bound</span> : null}</div>
-          <div style={{ color: "#7fb5d6", fontSize: 10.5 }}>{item.relicId ? "🔱 Relic" : bodyLine}</div>
-          {item.relicDesc && <div style={{ color: item.relicColor || "#f0b429", fontSize: 10 }}>{item.relicDesc}</div>}
-          {item.enchant && <div style={{ color: "#c08bff", fontSize: 10 }}><Icon name="spark" /> Enchant: {Object.entries(item.enchant).map(([k, v]) => `+${v} ${STAT_LABEL[k]}`).join(", ")}</div>}
-          {delta !== null && <div style={{ fontSize: 10, color: delta > 0 ? "#5fd35f" : delta < 0 ? "#d35f5f" : "#777" }}>{delta > 0 ? `▲ +${Math.round(delta)} upgrade` : delta < 0 ? `▼ ${Math.round(delta)} downgrade` : "= sidegrade"}</div>}
-        </div>
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>{children}</div>
+    <div className="item">
+      <button className="item-tap" onClick={onClick} disabled={!onClick}>
+        <span className="mark"><GameIcon icon={item.icon} imgKey={item.iconKey} size={24} /></span>
+        <span className="item-body">
+          <span className={`item-name ${rarClass(r)}`}>
+            {item.enchant ? <Icon name="spark" size={11} /> : null}{item.name}{temperSuffix(item)}
+          </span>
+          <span className="item-meta">
+            {slotById(item.slotId)?.name}{item.ilvl ? ` · ilvl ${item.ilvl}` : ""}{item.bound ? " · bound" : ""}
+          </span>
+          <span className="item-stats">{item.relicId ? "Relic" : bodyLine}</span>
+          {item.relicDesc && <span className="item-note">{item.relicDesc}</span>}
+          {item.enchant && <span className="item-note is-enchant">Enchant: {Object.entries(item.enchant).map(([k, v]) => `+${v} ${STAT_LABEL[k]}`).join(", ")}</span>}
+          {delta !== null && (
+            <span className={`item-delta ${delta > 0 ? "is-up" : delta < 0 ? "is-down" : "is-side"}`}>
+              {delta > 0 ? `+${Math.round(delta)} better` : delta < 0 ? `${Math.round(delta)} worse` : "an even trade"}
+            </span>
+          )}
+        </span>
+      </button>
+      <div className="item-acts">{children}</div>
     </div>
   );
 }
 
-const MiniBtn = ({ onClick, children, color = "#f0b429", bg = "#1a1830" }) => (
-  <button onClick={onClick} style={{ background: bg, border: `1px solid ${color}66`, borderRadius: 6, color, fontSize: 10.5, padding: "4px 9px", cursor: "pointer", fontWeight: 600, whiteSpace: "nowrap" }}>{children}</button>
+/* `tone` replaces the old free-form colour: three meanings instead of a palette.
+   Callers still pass `color` in a few places; it is ignored on purpose, because a
+   button that can be any colour is how a screen ends up with nine of them. */
+const MiniBtn = ({ onClick, children, tone, disabled }) => (
+  <button onClick={onClick} disabled={disabled}
+    className={`mini${tone === "warn" ? " is-warn" : tone === "gain" ? " is-gain" : ""}`}>{children}</button>
 );
 
 // WoW-style item tooltip popup — shows one item's full details; `actions` are optional buttons.
@@ -6390,7 +6408,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
             <div onClick={(e) => e.stopPropagation()} style={{ background: "linear-gradient(180deg,#15122e,#0d0a1f)", border: "2px solid #46407a", borderRadius: 16, padding: 18, maxWidth: 420, width: "100%" }}>
               <h3 style={{ color: "var(--gilt)", fontFamily: "Georgia, serif", textAlign: "center", margin: "0 0 12px" }}>Compare Gear</h3>
               {offhandable && (
-                <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+                <div className="sets">
                   {[["weapon", "🗡️ vs Main-hand"], ["offhand", "🗡️ vs Off-hand"]].map(([s, label]) => (
                     <button key={s} onClick={() => setCompareSlot(s)} style={{ flex: 1, background: slot === s ? "#2a2410" : "#12102a", border: `1px solid ${slot === s ? "#FFF569" : "#2a2550"}`, borderRadius: 8, color: slot === s ? "#FFF569" : "#9a93b3", fontSize: 11.5, fontWeight: 700, padding: "6px 4px", cursor: "pointer" }}>{label}</button>
                   ))}
@@ -7044,10 +7062,10 @@ function GameScreen({ character: initChar, onSave, onBack }) {
         {/* ============ GEAR TAB (equipped) ============ */}
         {tab === "gear" && (
           <div>
-            <button onClick={() => setTab("gambits")} style={{ width: "100%", background: "linear-gradient(135deg,#1a1230,#140c22)", border: "1px solid #6a4aa8", borderRadius: 10, padding: "11px 14px", cursor: "pointer", marginBottom: 12, display: "flex", alignItems: "center", gap: 12 }}>
-              <span style={{ fontSize: 22 }}>🎯</span>
-              <span style={{ flex: 1, textAlign: "left" }}><span style={{ color: "#c8a0ff", fontWeight: 700, fontSize: 13.5, display: "block" }}>Equip Gambits</span><span style={{ color: "var(--ink-soft)", fontSize: 10.5 }}>Assign if/then automation to your skills & consumables</span></span>
-              <span style={{ color: "#8a7fb8", fontSize: 16 }}>›</span>
+            <button onClick={() => setTab("gambits")} className="gateway">
+              <span className="mark"><Icon name="target" size={18} /></span>
+              <span className="gateway-body"><b>Standing orders</b><span>The rules your character fights by when you are not watching</span></span>
+              <span className="gateway-more">&rsaquo;</span>
             </button>
             {/* TWO GEAR SETS. The tab is a switch, not a view: tapping the inactive one swaps the
                 gear. Each tab shows what is actually in that set — piece count, average item level
@@ -7066,16 +7084,14 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                     return (
                       <button key={i} onClick={() => { if (!on) swapLoadout(); }} disabled={on}
                         aria-label={`Gear set ${i + 1}${on ? " (active)" : " — switch"}`}
-                        style={{ flex: 1, background: on ? "linear-gradient(135deg,#1b2a3a,#101a26)" : "#12101c",
-                          border: `1.5px solid ${on ? "#4a90c0" : "#2a2740"}`, borderRadius: 10,
-                          padding: "8px 9px", cursor: on ? "default" : "pointer", textAlign: "left" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                          <span style={{ color: on ? "#7fd0ff" : "#8a83b8", fontWeight: 800, fontSize: 12 }}>Set {i + 1}</span>
-                          {on && <span style={{ color: "var(--verdigris)", fontSize: 8.5, fontWeight: 800, background: "var(--raised)", border: "1px solid #2a6a44", borderRadius: 4, padding: "0 4px" }}>WORN</span>}
+                        className={`set${on ? " is-worn" : ""}`}>
+                        <div className="set-name">
+                          Set {i + 1}
+                          {on && <span className="chip is-hard">Worn</span>}
                         </div>
-                        <div style={{ color: "#6f6a90", fontSize: 9.5, marginTop: 2 }}>
+                        <div className="set-meta">
                           {s.count ? `${s.count} piece${s.count === 1 ? "" : "s"} · ilvl ${s.ilvl}` : "empty"}
-                          {s.pvp ? ` · 🛡️${s.pvp}` : ""}
+                          {s.pvp ? ` · ${s.pvp} arena` : ""}
                         </div>
                       </button>
                     );
@@ -7083,9 +7099,9 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                 </div>
               );
             })()}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-              <span style={{ color: "var(--ink-soft)", fontSize: 11, textTransform: "uppercase", letterSpacing: 1 }}>Character</span>
-              <label style={{ color: "var(--ink-faint)", fontSize: 10.5, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
+            <div className="eyebrow">
+              <span>What you are wearing</span>
+              <label style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer", textTransform: "none", letterSpacing: 0 }}>
                 <input type="checkbox" checked={char.autoEquip} onChange={() => commitChar({ ...charRef.current, autoEquip: !char.autoEquip })} /> auto-equip
               </label>
             </div>
@@ -7093,44 +7109,59 @@ function GameScreen({ character: initChar, onSave, onBack }) {
               const slotSquare = (slotId, big) => {
                 const it = char.equipment[slotId]; const r = it ? rarityById(it.rarity) : null; const slot = slotById(slotId);
                 return (
-                  <button key={slotId} onClick={() => { if (it) showItem(it, [{ label: "Unequip", color: "var(--gilt)", onClick: () => unequip(slotId) }]); }}
-                    style={{ width: big ? "100%" : 54, height: 54, background: "var(--sunk)", border: `2px solid ${it ? r.color : "#2a2740"}`, borderRadius: 9, display: "flex", alignItems: "center", justifyContent: big ? "flex-start" : "center", gap: big ? 9 : 0, padding: big ? "0 10px" : 0, cursor: it ? "pointer" : "default", position: "relative" }}>
-                    {it ? <GameIcon icon={it.icon} imgKey={it.iconKey} size={34} /> : <span style={{ fontSize: 22, opacity: 0.28 }}><EmojiIcon emoji={slot.icon} /></span>}
-                    {it && !big && it.ilvl && <span style={{ position: "absolute", bottom: 1, right: 3, fontSize: 8.5, color: "var(--gilt)", fontWeight: 700, textShadow: "0 0 3px #000" }}>{it.ilvl}</span>}
+                  <button key={slotId} title={it ? it.name : slot.name} disabled={!it}
+                    onClick={() => { if (it) showItem(it, [{ label: "Take off", onClick: () => unequip(slotId) }]); }}
+                    className={`slot${big ? " slot-wide" : ""}${it ? "" : " is-empty"}`}>
+                    {it ? <GameIcon icon={it.icon} imgKey={it.iconKey} size={big ? 30 : 32} /> : <EmojiIcon emoji={slot.icon} size={18} />}
+                    {it && !big && it.ilvl && <span className="slot-ilvl">{it.ilvl}</span>}
                     {big && (it
-                      ? <div style={{ minWidth: 0, textAlign: "left" }}><div style={{ color: r.color, fontSize: 11.5, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{it.enchant ? "✨ " : ""}{it.name}</div><div style={{ color: "#7fb5d6", fontSize: 9.5 }}>ilvl {it.ilvl}{it.wdmg ? ` · ⚔️ ${it.wdmg.min}–${it.wdmg.max}` : ""}</div></div>
-                      : <span style={{ color: "var(--ink-faint)", fontSize: 11 }}><EmojiIcon emoji={slot.icon} /> Weapon — empty</span>)}
+                      ? <span className="item-body">
+                          <span className={`item-name ${rarClass(r)}`}>{it.enchant ? <Icon name="spark" size={11} /> : null}{it.name}</span>
+                          <span className="item-meta">ilvl {it.ilvl}{it.wdmg ? ` · ${it.wdmg.min}\u2013${it.wdmg.max} damage` : ""}</span>
+                        </span>
+                      : <span className="item-meta">No weapon in hand</span>)}
                   </button>
                 );
               };
               return (
                 <>
-                  <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{["head", "shoulder", "chest", "hands", "legs"].map((s) => slotSquare(s))}</div>
-                    <div style={{ flex: 1, minWidth: 0, background: "radial-gradient(circle at 50% 36%, #1c1740, #0b0916)", border: "1px solid var(--hairline)", borderRadius: 12, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-                      <div style={{ fontSize: 74, opacity: 0.22 }}>🧍</div>
-                      <div style={{ color: "#7a739c", fontSize: 10.5, marginTop: 2, fontFamily: "Georgia, serif" }}>{cls?.name}</div>
-                      <div style={{ color: "#4a4566", fontSize: 9 }}>character model — coming soon</div>
+                  <div className="slots">
+                    <div className="slot-col">{["head", "shoulder", "chest", "hands", "legs"].map((s) => slotSquare(s))}</div>
+                    <div className="figure">
+                      <GameIcon icon={cls?.icon} imgKey={char.cls} size={40} />
+                      <div className="figure-cls">{race?.name} {cls?.name}</div>
+                      <div className="figure-note">portrait to come</div>
                     </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{["feet", "offhand", "ring", "trinket", "relic"].map((s) => slotSquare(s))}</div>
+                    <div className="slot-col">{["feet", "offhand", "ring", "trinket", "relic"].map((s) => slotSquare(s))}</div>
                   </div>
                   <div style={{ marginBottom: 12 }}>{slotSquare("weapon", true)}</div>
                 </>
               );
             })()}
-            <div style={{ background: "var(--sunk)", border: "1px solid var(--hairline)", borderRadius: 8, padding: "8px 11px", fontSize: 11, color: "var(--ink-soft)", display: "flex", flexWrap: "wrap", gap: "2px 12px" }}>
-              <span><Icon name="sword" /> Str {eff.str}</span><span><Icon name="haste" /> Agi {eff.agi}</span><span><Icon name="spark" /> Int {eff.int}</span><span><Icon name="heart" /> Sta {eff.sta}</span><span><Icon name="shield" /> Armor {eff.armor}</span><span style={{ color: "var(--gilt)" }}>📊 ilvl {avgEquippedIlvl(char)}</span><span><Icon name="sword" /> Wpn {char.equipment?.weapon?.wdmg ? `${char.equipment.weapon.wdmg.min}–${char.equipment.weapon.wdmg.max}` : "—"}</span>
+            <div className="statline">
+              <span><Icon name="sword" size={11} />Str <b>{eff.str}</b></span>
+              <span><Icon name="haste" size={11} />Agi <b>{eff.agi}</b></span>
+              <span><Icon name="spark" size={11} />Int <b>{eff.int}</b></span>
+              <span><Icon name="heart" size={11} />Sta <b>{eff.sta}</b></span>
+              <span><Icon name="shield" size={11} />Armour <b>{eff.armor}</b></span>
+              <span>ilvl <b>{avgEquippedIlvl(char)}</b></span>
+              <span>Weapon <b>{char.equipment?.weapon?.wdmg ? `${char.equipment.weapon.wdmg.min}\u2013${char.equipment.weapon.wdmg.max}` : "\u2014"}</b></span>
             </div>
-            <div style={{ color: "var(--ink-faint)", fontSize: 10, textAlign: "center", marginTop: 8 }}>Tap any slot to inspect the item</div>
+            <div className="empty" style={{ padding: "10px 0 0" }}>Tap any slot to read the piece</div>
           </div>
         )}
 
         {/* ============ BAG TAB ============ */}
         {tab === "bag" && (
           <div>
-            <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
-              {[["equipment", "🛡️ Equipment"], ["items", "🧪 Items"], ["gems", "💎 Gems"], ["crafting", "⚒️ Crafting"], ["quest", "📜 Quest"]].map(([id, label]) => (
-                <button key={id} onClick={() => setBagTab(id)} style={{ flex: "1 1 22%", background: bagTab === id ? "#1a1535" : "#100e1c", border: `1px solid ${bagTab === id ? "#f0b429" : "#2a2740"}`, borderRadius: 8, color: bagTab === id ? "#f0b429" : "#888", padding: "8px 4px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>{label}</button>
+            <div className="leaves">
+              {[["equipment", "Equipment", "shield"], ["items", "Items", "flask"], ["gems", "Gems", "gem"],
+                ["crafting", "Crafting", "anvil"], ["quest", "Quest", "scroll"]].map(([id, label, icon]) => (
+                <button key={id} onClick={() => setBagTab(id)}
+                  className={`leaf${bagTab === id ? " is-open" : ""}`}
+                  aria-current={bagTab === id ? "page" : undefined}>
+                  <Icon name={icon} size={13} />{label}
+                </button>
               ))}
             </div>
 
@@ -7138,27 +7169,23 @@ function GameScreen({ character: initChar, onSave, onBack }) {
               <>
                 {/* Capacity, stated plainly. The bank silently deleted the oldest item at 120 with
                     no indication it was even near the limit. */}
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 10,
-                              background: bankIsFull(char) ? "#2a1010" : "#100e1c",
-                              border: `1px solid ${bankIsFull(char) ? "#a44" : "#2a2740"}`, borderRadius: 8, padding: "7px 10px" }}>
-                  <span style={{ color: bankIsFull(char) ? "#ff9a8a" : "#8a83b8", fontSize: 11.5, fontWeight: 700 }}>
-                    <Icon name="vault" /> Bank {char.inventory.length} / {bankCap(char)}
-                    {bankIsFull(char) && " — full, new gear is auto-sold"}
-                  </span>
-                  <span style={{ color: "var(--ink-faint)", fontSize: 10.5 }}>+{BANK_SLOTS_PER_BUY} slots · 💎100 in the Ven shop</span>
+                <div style={{ marginBottom: 12 }}>
+                  <div className={`meter-row${bankIsFull(char) ? " is-full" : ""}`}>
+                    <span>{char.inventory.length} of {bankCap(char)} kept{bankIsFull(char) ? " \u2014 full, new gear is sold" : ""}</span>
+                    <span>+{BANK_SLOTS_PER_BUY} for 100 Ven</span>
+                  </div>
+                  <div className={`meter${bankIsFull(char) ? " is-full" : ""}`}>
+                    <i style={{ width: `${clamp((char.inventory.length / bankCap(char)) * 100, 0, 100)}%` }} />
+                  </div>
                 </div>
                 {(char.overflow || []).length > 0 && (
-                  <div style={{ marginBottom: 10, background: "var(--raised)", border: "1px solid #6b4fa8", borderRadius: 8, padding: "8px 10px" }}>
-                    <div style={{ color: "#c9a6ff", fontSize: 11.5, fontWeight: 700, marginBottom: 4 }}>
-                      <Icon name="mail" /> {(char.overflow || []).length} item(s) waiting in your mail
-                    </div>
-                    <div style={{ color: "var(--ink-soft)", fontSize: 10.5 }}>
-                      Too valuable to auto-sell. They return automatically as soon as you free a slot.
-                    </div>
+                  <div className="aside-note is-gain">
+                    <b><Icon name="mail" size={13} /> {(char.overflow || []).length} held in the mail</b>
+                    <span>Too valuable to sell. They come back the moment you free a slot.</span>
                   </div>
                 )}
-                {char.inventory.length === 0 && <div style={{ color: "var(--ink-faint)", fontSize: 12, padding: "20px 0", textAlign: "center" }}>No unequipped gear. Slay enemies to find loot.</div>}
-                <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                {char.inventory.length === 0 && <div className="empty">Nothing kept. What you find will be written here.</div>}
+                <div>
                   {[...char.inventory].sort((a, b) => b.ilvl - a.ilvl || itemScore(b, char.cls) - itemScore(a, char.cls)).map((it) => (
                     <ItemCard key={it.id} item={it} cls={char.cls} compare={itemScore(char.equipment[it.slotId], char.cls)}
                       onClick={() => showItem(it, [
@@ -7167,10 +7194,10 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                         { label: it.locked ? "🔓 Unlock" : "🔒 Lock", color: "#8fd0e0", onClick: () => toggleLock(it) },
                         ...(it.locked ? [] : [{ label: "Sell", color: "#d4a017", onClick: () => sellItem(it) }]),
                       ])}>
-                      <MiniBtn onClick={() => equipItem(it)} color={cls?.color}>Equip</MiniBtn>
-                      {canOffhandWeapon(it) && <MiniBtn onClick={() => equipItem(it, "offhand")} color="#FFF569">Off-hand</MiniBtn>}
-                      <MiniBtn onClick={() => setCompareItem(it)} color="#69CCF0">Compare</MiniBtn>
-                      <MiniBtn onClick={() => toggleLock(it)} color={it.locked ? "#8fd0e0" : "#667"}>{it.locked ? "🔒" : "🔓"}</MiniBtn>
+                      <MiniBtn onClick={() => equipItem(it)} tone="gain">Wear</MiniBtn>
+                      {canOffhandWeapon(it) && <MiniBtn onClick={() => equipItem(it, "offhand")}>Off-hand</MiniBtn>}
+                      <MiniBtn onClick={() => setCompareItem(it)}>Compare</MiniBtn>
+                      <MiniBtn onClick={() => toggleLock(it)}><Icon name={it.locked ? "lock" : "unlock"} size={11} /></MiniBtn>
                     </ItemCard>
                   ))}
                 </div>

@@ -30,6 +30,7 @@ const root = path.join(__dirname, '..');
 const app = fs.readFileSync(path.join(root, 'src/App.jsx'), 'utf8');
 const tokens = fs.readFileSync(path.join(root, 'design/tokens.css'), 'utf8');
 const shell = fs.readFileSync(path.join(root, 'design/shell.css'), 'utf8');
+const panels = fs.readFileSync(path.join(root, 'design/panels.css'), 'utf8');
 const combat = fs.readFileSync(path.join(root, 'design/combat.css'), 'utf8');
 const genCss = fs.readFileSync(path.join(root, 'src/chronicle-css.js'), 'utf8');
 
@@ -94,8 +95,8 @@ sec("The shipped stylesheet is the designed stylesheet");
 {
   const m = genCss.match(/export const CHRONICLE_CSS = ("(?:[^"\\]|\\.)*");/);
   ok(!!m, "src/chronicle-css.js exports CHRONICLE_CSS");
-  ok(m && JSON.parse(m[1]) === [tokens, shell, combat].join("\n"),
-     "…and it matches tokens + shell + combat (else: node design/build-css.mjs)");
+  ok(m && JSON.parse(m[1]) === [tokens, shell, panels, combat].join("\n"),
+     "…and it matches tokens + shell + panels + combat (else: node design/build-css.mjs)");
 }
 
 sec("Both themes resolve in all three states");
@@ -125,6 +126,81 @@ sec("It is actually the combat screen");
   ok(app.includes('className="foe"') && app.includes('className="foe-wounds"'), "the adversary uses the ruled frame");
   ok(app.includes('className="seals"') && app.includes('className="seal-slot'), "abilities are seals");
   ok(app.includes("saveTheme(next)"), "the day/night choice is remembered");
+}
+
+sec("Rarity is readable on parchment");
+{
+  // The classic rarity palette is tuned for a black ground. On vellum, common
+  // (#ffffff) is invisible at 1.46:1, uncommon (#1eff00) sits at 1.07:1 and
+  // legendary (#ff8000) at 1.72:1 — four of the seven fail outright and the rest
+  // only pass at large-text sizes. Nothing about that shows up until a player
+  // opens a full bank, so it is measured here rather than eyeballed.
+  const lum = (h) => { const c = [1,3,5].map((i) => parseInt(h.slice(i,i+2),16)/255)
+    .map((v) => v <= 0.03928 ? v/12.92 : Math.pow((v+0.055)/1.055, 2.4));
+    return 0.2126*c[0] + 0.7152*c[1] + 0.0722*c[2]; };
+  const ratio = (a,b) => { const x = lum(a), y = lum(b);
+    return (Math.max(x,y)+0.05) / (Math.min(x,y)+0.05); };
+  const pick = (block, name) => (block.match(new RegExp("--" + name + ":\\s*(#[0-9a-fA-F]{6})")) || [])[1];
+
+  const dayBlock = tokens.slice(tokens.indexOf(":root, .theme-day"), tokens.indexOf("@media (prefers-color-scheme"));
+  const nightBlock = tokens.slice(tokens.indexOf(':root[data-theme="night"], .theme-night'));
+  const RARS = ["rar-uncommon", "rar-rare", "rar-epic", "rar-legendary", "rar-artifact"];
+
+  for (const [label, block, ground, raised] of [
+    ["day", dayBlock, "#DCD5C4", "#E6E0D2"],
+    ["night", nightBlock, "#17130E", "#211A13"],
+  ]) {
+    const bad = [];
+    for (const r of RARS) {
+      const hex = pick(block, r);
+      if (!hex) { bad.push(r + " missing"); continue; }
+      const a = ratio(hex, ground), b = ratio(hex, raised);
+      if (a < 4.5 || b < 4.5) bad.push(`${r} ${hex} ${a.toFixed(2)}/${b.toFixed(2)}`);
+    }
+    ok(bad.length === 0, bad.length
+      ? `${label}: ${bad.join(", ")}`
+      : `every rarity clears AA on the page and a raised surface in ${label}`);
+  }
+  // Poor and common deliberately have NO hue of their own — a common item is
+  // written in the ordinary hand and a poor one is faded. A token for either
+  // would mean someone had reintroduced white-on-parchment.
+  ok(!/--rar-common:/.test(tokens) && !/--rar-poor:/.test(tokens),
+     "poor and common take the ordinary ink rather than a colour");
+  ok(/\.rar-common\s+\{ color: var\(--ink\); \}/.test(panels), "…common is the ordinary hand");
+  ok(/\.rar-poor\s+\{ color: var\(--ink-faint\); \}/.test(panels), "…and poor is faded");
+  // The core keeps its own colours: the server has no opinion about what colour
+  // an epic is, and changing shared data for a client theme would be wrong.
+  ok(app.includes("const rarClass = (r) =>"), "the screen asks for a rarity CLASS, not a hex");
+}
+
+sec("Bank and Armory speak the shared vocabulary");
+{
+  // These two were converted first because between them they use nearly every
+  // pattern the other screens need. What matters is that they use the SHARED
+  // classes rather than growing their own, or the next screen starts from zero.
+  for (const [cls, what] of [
+    ["leaves", "a tab strip is leaves of a book"],
+    ["item-tap", "an item is a ledger entry"],
+    ["item-delta", "…with the upgrade written in the margin voice"],
+    ["mini", "small actions share one shape"],
+    ["slot", "worn gear sits in ruled frames"],
+    ["statline", "the stat summary is one ruled line"],
+    ["meter", "capacity is a meter, not a sentence"],
+    ["gateway", "a row that opens another screen"],
+    ["aside-note", "marginal notes"],
+    ["empty", "an empty shelf says so in the page's own voice"],
+  ]) {
+    ok(panels.includes("." + cls), `panels.css defines ${what}`);
+  }
+  ok(app.includes('className="leaves"') && app.includes('className={`leaf'), "the Bank uses the leaves");
+  ok(app.includes('className="item"') && app.includes('className="item-tap"'), "…and the item rows");
+  ok(app.includes('className={`meter'), "…and the capacity meter");
+  ok(app.includes('className="statline"'), "the Armory uses the stat line");
+  ok(app.includes('className={`slot') && app.includes('className="slot-col"'), "…and the slot frames");
+  ok(app.includes('className="figure"'), "…and says plainly that the portrait is not built yet");
+  // MiniBtn used to take any colour it liked. Three meanings beat a palette.
+  ok(/const MiniBtn = \(\{ onClick, children, tone, disabled \}\)/.test(app),
+     "MiniBtn takes a meaning, not a colour");
 }
 
 sec("The shell is bound in the same hand");

@@ -1,0 +1,218 @@
+/* ============================================================================
+   PANELS — the shared furniture of every screen that is not combat
+   ----------------------------------------------------------------------------
+   Bank and Armory were converted first because between them they use nearly
+   every pattern the rest of the game needs: a tab strip, an item row, an item
+   mark, a slot square, a small action, a stat line, a capacity meter. Everything
+   here is written to be reused, not to serve those two screens.
+   ============================================================================ */
+
+/* ---- rarity ------------------------------------------------------------- */
+/* THE RARITY PALETTE HAD TO BE RE-DERIVED. The classic set is tuned for a black
+   ground: on parchment, common (#ffffff) is invisible, uncommon (#1eff00) sits
+   at 1.07:1, and legendary (#ff8000) at 1.72:1. Four of the seven failed outright
+   and the rest only passed at large-text sizes — a readability bug that does not
+   show up until you open a full bank.
+   These keep the hue identity players already know (green/blue/purple/orange/red)
+   and are the MOST VIVID value of each that still clears AA on both the page and
+   a raised surface, in both themes. Poor and common take the ordinary ink instead
+   of a hue of their own: a common item is written in the ordinary hand, and a
+   poor one is faded. */
+.rar-poor      { color: var(--ink-faint); }
+.rar-common    { color: var(--ink); }
+.rar-uncommon  { color: var(--rar-uncommon); }
+.rar-rare      { color: var(--rar-rare); }
+.rar-epic      { color: var(--rar-epic); }
+.rar-legendary { color: var(--rar-legendary); }
+.rar-artifact  { color: var(--rar-artifact); }
+
+/* ---- leaves: a tab strip ------------------------------------------------- */
+/* Not filled pills. The leaves of a book: a row of labels, and the one you are
+   reading is the one with a rule under it. */
+.leaves {
+  display: flex; gap: var(--s-4); align-items: baseline; flex-wrap: wrap;
+  border-bottom: 1px solid var(--rule); margin-bottom: var(--s-4); padding: 0 var(--s-1);
+}
+.leaf {
+  background: none; border: 0; padding: var(--s-2) 0 var(--s-3); cursor: pointer;
+  font-family: var(--serif); font-size: var(--step-0); color: var(--ink-faint);
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+  display: flex; align-items: center; gap: var(--s-2); line-height: 1;
+}
+.leaf:hover { color: var(--ink-soft); }
+.leaf:focus-visible { outline: 2px solid var(--rubric); outline-offset: 2px; }
+.leaf.is-open { color: var(--ink); border-bottom-color: var(--rubric); }
+
+/* ---- eyebrow: a small-caps section label -------------------------------- */
+.eyebrow {
+  font-family: var(--mono); font-size: 9px; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--ink-faint); display: flex; align-items: center; justify-content: space-between;
+  gap: var(--s-3); margin-bottom: var(--s-3);
+}
+
+/* ---- the item mark ------------------------------------------------------- */
+/* Every icon that stands for a thing sits in a ruled frame, the way the
+   adversary's woodcut does. One rule, applied everywhere, is most of what makes
+   a set of screens look like one hand. */
+.mark {
+  flex: none; border: 1px solid var(--rule); background: var(--raised);
+  border-radius: var(--r-sm); padding: 2px; display: grid; place-items: center;
+  color: var(--ink);
+}
+.mark.is-empty { border-style: dashed; opacity: .5; }
+
+/* ---- an item, as a ledger entry ------------------------------------------ */
+.item {
+  display: flex; align-items: flex-start; gap: var(--s-3);
+  padding: var(--s-3) 0; border-bottom: 1px solid var(--hairline);
+}
+.item:last-child { border-bottom: 0; }
+.item-tap {
+  display: flex; align-items: flex-start; gap: var(--s-3); flex: 1; min-width: 0;
+  cursor: pointer; background: none; border: 0; padding: 0; text-align: left; font: inherit; color: inherit;
+}
+.item-tap:focus-visible { outline: 2px solid var(--rubric); outline-offset: 2px; }
+/* The body's children are spans so they can live inside a <button> — a <div> in
+   there is invalid HTML and React will warn. They must be told to stack: left
+   inline, the upgrade delta ran straight into the end of the stat list, which
+   read as "+2 Crit Chance+1 better". */
+.item-body { flex: 1; min-width: 0; display: block; }
+.item-body > span { display: block; }
+.item-name {
+  font-size: var(--step-0); font-weight: 600; line-height: 1.2;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  display: flex; align-items: baseline; gap: var(--s-2);
+}
+/* Where an item came from and what it is. Mono, because it is all quantities. */
+.item-meta {
+  font-family: var(--mono); font-size: 9px; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--ink-faint); margin-top: 2px;
+}
+.item-stats { font-size: var(--step--1); color: var(--ink-soft); margin-top: 2px; line-height: 1.4; }
+.item-note { font-size: var(--step--1); color: var(--verdigris); margin-top: 1px; }
+.item-note.is-enchant { color: var(--rar-epic); }
+/* Upgrade or downgrade, in the margin voice. An arrow and a number, not a badge. */
+.item-delta {
+  font-family: var(--mono); font-size: 9.5px; font-variant-numeric: tabular-nums;
+  margin-top: 2px; letter-spacing: .04em;
+}
+.item-delta.is-up   { color: var(--verdigris); }
+.item-delta.is-down { color: var(--bole); }
+.item-delta.is-side { color: var(--ink-faint); }
+.item-acts { display: flex; flex-direction: column; gap: var(--s-1); flex: none; }
+
+/* ---- a small action ------------------------------------------------------ */
+.mini {
+  background: var(--raised); border: 1px solid var(--rule); border-radius: var(--r-sm);
+  color: var(--ink); font-family: var(--serif); font-size: var(--step--1);
+  padding: 3px 9px; cursor: pointer; white-space: nowrap; line-height: 1.5;
+}
+.mini:hover { border-color: var(--ink-soft); }
+.mini:focus-visible { outline: 2px solid var(--rubric); outline-offset: 2px; }
+.mini.is-warn { color: var(--rubric); }
+.mini.is-gain { color: var(--verdigris); }
+.mini[disabled] { opacity: .45; cursor: default; }
+
+/* ---- a worn slot --------------------------------------------------------- */
+.slots { display: flex; gap: var(--s-3); margin-bottom: var(--s-3); }
+.slot-col { display: flex; flex-direction: column; gap: var(--s-3); }
+.slot {
+  width: 52px; height: 52px; flex: none; position: relative;
+  background: var(--raised); border: 1px solid var(--rule); border-radius: var(--r-sm);
+  display: grid; place-items: center; cursor: pointer; padding: 0; color: var(--ink);
+}
+.slot.is-empty { border-style: dashed; background: var(--sunk); cursor: default; }
+.slot:focus-visible { outline: 2px solid var(--rubric); outline-offset: 2px; }
+/* The item level, written into the corner of the frame like a plate number. */
+.slot-ilvl {
+  position: absolute; right: 2px; bottom: 1px;
+  font-family: var(--mono); font-size: 8px; color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+/* The weapon gets a full row because it is the one slot with numbers worth reading. */
+.slot-wide {
+  width: 100%; height: 52px; justify-content: flex-start; padding: 0 var(--s-3);
+  display: flex; align-items: center; gap: var(--s-3);
+}
+.slot-wide .item-body { text-align: left; }
+
+/* The character plate. Honest about being a placeholder rather than dressed up
+   as a feature — it says what it is and gets out of the way. */
+.figure {
+  flex: 1; min-width: 0; border: 1px dashed var(--rule); border-radius: var(--r-sm);
+  background: var(--sunk); display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: var(--s-1); padding: var(--s-4);
+  color: var(--ink-faint); text-align: center;
+}
+.figure-cls { font-size: var(--step-0); color: var(--ink-soft); }
+.figure-note { font-family: var(--mono); font-size: 8.5px; letter-spacing: .1em; text-transform: uppercase; }
+
+/* ---- a stat line --------------------------------------------------------- */
+.statline {
+  display: flex; flex-wrap: wrap; gap: 3px var(--s-4);
+  border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule);
+  padding: var(--s-3) 0; font-family: var(--mono); font-size: 10px;
+  color: var(--ink-soft); font-variant-numeric: tabular-nums; letter-spacing: .04em;
+}
+.statline span { display: flex; align-items: center; gap: var(--s-1); }
+.statline b { color: var(--ink); font-weight: 600; }
+
+/* ---- capacity ------------------------------------------------------------ */
+.meter-row {
+  display: flex; align-items: baseline; justify-content: space-between; gap: var(--s-3);
+  font-family: var(--mono); font-size: 10px; color: var(--ink-soft);
+  font-variant-numeric: tabular-nums; margin-bottom: var(--s-2);
+}
+.meter-row.is-full { color: var(--rubric); }
+.meter { height: 6px; border: 1px solid var(--rule); padding: 1px; background: var(--sunk); }
+.meter > i {
+  display: block; height: 100%;
+  background: repeating-linear-gradient(115deg, var(--ink-soft) 0 2.5px, transparent 2.5px 4.5px);
+}
+.meter.is-full > i {
+  background: repeating-linear-gradient(115deg, var(--rubric) 0 2.5px, transparent 2.5px 4.5px);
+}
+
+/* ---- a marginal note ----------------------------------------------------- */
+.aside-note {
+  border-left: 3px solid var(--rule); background: var(--raised);
+  padding: var(--s-3) var(--s-4); margin-bottom: var(--s-4);
+  border-radius: 0 var(--r-md) var(--r-md) 0;
+}
+.aside-note.is-warn { border-left-color: var(--rubric); }
+.aside-note.is-gain { border-left-color: var(--verdigris); }
+.aside-note b { display: block; font-weight: 600; margin-bottom: 1px; }
+.aside-note span { font-size: var(--step--1); color: var(--ink-soft); line-height: 1.45; }
+
+/* ---- an empty shelf ------------------------------------------------------ */
+.empty {
+  padding: var(--s-6) var(--s-4); text-align: center; color: var(--ink-faint);
+  font-style: italic;
+}
+
+/* ---- a row that opens something else ------------------------------------- */
+.gateway {
+  width: 100%; display: flex; align-items: center; gap: var(--s-3);
+  background: var(--raised); border: 1px solid var(--rule); border-radius: var(--r-md);
+  padding: var(--s-3) var(--s-4); cursor: pointer; margin-bottom: var(--s-4);
+  font-family: var(--serif); color: var(--ink); text-align: left;
+}
+.gateway:focus-visible { outline: 2px solid var(--rubric); outline-offset: 2px; }
+.gateway-body { flex: 1; min-width: 0; }
+.gateway-body b { display: block; font-size: var(--step-0); font-weight: 600; }
+.gateway-body span { font-size: var(--step--1); color: var(--ink-soft); }
+.gateway-more { color: var(--ink-faint); font-size: var(--step-1); }
+
+/* ---- the two gear sets --------------------------------------------------- */
+.sets { display: flex; gap: var(--s-3); margin-bottom: var(--s-4); }
+.set {
+  flex: 1; background: var(--raised); border: 1px solid var(--rule); border-radius: var(--r-md);
+  padding: var(--s-3); cursor: pointer; text-align: left; font-family: var(--serif); color: var(--ink);
+}
+.set.is-worn { border-color: var(--rubric); cursor: default; }
+.set:focus-visible { outline: 2px solid var(--rubric); outline-offset: 2px; }
+.set-name { display: flex; align-items: baseline; gap: var(--s-2); font-size: var(--step-0); font-weight: 600; }
+.set-meta {
+  font-family: var(--mono); font-size: 9px; letter-spacing: .07em; color: var(--ink-faint);
+  margin-top: 2px; font-variant-numeric: tabular-nums;
+}

@@ -39,6 +39,21 @@
   --rule:        #6B5F4B;   /* drawn rules — structure */
   --hairline:    #B8AF9A;   /* ruled guide lines — rhythm only */
 
+
+  /* ---- rarity ----------------------------------------------------------- */
+  /* Re-derived, not inherited. The classic palette is tuned for a black ground:
+     on parchment common (#ffffff) is invisible, uncommon (#1eff00) sits at
+     1.07:1 and legendary (#ff8000) at 1.72:1 — four of seven fail outright.
+     These keep the hue identity players already know and are the most vivid
+     value of each that still clears AA on both --ground and --raised. Poor and
+     common take the ordinary ink: a common item is written in the ordinary
+     hand, a poor one is faded. */
+  --rar-uncommon:  #26691C;
+  --rar-rare:      #1C5EA0;
+  --rar-epic:      #8337AE;
+  --rar-legendary: #8E4710;
+  --rar-artifact:  #AB2637;
+
   /* Texture. Three stacked layers, all generated — no image payload.
      See design/preview/texture.html for why these amplitudes and not louder. */
   --fibre-opacity: 0.055;
@@ -96,6 +111,13 @@
     --rule:      #786751;
     --hairline:  #3A3126;
 
+
+    --rar-uncommon:  #389929;
+    --rar-rare:      #3387DB;
+    --rar-epic:      #A968CF;
+    --rar-legendary: #CF6717;
+    --rar-artifact:  #DA5869;
+
     --fibre-opacity: 0.075;
     --stain-opacity: 0.30;
     --vignette:  rgba(0, 0, 0, 0.42);
@@ -118,6 +140,13 @@
 
   --rule:      #786751;
   --hairline:  #3A3126;
+
+
+  --rar-uncommon:  #389929;
+  --rar-rare:      #3387DB;
+  --rar-epic:      #A968CF;
+  --rar-legendary: #CF6717;
+  --rar-artifact:  #DA5869;
 
   --fibre-opacity: 0.075;
   --stain-opacity: 0.30;

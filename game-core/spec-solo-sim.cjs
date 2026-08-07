@@ -49,6 +49,10 @@ const stub = '({default:{Component:function(){},createElement:function(){return{
 js = js.replace('__importStar(require("react"))', stub);
 js = js.replace(/require\("\.\.\/game-core\//g, `require("${path.join(__dirname).replace(/\\/g, '/')}/`);
 js = js.replace(/import\.meta\.env/g, '({})');
+// App.jsx now imports its icon set. These harnesses compile App.jsx into a temp dir, so a
+// relative require would resolve against that dir and blow up. The icons are pure rendering
+// and no test asserts on them, so they are stubbed rather than compiled.
+js = js.replace(/require\("\.\/icons\.jsx"\)/g, '({IconSprite:function(){return null},Icon:function(){return null},EmojiIcon:function(){return null},withIcons:function(t){return t}})');
 
 js += `
 ;(function(){

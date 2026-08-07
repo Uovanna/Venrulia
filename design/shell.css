@@ -1,0 +1,121 @@
+/* ============================================================================
+   THE SHELL — the binding the pages sit in
+   ----------------------------------------------------------------------------
+   Header, vitals, the lesson, the foot. These sit above and below every screen,
+   so converting them is what decides whether the game reads as one object or as
+   a Chronicle page glued into a different app.
+
+   The combat screen shipped as a page INSET into the dark shell, which was the
+   right call while it stood alone. With the shell converted the ground matches,
+   so the inset framing stops being a frame and becomes what it always claimed
+   to be: the page you are reading.
+   ============================================================================ */
+
+.shell {
+  background-color: var(--ground);
+  color: var(--ink);
+  font-family: var(--serif);
+  min-height: 100%;
+}
+
+/* ---- the head of the page ------------------------------------------------ */
+/* Tapping it goes to combat, so it has to read as a control without looking like
+   a button — the whole surface is the target, and only the rule under it and the
+   pointer say so. */
+.shell-hdr {
+  background: var(--raised);
+  border-bottom: 1px solid var(--rule);
+  padding: var(--s-4) var(--s-5) var(--s-3);
+  cursor: pointer;
+}
+.shell-hdr:focus-visible { outline: 2px solid var(--rubric); outline-offset: -2px; }
+.shell-id { display: flex; align-items: center; gap: var(--s-3); }
+.shell-avatar { flex: none; border: 1px solid var(--rule); border-radius: var(--r-sm); padding: 2px; background: var(--ground); }
+.shell-who { flex: 1; min-width: 0; }
+.shell-name {
+  display: flex; align-items: baseline; gap: var(--s-2); flex-wrap: wrap;
+  font-size: var(--step-1); font-weight: 600; line-height: 1.15;
+}
+/* Level, honour, rank. Written in the margin voice — a bordered mono chip, never
+   a filled pill. A filled pill is the loudest thing on a page of prose. */
+.chip {
+  font-family: var(--mono); font-size: 9px; letter-spacing: .12em; text-transform: uppercase;
+  font-weight: 400; border: 1px solid currentColor; border-radius: var(--r-sm);
+  padding: 1px 5px; color: var(--ink-faint); white-space: nowrap;
+}
+.chip.is-honour { color: var(--gilt); }
+.chip.is-hard { color: var(--rubric); }
+.shell-where {
+  font-family: var(--mono); font-size: 9px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--ink-faint); margin-top: 3px;
+  display: flex; align-items: center; gap: var(--s-1); flex-wrap: wrap;
+}
+.shell-purse { text-align: right; display: flex; flex-direction: column; gap: 1px; flex: none; }
+.shell-purse span {
+  font-family: var(--mono); font-size: 10.5px; font-variant-numeric: tabular-nums;
+  display: flex; align-items: center; justify-content: flex-end; gap: var(--s-1);
+}
+.shell-purse .is-gold { color: var(--gilt); }
+.shell-purse .is-ven  { color: var(--verdigris); }
+.shell-purse .is-kills { color: var(--ink-faint); }
+
+/* What is riding on you right now. Same voice as the combat wards. */
+.shell-wards { display: flex; gap: var(--s-1); flex-wrap: wrap; justify-content: flex-end; max-width: 152px; }
+
+/* ---- the lesson ---------------------------------------------------------- */
+/* A marginal note, not an alert. It used to be a glowing gold box competing with
+   the fight for attention; a chronicle annotates in the margin and moves on. */
+.lesson {
+  background: var(--raised); border: 1px solid var(--rule);
+  border-left: 3px solid var(--gilt); border-radius: 0 var(--r-md) var(--r-md) 0;
+  padding: var(--s-4) var(--s-5); margin-bottom: 12px;
+}
+.lesson-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: var(--s-3);
+  margin-bottom: var(--s-2);
+}
+.lesson-title { font-size: var(--step-1); font-weight: 600; color: var(--ink); }
+.lesson-count {
+  font-family: var(--mono); font-size: 9px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--ink-faint); white-space: nowrap;
+}
+.lesson-body { color: var(--ink-soft); line-height: 1.5; }
+.lesson-next {
+  margin-top: var(--s-3); padding-top: var(--s-3); border-top: 1px solid var(--hairline);
+  font-size: var(--step--1); color: var(--ink-faint); display: flex; align-items: center; gap: var(--s-2);
+}
+.lesson-rail { height: 2px; background: var(--sunk); margin-top: var(--s-3); }
+.lesson-rail > i { display: block; height: 100%; background: var(--gilt); }
+
+/* ---- the foot ------------------------------------------------------------ */
+.shell-foot {
+  position: sticky; bottom: 0; z-index: 50; flex-shrink: 0;
+  background: var(--raised); border-top: 1px solid var(--rule);
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--s-2); padding: var(--s-3) var(--s-5) calc(var(--s-4) + env(safe-area-inset-bottom, 0px));
+}
+.foot-btn {
+  background: var(--ground); border: 1px solid var(--rule); border-radius: var(--r-md);
+  color: var(--ink); font-family: var(--serif); font-size: var(--step--1);
+  padding: 8px 12px; cursor: pointer; display: flex; align-items: center; gap: var(--s-2);
+  line-height: 1;
+}
+.foot-btn:focus-visible { outline: 2px solid var(--rubric); outline-offset: 2px; }
+.foot-btn.is-home { font-size: var(--step-0); padding: 8px 18px; }
+.foot-btn[disabled] { opacity: .45; cursor: default; }
+/* An unread count sits in the margin voice, like every other number here. */
+.foot-btn .tally {
+  font-family: var(--mono); font-size: 9px; font-variant-numeric: tabular-nums;
+  color: var(--rubric); margin-left: 1px;
+}
+
+/* ---- the notice ---------------------------------------------------------- */
+/* Replaces the gold pill that used to fly in at the top. A slip of paper. */
+.notice {
+  position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 1000;
+  background: var(--raised); border: 1px solid var(--rule); border-left: 3px solid var(--rubric);
+  border-radius: 0 var(--r-md) var(--r-md) 0; padding: 8px 15px;
+  font-family: var(--serif); font-size: var(--step-0); color: var(--ink);
+  box-shadow: 0 6px 20px -10px rgba(0, 0, 0, .55);
+  display: flex; align-items: center; gap: var(--s-2); max-width: min(90vw, 420px);
+}

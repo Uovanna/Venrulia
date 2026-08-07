@@ -29,6 +29,7 @@ const { parseEntry, chronicleKind } = require(run);
 const root = path.join(__dirname, '..');
 const app = fs.readFileSync(path.join(root, 'src/App.jsx'), 'utf8');
 const tokens = fs.readFileSync(path.join(root, 'design/tokens.css'), 'utf8');
+const shell = fs.readFileSync(path.join(root, 'design/shell.css'), 'utf8');
 const combat = fs.readFileSync(path.join(root, 'design/combat.css'), 'utf8');
 const genCss = fs.readFileSync(path.join(root, 'src/chronicle-css.js'), 'utf8');
 
@@ -93,8 +94,8 @@ sec("The shipped stylesheet is the designed stylesheet");
 {
   const m = genCss.match(/export const CHRONICLE_CSS = ("(?:[^"\\]|\\.)*");/);
   ok(!!m, "src/chronicle-css.js exports CHRONICLE_CSS");
-  ok(m && JSON.parse(m[1]) === tokens + "\n" + combat,
-     "…and it matches design/tokens.css + design/combat.css (else: node design/build-css.mjs)");
+  ok(m && JSON.parse(m[1]) === [tokens, shell, combat].join("\n"),
+     "…and it matches tokens + shell + combat (else: node design/build-css.mjs)");
 }
 
 sec("Both themes resolve in all three states");
@@ -124,6 +125,38 @@ sec("It is actually the combat screen");
   ok(app.includes('className="foe"') && app.includes('className="foe-wounds"'), "the adversary uses the ruled frame");
   ok(app.includes('className="seals"') && app.includes('className="seal-slot'), "abilities are seals");
   ok(app.includes("saveTheme(next)"), "the day/night choice is remembered");
+}
+
+sec("The shell is bound in the same hand");
+{
+  // Converting the shell is what decides whether the game reads as one object or
+  // as a Chronicle page glued into a different app. The ground has to move too.
+  ok(app.includes('className={`shell chronicle-ground ${themeClass(chronicleTheme)}`}'),
+     "the whole app sits on the themed, textured ground");
+  ok(app.includes('className="shell-hdr"'), "the header is the head of the page");
+  ok(app.includes('className="shell-purse"'), "…the purse is written in the margin voice");
+  ok(app.includes('className="shell-foot"'), "…and the foot is bound to it");
+  ok(app.includes('className="lesson"') && app.includes('className="lesson-rail"'),
+     "the lesson is a marginal note rather than a glowing alert");
+  ok(app.includes('className="notice"'), "the toast is a slip of paper");
+  ok(/const Bar = [\s\S]{0,900}repeating-linear-gradient/.test(app),
+     "vitals are hatched, not filled");
+
+  // THE SWEEP. The shell cannot convert alone: parchment behind the dark inline
+  // panels every unconverted screen still uses would look broken. The app's
+  // neutrals were three families of near-identical dark purple doing three jobs,
+  // so they map onto ground/raised/sunk mechanically. What must NOT survive is a
+  // hard-coded near-black background — that is the one that reads as a hole.
+  const darkBg = [...app.matchAll(/background:\s*"(#[0-9a-fA-F]{6})"/g)]
+    .map((m) => m[1].toLowerCase())
+    .filter((h) => parseInt(h.slice(1, 3), 16) + parseInt(h.slice(3, 5), 16) + parseInt(h.slice(5, 7), 16) < 96);
+  ok(darkBg.length === 0, darkBg.length
+    ? `${darkBg.length} hard-coded near-black panels remain: ${[...new Set(darkBg)].slice(0, 6).join(", ")}`
+    : "no hard-coded near-black panel backgrounds survive the sweep");
+  const tokenBg = (app.match(/background: "var\(--/g) || []).length;
+  ok(tokenBg > 120, `${tokenBg} backgrounds now resolve through tokens`);
+  const tokenFg = (app.match(/color: "var\(--/g) || []).length;
+  ok(tokenFg > 400, `${tokenFg} colours now resolve through tokens`);
 }
 
 console.log("\n" + (fail

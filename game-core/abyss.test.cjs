@@ -39,6 +39,16 @@ js += `
   const ok = (c, m) => { console.log((c ? "  \\u2713 " : "  \\u2717 ") + m); if (!c) fail++; };
   const sec = (t) => console.log(String.fromCharCode(10) + t);
   const mk = (o) => core.normalizeChar({ ...core.createCharacter("Delver", "warrior", "human"), level: 60, ...o });
+  // BOTH random sources have to be seeded for an offline run to repeat. generateItem draws from the
+  // scoped rng, so building a character's gear outside withRng let it fall back to Math.random and
+  // roll different equipment every run — which put a borderline character on either side of the
+  // survival line. The drop rolls inside simulateOffline call Math.random directly, so that one is
+  // swapped too. Without both, the parking sections flapped between three and eight failures on
+  // identical code.
+  const seeded = (seed, body) => {
+    const prev = Math.random; Math.random = rngm.makeRng(seed);
+    try { return rngm.withRng(rngm.makeRng(seed), body); } finally { Math.random = prev; }
+  };
 
   // --- the ladder ------------------------------------------------------------------------------
   sec("Eleven ranks, each meaningfully harder than the last");
@@ -75,10 +85,18 @@ js += `
     const gold = src.slice(src.indexOf('if (b.mode === "abyss") {'), src.indexOf('if (b.mode === "abyss") {') + 400);
     ok(gold.indexOf("1 + ABYSS.goldPerPlus * ap") > 0, "\\u2026and the live kill actually applies it");
     ok(gold.indexOf("1 + ABYSS.xpPerPlus * ap") > 0, "\\u2026for XP too");
-    // The offline path must agree, or parking pays differently from playing.
-    ok(src.indexOf("gold = Math.floor(gold * 2 * (1 + ABYSS.goldPerPlus * aPlus));") > 0,
-       "the offline path pays the same rank premium as the live one");
-    ok(src.indexOf("xpEarned = Math.floor(xpEarned * (1 + ABYSS.xpPerPlus * aPlus));") > 0, "\\u2026and the same XP");
+    // The offline path deliberately does NOT match it any more. Parking used to pay per kill
+    // exactly as playing does, and that is what made 12 hours in a hard zone worth 836,518 gold.
+    // It now pays a flat hourly tranche, so the rank premium lives on the LIVE kill only and the
+    // depth you parked at buys you a better tranche instead. Both statements are pinned: the
+    // per-kill lines must be gone, and the tranche must still reward depth.
+    const off = src.slice(src.indexOf("const simulateOffline ="), src.indexOf("const predictOfflineDeath ="));
+    ok(off.indexOf("goldGained +=") < 0 && off.indexOf("xpGained +=") < 0,
+       "parking accrues no per-kill gold or XP at all \\u2014 the wage is gone");
+    ok(IDLE.goldPerHour.abyss > IDLE.goldPerHour.hard && IDLE.goldPerHour.hard > IDLE.goldPerHour.zone,
+       "\\u2026and depth still pays: " + IDLE.goldPerHour.zone + " -> " + IDLE.goldPerHour.hard + " -> " + IDLE.goldPerHour.abyss + " gold an hour");
+    ok(IDLE.xpPerHour.abyss > IDLE.xpPerHour.hard && IDLE.xpPerHour.hard > IDLE.xpPerHour.zone,
+       "\\u2026for experience too (" + IDLE.xpPerHour.zone + " -> " + IDLE.xpPerHour.hard + " -> " + IDLE.xpPerHour.abyss + ")");
   }
 
   // --- gear remembers where it came from ----------------------------------------------------------
@@ -204,13 +222,15 @@ js += `
     const kills = (p, seeds) => {
       let total = 0;
       for (let s = 0; s < seeds; s++) {
-        let c = core.normalizeChar(core.createCharacter("P", "warrior", "human"));
-        c.level = 60; c.unlockedSkills = core.SKILLS.warrior.map((x) => x.name); c = core.normalizeChar(c);
-        for (const sl of core.GEAR_SLOTS.map((g) => g.id)) if (sl !== "relic")
-          c.equipment[sl] = core.generateItem(71, core.rarityById("legendary"), sl, "warrior", 9);
-        c = core.armGambits(c); c.hp = core.maxHpFor(c);
-        if (p == null) c.offlineZoneId = "plaguelands"; else c.offlineAbyss = p;
-        const r = rngm.withRng(rngm.makeRng(400 + s * 977), () => simulateOffline(c, 60 * 60 * 1000));
+        const r = seeded(400 + s * 977, () => {
+          let c = core.normalizeChar(core.createCharacter("P", "warrior", "human"));
+          c.level = 60; c.unlockedSkills = core.SKILLS.warrior.map((x) => x.name); c = core.normalizeChar(c);
+          for (const sl of core.GEAR_SLOTS.map((g) => g.id)) if (sl !== "relic")
+            c.equipment[sl] = core.generateItem(71, core.rarityById("legendary"), sl, "warrior", 9);
+          c = core.armGambits(c); c.hp = core.maxHpFor(c);
+          if (p == null) c.offlineZoneId = "plaguelands"; else c.offlineAbyss = p;
+          return simulateOffline(c, 60 * 60 * 1000);
+        });
         total += r ? r.kills : 0;
       }
       return Math.round(total / seeds);
@@ -258,14 +278,14 @@ js += `
     ok(offlineSpot({ offlineHardId: "hr_moltencore" }) === null, "\\u2026nor is the hard raid");
     ok(offlineSpot({}) === null, "and a character parked nowhere is parked nowhere");
 
-    const run = (id) => {
+    const run = (id) => seeded(31, () => {
       let c = core.normalizeChar(core.createCharacter("H", "warrior", "human"));
       c.level = 60; c.unlockedSkills = core.SKILLS.warrior.map((x) => x.name); c = core.normalizeChar(c);
       for (const sl of core.GEAR_SLOTS.map((g) => g.id)) if (sl !== "relic")
         c.equipment[sl] = core.generateItem(71, core.rarityById("legendary"), sl, "warrior");
       c = core.armGambits(c); c.hp = core.maxHpFor(c); c.offlineHardId = id;
-      return rngm.withRng(rngm.makeRng(31), () => simulateOffline(c, 4 * 60 * 60 * 1000));
-    };
+      return simulateOffline(c, 4 * 60 * 60 * 1000);
+    });
     const r = run(hz.id);
     ok(!!r && r.kills > 0, "a geared character parked in a hard zone actually fights (" + (r ? r.kills : 0) + " kills)");
     ok(r.hardZoneId === hz.id, "\\u2026and the report says which zone");
@@ -278,8 +298,11 @@ js += `
        "the zone's kill goal completes offline too");
     ok(src.indexOf('zoneEnemyProfile(zone, enemyLevel, "hard", 8)') > 0,
        "hard-zone foes are modelled at the HARD tier, matching makeHardEnemy");
-    ok(src.indexOf("gold = Math.floor(gold * 2);") > 0,
-       "\\u2026and paid at the Hard Mode doubling, with no max-level cut \\u2014 Hard Mode IS the endgame");
+    // The Hard Mode gold doubling is a LIVE-kill rule; parking no longer pays per kill at all, so
+    // what a hard zone is worth while away is its tranche — still well ahead of a normal zone,
+    // which is the part that has to survive.
+    ok(IDLE.goldPerHour.hard > IDLE.goldPerHour.zone * 2,
+       "\\u2026and parking it is worth more than double a normal zone (" + IDLE.goldPerHour.hard + " against " + IDLE.goldPerHour.zone + " an hour)");
     ok(core.normalizeChar({ ...core.createCharacter("H","warrior","human"), offlineHardId: "hz_green" }).offlineHardId === "hz_green",
        "where you parked survives a reload");
   }
@@ -318,12 +341,14 @@ js += `
        "the offline hard branch rolls souls at the live per-kill rate");
     ok(src.indexOf("const hzSoul = hz ? soulForZone(hz.id) : null;") > 0,
        "\\u2026for the soul that zone actually drops");
-    let c = core.normalizeChar(core.createCharacter("S", "warrior", "human"));
-    c.level = 60; c.unlockedSkills = core.SKILLS.warrior.map((x) => x.name); c = core.normalizeChar(c);
-    for (const sl of core.GEAR_SLOTS.map((g) => g.id)) if (sl !== "relic")
-      c.equipment[sl] = core.generateItem(71, core.rarityById("legendary"), sl, "warrior");
-    c = core.armGambits(c); c.hp = core.maxHpFor(c); c.offlineHardId = HARD_ZONES[0].id;
-    const r = rngm.withRng(rngm.makeRng(77), () => simulateOffline(c, 12 * 60 * 60 * 1000));
+    const r = seeded(77, () => {
+      let c = core.normalizeChar(core.createCharacter("S", "warrior", "human"));
+      c.level = 60; c.unlockedSkills = core.SKILLS.warrior.map((x) => x.name); c = core.normalizeChar(c);
+      for (const sl of core.GEAR_SLOTS.map((g) => g.id)) if (sl !== "relic")
+        c.equipment[sl] = core.generateItem(71, core.rarityById("legendary"), sl, "warrior");
+      c = core.armGambits(c); c.hp = core.maxHpFor(c); c.offlineHardId = HARD_ZONES[0].id;
+      return simulateOffline(c, 12 * 60 * 60 * 1000);
+    });
     ok(r && r.kills > 500, "a long parked stint racks up kills (" + (r ? r.kills : 0) + ")");
     ok(r.soulsFound > 0, "\\u2026and finds souls (" + r.soulsFound + "), which it previously never did");
     ok(Object.values(r.char.souls || {}).reduce((a, b) => a + b, 0) === r.soulsFound,
@@ -345,6 +370,154 @@ js += `
        "ABYSS_STAT_PER_PLUS matches ABYSS.statPerPlus (" + ABYSS.statPerPlus + ")");
     ok(Math.abs(core.abyssMult(6) - (1 + ABYSS.statPerPlus * 6)) < 1e-9,
        "\\u2026and the core's multiplier really is built from that number");
+  }
+
+  // --- idle income -----------------------------------------------------------------------------------------
+  sec("Camping pays a tranche, not a wage");
+  {
+    // The measured problem: 12 hours parked in a hard zone paid 836,518 gold, which is 3.3x what an
+    // average player is meant to HOLD, twice a day, forever. About half of it was not combat gold
+    // at all \u2014 a parked character dropped ~1,689 items, filled its bank, and the rest was
+    // auto-sold into the purse.
+    // The seed has to cover the GEAR, not just the run. generateItem draws from the scoped rng, so
+    // building the equipment outside withRng let it fall back to Math.random and roll differently
+    // every time — which put a borderline character on either side of the survival line run to run
+    // and made this whole section flap.
+    const park = (where, hours, gear) => {
+      const g = gear || { ilvl: 71, rarity: "legendary" };
+      return seeded(4242, () => {
+        let c = core.normalizeChar(core.createCharacter("W", "warrior", "human"));
+        c.level = 60; c.unlockedSkills = core.SKILLS.warrior.map((x) => x.name); c = core.normalizeChar(c);
+        for (const sl of core.GEAR_SLOTS.map((x) => x.id)) if (sl !== "relic")
+          c.equipment[sl] = core.generateItem(g.ilvl, core.rarityById(g.rarity), sl, "warrior");
+        c = core.armGambits(c); c.hp = core.maxHpFor(c); c.gold = 0; c.inventory = [];
+        Object.assign(c, where);
+        return simulateOffline(c, hours * 3600 * 1000);
+      });
+    };
+    const hard12 = park({ offlineHardId: "hz_blight" }, 12);
+    ok(hard12.goldGained === IDLE.goldPerHour.hard * 12,
+       "12 hours in a hard zone pays exactly " + (IDLE.goldPerHour.hard * 12).toLocaleString() + " gold");
+    ok(hard12.goldGained < 250000 * 0.1,
+       "\\u2026which is under a tenth of the 250,000 an average player should hold");
+    ok(836518 / hard12.goldGained > 50,
+       "\\u2026a " + Math.round(836518 / hard12.goldGained) + "x cut from the measured 836,518");
+
+    // FLAT, not per kill. A stronger character kills faster; under the old rule that made camping
+    // MORE lucrative the better your gear, which is exactly backwards for an idle reward.
+    //
+    // Both of these SURVIVE the six hours — that is the point of the comparison. The pay is
+    // read off the wall clock, so the only way to earn less is to stop being parked, and the only
+    // thing that stops you is dying (pinned just below). If this ever compared a survivor against
+    // a corpse it would pass or fail on the death, not on the gear.
+    const modest = park({ offlineZoneId: "plaguelands" }, 6, { ilvl: 65, rarity: "epic" });
+    const strong = park({ offlineZoneId: "plaguelands" }, 6);
+    ok(!modest.died && !strong.died, "both the modest and the geared character survive the six hours");
+    ok(modest.goldGained === strong.goldGained,
+       "\\u2026and earn the SAME " + strong.goldGained.toLocaleString() + " gold, ilvl 65 epics or ilvl 71 legendaries");
+    ok(modest.xpGained === strong.xpGained,
+       "\\u2026and the same " + strong.xpGained.toLocaleString() + " experience");
+    ok(strong.kills > modest.kills * 2,
+       "\\u2026while the geared one still kills far more (" + strong.kills + " against " + modest.kills + ")");
+
+    // Dying is the one thing that cuts the tranche short: a character who falls at hour three is
+    // paid for three hours, not six, and the spot is switched off so the rest pays nothing.
+    let naked = core.normalizeChar(core.createCharacter("Naked", "warrior", "human"));
+    naked.level = 60; naked.unlockedSkills = core.SKILLS.warrior.map((x) => x.name);
+    naked = core.normalizeChar(naked); naked = core.armGambits(naked);
+    naked.hp = core.maxHpFor(naked); naked.gold = 0; naked.offlineZoneId = "plaguelands";
+    const nakedRun = seeded(4242, () => simulateOffline(naked, 6 * 3600 * 1000));
+    ok(nakedRun.died, "a naked character parked in the Plaguelands dies");
+    ok(nakedRun.goldGained < strong.goldGained / 100,
+       "\\u2026and is paid only for the " + nakedRun.secondsSimulated + "s it lasted (" + nakedRun.goldGained + " gold, not " + strong.goldGained.toLocaleString() + ")");
+    ok(nakedRun.char.offlineZoneId === null, "\\u2026and stops being parked, so the rest of the night pays nothing");
+
+    // Partial hours pay pro rata, so a 90-minute absence beats a 61-minute one.
+    const halfHour = park({ offlineHardId: "hz_blight" }, 0.5);
+    ok(Math.abs(halfHour.goldGained - IDLE.goldPerHour.hard / 2) <= 1,
+       "half an hour pays half a tranche (" + halfHour.goldGained + ")");
+
+    // Every hard zone pays the same. They borrow a NORMAL zone for flavour, and the old per-kill
+    // path measured the over-level penalty against THAT zone's cap \u2014 so five of the six paid
+    // ~0.03% of their gold and the whole reward curve was inverted.
+    const green = park({ offlineHardId: "hz_green" }, 12);
+    ok(green.goldGained === hard12.goldGained,
+       "Greenhollow pays what the Blighted Marches pays (" + green.goldGained.toLocaleString() + ")");
+  }
+
+  sec("Five drops an hour, and not one more");
+  {
+    const park = (where, hours, seed) => seeded(seed || 31, () => {
+      let c = core.normalizeChar(core.createCharacter("D", "warrior", "human"));
+      c.level = 60; c.unlockedSkills = core.SKILLS.warrior.map((x) => x.name); c = core.normalizeChar(c);
+      for (const sl of core.GEAR_SLOTS.map((x) => x.id)) if (sl !== "relic")
+        c.equipment[sl] = core.generateItem(71, core.rarityById("legendary"), sl, "warrior");
+      c = core.armGambits(c); c.hp = core.maxHpFor(c); c.gold = 0; c.inventory = []; c.bankSlots = 5000;
+      Object.assign(c, where);
+      return simulateOffline(c, hours * 3600 * 1000);
+    });
+    ok(IDLE.dropsPerHour === 5, "five an hour");
+    for (const [label, where] of [["hard zone", { offlineHardId: "hz_blight" }],
+                                  ["normal zone", { offlineZoneId: "plaguelands" }],
+                                  ["Abyss +0", { offlineAbyss: 0 }]]) {
+      const r = park(where, 12, 31);
+      ok(r.gearKept <= 12 * IDLE.dropsPerHour + IDLE.dropsPerHour,
+         "12 hours in a " + label + " keeps " + r.gearKept + " items, never more than the allowance");
+    }
+    // The cap LIMITS; it does not grant. Asserting the Abyss simply lands "under" the allowance is
+    // no test at all — at one piece per 150 kills and ~600 kills an hour its natural rate is about
+    // four an hour against an allowance of five, close enough that the check passed or failed on
+    // the seed. What is actually worth pinning is that the kept count still tracks the UNCAPPED
+    // rate: kills/150, not the allowance.
+    const ab = park({ offlineAbyss: 0 }, 12, 31);
+    const abExpected = ab.kills / ABYSS.killsPerDrop;
+    ok(ab.gearKept <= 12 * IDLE.dropsPerHour + IDLE.dropsPerHour,
+       "12 hours in the Abyss keeps " + ab.gearKept + ", inside the allowance");
+    ok(Math.abs(ab.gearKept - abExpected) < abExpected * 0.5,
+       "\\u2026and that is its OWN 1-in-150 rate (" + ab.gearKept + " against " + abExpected.toFixed(1) + " expected from " + ab.kills + " kills), not the cap topping it up");
+    // 1,689 was the old figure for the same stint.
+    const hard = park({ offlineHardId: "hz_blight" }, 12, 31);
+    ok(hard.gearKept < 100, "a hard zone keeps " + hard.gearKept + " rather than the ~1,689 it did");
+    ok(1689 / Math.max(1, hard.gearKept) > 20,
+       "\\u2026a " + Math.round(1689 / Math.max(1, hard.gearKept)) + "x cut in items to sort through");
+
+    // THE CAP IS CHECKED BEFORE THE ROLL, not by trimming afterwards. Trimming would keep the
+    // FIRST sixty of 1,689 rolls, quietly weighting a night's loot toward its first minutes.
+    ok(src.indexOf("const roomForDrop = () =>") > 0 && src.indexOf("roomForDrop() && Math.random()") > 0,
+       "the budget is consulted before rolling, so the kept items are spread across the whole stint");
+    // Rates and tiers are untouched, which is what was asked for.
+    ok(src.indexOf("Math.random() < 0.10 * 1.6 * (1 + _tb.drop)") > 0,
+       "the hard-zone drop RATE is the live one, unchanged");
+    ok(src.indexOf("Math.random() < 1 / ABYSS.killsPerDrop") > 0, "\\u2026and so is the Abyss's");
+    ok(src.indexOf("rarityById(Math.random() < ABYSS.legendaryChance") > 0, "\\u2026and the rarity split");
+
+    // Normal-zone offline loot used to be auto-SOLD, which was a second gold faucet on top of the
+    // kill gold. It is kept now, under the same cap.
+    ok(src.indexOf("offline loot auto-sold") < 0, "normal-zone drops are no longer auto-sold into gold");
+    const zone = park({ offlineZoneId: "plaguelands" }, 12, 31);
+    ok(zone.gearKept > 0 && (zone.char.inventory || []).length > 0,
+       "\\u2026they land in the bank instead (" + zone.gearKept + " items)");
+  }
+
+  sec("Kills still count for everything they counted for");
+  {
+    // The whole point of rationing gold rather than kills: progression must keep moving.
+    let c = seeded(88, () => {
+      let k = core.normalizeChar(core.createCharacter("K", "warrior", "human"));
+      k.level = 60; k.unlockedSkills = core.SKILLS.warrior.map((x) => x.name); k = core.normalizeChar(k);
+      for (const sl of core.GEAR_SLOTS.map((x) => x.id)) if (sl !== "relic")
+        k.equipment[sl] = core.generateItem(71, core.rarityById("legendary"), sl, "warrior");
+      return core.armGambits(k);
+    });
+    c.hp = core.maxHpFor(c); c.offlineHardId = "hz_blight";
+    const before = c.kills;
+    const r = seeded(88, () => simulateOffline(c, 12 * 3600 * 1000));
+    ok(r.kills > 5000, "twelve parked hours still produce " + r.kills.toLocaleString() + " kills");
+    ok(r.char.kills === before + r.kills, "\\u2026which land on the character, so the battle pass advances");
+    ok((r.char.hardKills || {}).hz_blight === r.kills, "\\u2026and bank against the hard zone's goal");
+    const ab = { ...c, offlineHardId: null, offlineAbyss: 0 };
+    const r2 = seeded(88, () => simulateOffline(ab, 12 * 3600 * 1000));
+    ok((r2.char.abyss.kills || {})[0] === r2.kills, "\\u2026and Abyss ranks still bank their kills");
   }
 
   // --- reachability --------------------------------------------------------------------------------------

@@ -3,10 +3,11 @@
  * simulateOffline is a closed-form approximation of the live combat tick, and it had drifted from
  * it in three ways that all pushed the same direction — offline was easier and paid more:
  *
- *   1. resolveDeath cuts normal-mode XP and gold by 95% at max level, to push players into Hard
- *      Mode. simulateOffline never got that line, so a parked level-60 earned the pre-cap rate
- *      forever. Parking was the most profitable activity in the game by a factor of 33, which is
- *      the real reason item prices read as worthless next to a purse.
+ *   1. Offline paid a per-kill wage, exactly as playing does, and a parked character kills far more
+ *      than a played one — twelve hours in a hard zone came to 836,518 gold. Giving offline
+ *      resolveDeath's 95% max-level cut fixed the arithmetic without fixing that. Gold and XP are
+ *      now a flat hourly tranche instead, which is the ONE thing offline deliberately does not
+ *      share with live. Section 1 pins that so nobody restores the wage in the name of parity.
  *   2. Offline enemy damage came from the legacy per-level curve while live combat derives it from
  *      a stat block. The two were a flat 27% apart at EVERY level, and offline modelled
  *      auto-attacks only — enemies never cast.
@@ -54,23 +55,30 @@ js += `
   });
   const run = (c, hours) => rngm.withRng(rngm.makeRng(99), () => simulateOffline(c, (hours || 10) * HOUR));
 
-  // --- 1. the max-level reward cut reaches offline ------------------------------------------------
+  // --- 1. offline pays by the hour, and by less than playing ---------------------------------------
   {
-    // Comparing a level-59 run against a level-60 one does NOT work: at ~2,000 kills an hour the
-    // level-59 character crosses the cap within seconds and spends the rest of the stint at 60, so
-    // both runs measure the same thing. Test the rule against its counterfactual instead — an
-    // UNCUT kill always pays at least its base gold, so observing less than that proves the cut.
+    // This section used to assert that resolveDeath's 95% max-level cut reached the offline per-kill
+    // reward. Offline HAS no per-kill reward any more: giving it the cut fixed the arithmetic but
+    // not the problem, because a parked character kills so many things that even a cut wage came to
+    // 836,518 gold in twelve hours. Gold and XP are now a flat hourly tranche.
+    //
+    // That is a deliberate divergence from live, and this is where it is pinned so that nobody
+    // "restores parity" by putting the wage back. Everything else about the stint still has to match
+    // the live game — the enemies, the damage, the potions, the drops — and sections 2 onward are
+    // unchanged. Only the money is rationed.
     const r = run(bench(MAX_LEVEL, { pots: true }), 10);
     ok(!!r && r.kills > 100, "a max-level run produces a usable sample (" + (r ? r.kills.toLocaleString() : 0) + " kills)");
+    ok(r.goldGained === IDLE.goldPerHour.zone * 10,
+       "ten parked hours pay ten tranches (" + r.goldGained.toLocaleString() + "g), whatever happened in them");
+    ok(r.xpGained === IDLE.xpPerHour.zone * 10, "…and ten tranches of experience (" + r.xpGained.toLocaleString() + ")");
+
+    // The load-bearing comparison: PLAYING must beat PARKING. A live max-level kill in a normal zone
+    // pays its base gold cut by 95%, and even against that floor the parked rate per kill is lower.
     const gpk = r.goldGained / Math.max(1, r.kills);
-    // resolveDeath's own arithmetic for a normal kill at level 60, human, before the 95% cut.
     const base = Math.floor(Math.floor(Math.floor(MAX_LEVEL + 3) * 1.1) * 0.25);
-    ok(gpk < base, "a max-level kill pays " + gpk.toFixed(1) + "g, BELOW the " + base
-       + "g base it would pay uncut — the 95% max-level cut reaches offline");
-    ok(gpk > 0, "…while looted gear still pays, so the endgame is not zeroed out");
-    // Every kill drops the same base gold, so anything above 5% of it is the vendored drop.
-    ok(gpk > base * 0.05, "…and the drop, which resolveDeath deliberately does not cut, still counts");
-    // XP: at max level surplus XP is redirected into Honor, so kills still feed progression.
+    ok(gpk < base * 0.05, "a parked kill is worth " + gpk.toFixed(2) + "g against the " + (base * 0.05).toFixed(2)
+       + "g the same kill pays live at the 95% max-level cut — playing beats parking");
+    // XP: at max level surplus XP is redirected into Honor, so the tranche still feeds progression.
     ok(r.char.honor > 0 || r.char.honorXp > 0, "XP at max level feeds Honor rather than vanishing");
   }
 

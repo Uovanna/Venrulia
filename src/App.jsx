@@ -1452,11 +1452,14 @@ const conTotal = (c, id) => { let s = 0; for (let t = 0; t <= 6; t++) s += conCo
 // at level 39 — without it, 0 of 176 parked runs finished. It is deliberately GOLD and not Ven: the
 // one mechanic a character cannot progress without must not sit behind the premium currency.
 const VENDOR_UPGRADES = [
-  // 400g, not the 2,500 first written. Measured: a character reaching level 7 — where its lesson
-  // opens — holds a median of 610 gold, and is still on only 1,395 by level 20. At 2,500 the lesson
-  // would have stalled for most of the levelling game asking for something unaffordable. The gate
-  // on this is meant to be knowing it exists, not grinding for it.
-  { id: "autoPotion", name: "Draught Belt", icon: "\u{1F9EA}", cost: 400,
+  // 200g, re-measured. This price has always been derived from what a character actually holds when
+  // its lesson opens, never picked: 2,500 first, cut to 400 when a level-7 purse measured 610. Idle
+  // income is now a flat hourly tranche rather than a per-kill wage, and the same measurement gives
+  // 256 — a levelling character dies about eighty seconds into each stint and is paid for those
+  // eighty seconds, so it earns far less of the window than a max-level one. 400 would have stalled
+  // the lesson exactly the way 2,500 once did. The gate on this is meant to be knowing it exists,
+  // not grinding for it.
+  { id: "autoPotion", name: "Draught Belt", icon: "\u{1F9EA}", cost: 200,
     desc: "Drinks your best healing potion automatically at 15% health — a backstop beneath your own potion gambits, in combat and while parked offline." },
 ];
 const vendorUpgradeOwned = (c, id) => !!((c && c.upgrades) || {})[id];
@@ -2596,6 +2599,31 @@ const offlineSpot = (char) => {
   return z ? { kind: "zone", zone: z } : null;
 };
 
+// ---------- IDLE INCOME ----------
+// Camping used to pay per kill, exactly as playing does, and 12 hours parked in a hard zone was
+// measured at 836,518 gold — 3.3x what an average player is meant to HOLD, twice a day, forever.
+// About half of that was not even combat gold: a parked character dropped ~1,689 items, filled its
+// bank in minutes, and everything after that was auto-sold straight into the purse.
+//
+// So idle no longer pays per kill at all. It pays a flat TRANCHE per hour parked, and the kill loop
+// is otherwise untouched: kills still bank toward the battle pass, hard-zone goals, Abyss ranks and
+// quests, deaths still happen, potions are still drunk. Only the money and the experience are
+// rationed, which is what "minor progress while away" has to mean if playing is to be worth more
+// than not playing.
+//
+// A flat rate is also the point of "set intervals": a stronger character kills faster, and under
+// the old rule that made camping MORE lucrative the better your gear. Now it does not.
+const IDLE = {
+  goldPerHour: { zone: 400, hard: 900, abyss: 1200 },
+  xpPerHour:   { zone: 900, hard: 1800, abyss: 2400 },
+  // FIVE DROPS AN HOUR, everywhere. Not a rate change and not a tier change — the roll that decides
+  // WHETHER a kill drops and WHAT rarity it is is untouched, and the cap simply stops accepting
+  // once five have landed in the current hour. Twelve hours is 60 items rather than 1,689, so a
+  // player returning in the morning has a list they can actually read.
+  dropsPerHour: 5,
+};
+const idleRate = (table, spotKind) => table[spotKind] || table.zone;
+
 const simulateOffline = (char, elapsedMs) => {
   const spot = offlineSpot(char);
   if (!spot) return null;
@@ -2640,7 +2668,7 @@ const simulateOffline = (char, elapsedMs) => {
   // live one does. Copy the map first — `c` is a shallow clone of the caller's character.
   const autoPot = !!(c.upgrades && c.upgrades.autoPotion);
   let potionsDrunk = 0, lastPotionAt = -POTION_CD / 1000;   // first sip allowed immediately
-  let abyssKilled = 0, hardKilled = 0; const abyssDrops = [], hardDrops = [], hardSouls = {};
+  let abyssKilled = 0, hardKilled = 0; const abyssDrops = [], hardDrops = [], zoneDrops = [], hardSouls = {};
   const hzSoul = hz ? soulForZone(hz.id) : null;
   c.consumables = { ...(c.consumables || {}) };
 
@@ -2690,51 +2718,65 @@ const simulateOffline = (char, elapsedMs) => {
     // earned the pre-cap rate forever. That one omission made parking the most profitable activity
     // in the game by a factor of 33, and it is why item prices read as worthless next to a purse.
     // Loot is deliberately NOT cut here, matching resolveDeath, which cuts XP and gold only.
+    // GOLD AND XP ARE NOT PAID PER KILL while parked — they arrive in hourly tranches after the
+    // loop. What a kill still does is progress: it counts, it can drop, and it can kill you.
+    //
+    // THE DROP CAP. Five an hour, and the cap is checked BEFORE the roll rather than by trimming a
+    // list afterwards: trimming would let a 12-hour stint roll 1,689 items and keep the first 60,
+    // which quietly weights the kept ones toward the beginning of the night for no reason a player
+    // could ever see. Refusing to roll once the hour is full is the same distribution, shorter.
+    const dropBudget = Math.floor(timeUsed / 3600) * IDLE.dropsPerHour + IDLE.dropsPerHour;
+    const roomForDrop = () => (hardDrops.length + abyssDrops.length + zoneDrops.length) < dropBudget;
     if (hz) {
-      // HARD ZONE, mirroring the live rule: the max-level cut does not apply (Hard Mode IS the
-      // endgame), gold is doubled at 60, and gear drops at the zone's own 10% x 1.6-for-elites
-      // rate rather than the normal-zone table. Kept, not auto-sold — an ilvl 65-70 piece is the
-      // entire reason to be here.
-      gold = Math.floor(gold * 2);
       hardKilled++;
-      const rate = 0.10 * 1.6 * (1 + _tb.drop);   // every hard-zone foe is a Champion or a Lord
-      if (Math.random() < rate) {
+      // Rate and rarity are EXACTLY the live ones. Only the count is capped.
+      if (roomForDrop() && Math.random() < 0.10 * 1.6 * (1 + _tb.drop)) {
         const rar = hz.dropIlvl >= 70 ? rollRarityForDungeon("stratholme") : rollRarityForZone(60);
         hardDrops.push(generateItem(hz.dropIlvl, rar, pickLootSlot(), c.cls));
       }
-      // SOULS, at the live per-kill rate. Leaving these out made parking strictly worse than
-      // playing in a way nothing told the player: twelve hours of hard-zone kills would have
-      // produced thousands of corpses and not one crafting reagent.
+      // Souls are a crafting reagent, not wealth, and stay per-kill at the live rate.
       if (hzSoul && Math.random() < SOUL_ZONE_CHANCE) hardSouls[hzSoul.id] = (hardSouls[hzSoul.id] || 0) + 1;
     } else if (aPlus == null) {
-      if (c.level >= MAX_LEVEL) { xpEarned = Math.floor(xpEarned * 0.05); gold = Math.floor(gold * 0.05); }
-      for (const it of rollLoot({ level: enemyLevel, isBoss, dungeonId: null, guaranteed: false, clsId: c.cls, dropMult: rewardMult * (1 + _tb.drop) })) {
-        gold += Math.max(1, Math.floor(it.value * 0.6 * 0.25)); // offline loot auto-sold
+      // Normal zones used to auto-SELL every offline drop, which made them a gold faucet on top of
+      // the kill gold. They are kept now, under the same cap: a levelling player parked overnight
+      // should come back to a few upgrades, not a wall of vendor trash converted into coin.
+      if (roomForDrop()) {
+        for (const it of rollLoot({ level: enemyLevel, isBoss, dungeonId: null, guaranteed: false, clsId: c.cls, dropMult: rewardMult * (1 + _tb.drop) })) {
+          if (!roomForDrop()) break;
+          zoneDrops.push(it);
+        }
       }
     } else {
-      // The Abyss IS the endgame, so the max-level cut that exists to push players out of normal
-      // zones does not apply here; the Hard Mode doubling and the rank premium do.
-      gold = Math.floor(gold * 2 * (1 + ABYSS.goldPerPlus * aPlus));
-      xpEarned = Math.floor(xpEarned * (1 + ABYSS.xpPerPlus * aPlus));
-      // Kills bank against the rank, exactly as they do live.
       abyssKilled++;
-      // And gear is KEPT. Auto-selling an ilvl 71 Abyss piece for pocket change is the one thing a
-      // parked player would never want, and it is the only reason to be down here.
-      if (Math.random() < 1 / ABYSS.killsPerDrop) {
+      if (roomForDrop() && Math.random() < 1 / ABYSS.killsPerDrop) {
         const rar = rarityById(Math.random() < ABYSS.legendaryChance ? "legendary" : "epic");
         abyssDrops.push(generateItem(ABYSS.dropIlvl, rar, pickLootSlot(), c.cls, aPlus));
       }
     }
-    xpGained += xpEarned; goldGained += gold;
+  }
 
-    c.xp = (c.xp || 0) + xpEarned;
+  // ---- the tranche ----
+  // One payment for the whole stint, from the wall clock rather than from how many things died.
+  // Partial hours pay pro rata, so a 90-minute absence is not worth the same as a 61-minute one.
+  //
+  // The clock is `secs` — time PARKED — not `timeUsed`, which is time spent swinging. The two
+  // differ by a whole character's worth: timeUsed stops one kill short for a strong build
+  // and barely leaves zero for a weak one, so paying on it would quietly restore the "better gear
+  // earns more while away" rule this whole change exists to remove. Dying is the one thing that
+  // shortens the stint: a character who falls at hour three is paid for three hours, and the spot
+  // is switched off below, so the rest of the night pays nothing at all.
+  {
+    const spot = hz ? "hard" : aPlus != null ? "abyss" : "zone";
+    const hours = (died ? timeUsed : secs) / 3600;
+    goldGained = Math.floor(idleRate(IDLE.goldPerHour, spot) * hours);
+    xpGained = Math.floor(idleRate(IDLE.xpPerHour, spot) * hours);
+    c.xp = (c.xp || 0) + xpGained;
     while (c.level < MAX_LEVEL && c.xp >= xpForLevel(c.level)) { c.xp -= xpForLevel(c.level); c.level++; }
     if (c.level >= MAX_LEVEL) {
       c.honorXp = (c.honorXp || 0) + c.xp; c.xp = 0;
       while (c.honorXp >= honorXpForLevel(c.honor || 0)) { c.honorXp -= honorXpForLevel(c.honor || 0); c.honor = (c.honor || 0) + 1; c.attrPoints = (c.attrPoints || 0) + 1; }
     }
   }
-
   c.gold = (c.gold || 0) + goldGained;
   c.kills = killCount;
   if (aPlus != null && abyssKilled) {
@@ -2753,8 +2795,9 @@ const simulateOffline = (char, elapsedMs) => {
       c.hardZoneDone = { ...(c.hardZoneDone || {}), [hz.id]: true };
   }
   for (const id in hardSouls) c.souls = { ...(c.souls || {}), [id]: ((c.souls || {})[id] || 0) + hardSouls[id] };
-  if (hardDrops.length) {
-    const dep = depositItems(c, hardDrops);
+  const kept = [...hardDrops, ...zoneDrops];
+  if (kept.length) {
+    const dep = depositItems(c, kept);
     c.inventory = dep.inventory; c.overflow = dep.overflow; c.gold = (c.gold || 0) + dep.gold;
   }
   if (abyssDrops.length) {
@@ -2770,7 +2813,7 @@ const simulateOffline = (char, elapsedMs) => {
   c.lastActive = Date.now();
   return { char: c, kills, xpGained, goldGained, leveledTo: c.level, died, potionsDrunk,
            abyssPlus: aPlus, hardZoneId: hz ? hz.id : null,
-           gearKept: abyssDrops.length + hardDrops.length,
+           gearKept: abyssDrops.length + hardDrops.length + zoneDrops.length,
            soulsFound: Object.values(hardSouls).reduce((a, b) => a + b, 0),
            secondsSimulated: Math.floor(timeUsed) };
 };

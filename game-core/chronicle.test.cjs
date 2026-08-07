@@ -253,6 +253,37 @@ sec("Bank and Armory speak the shared vocabulary");
      "MiniBtn takes a meaning, not a colour");
 }
 
+sec("Market and Auction House reuse the vocabulary");
+{
+  // The point of converting Bank and Armory first was that the next screens
+  // should be assembly, not design. These two are the test of that claim: if
+  // they had to invent anything, the vocabulary was not general enough.
+  ok(/const MARKET_STALLS = \[/.test(app), "the market's stalls are DATA, like the town's spots");
+  ok((app.match(/dest: "/g) || []).length >= 5, "…so a destination can be checked rather than grepped for");
+  ok(app.includes("MARKET_STALLS.map((st) =>"), "…and the screen is five gateways over that table");
+  ok(!/\{tab === "market"[\s\S]{0,2000}?linear-gradient/.test(app), "the market invents no new surface");
+
+  // The auction house needed three genuinely new patterns — a field, a filter
+  // toggle, a text link — and nothing else.
+  for (const [cls, what] of [
+    ["field", "a field is a ruled line you write on, not a filled box"],
+    ["toggle", "a filter switches with a rule under it"],
+    ["link", "a plain textual action"],
+    ["price", "a price is always the margin hand, always tabular"],
+    ["sift", "the filter block is ruled off from what it filters"],
+  ]) ok(panels.includes("." + cls), `panels.css defines ${what}`);
+  ok(app.includes('className="field"') && app.includes('className="field is-num"'),
+     "the auction house uses fields, with numbers in the mono hand");
+  ok(app.includes('className={`toggle'), "…and toggles for its filters");
+  ok(app.includes('className="link"'), "…and a link to start the search again");
+  ok(app.includes('className="sift"'), "…inside a ruled sift block");
+  ok(app.includes('className="leaves"') && app.includes('ahView === id ? " is-open"'),
+     "…and the same leaves the Bank uses");
+  // The AH reuses the item row wholesale rather than growing a listing row of
+  // its own — that is the reuse this whole exercise was for.
+  ok(/stackListingRow[\s\S]{0,400}className="item"/.test(app), "a listing IS an item row");
+}
+
 sec("The shell is bound in the same hand");
 {
   // Converting the shell is what decides whether the game reads as one object or

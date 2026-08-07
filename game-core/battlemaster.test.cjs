@@ -273,7 +273,11 @@ js += `
   // --- reachability -------------------------------------------------------------------------------
   sec("A player can actually get there");
   {
-    ok(src.indexOf('setTab("battlemaster")') > 0, "the Market hub has a Battlemaster button");
+    // The market renders its stalls from MARKET_STALLS now, so there is no literal
+    // setTab("battlemaster") to grep for. Reading the table proves the same thing
+    // and proves it better: the stall has to be listed for the button to exist.
+    ok(MARKET_STALLS.some((st) => st.dest === "battlemaster"),
+       "the Market hub carries a Battlemaster stall");
     ok(src.indexOf('{tab === "battlemaster" && (() => {') > 0, "…and the tab renders");
     ok(src.indexOf('onClick={() => (e.kind === "setPiece" ? setBmPick(e) : buyBattlemaster(e))}') > 0,
        "every row buys, and a set piece opens the stat chooser first");

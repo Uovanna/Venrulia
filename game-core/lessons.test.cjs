@@ -114,10 +114,15 @@ js += `
       // Reachable means: some code path opens it. A panel may be a top-level tab, a Bank sub-tab,
       // or a building on the town map that enterBuilding forwards straight to setTab.
       const townDests = new Set(TOWN_SPOTS.map((sp) => sp.dest));
+      // A destination can also live in DATA — the town map's spots and the market's
+      // stalls both drive setTab from a table. Reading the table beats grepping for
+      // a literal call: when the market became data-driven, this grep started
+      // reporting four perfectly reachable panels as unreachable.
+      const stallDests = new Set(MARKET_STALLS.map((st) => st.dest));
       const reachable = (k) => new RegExp('setTab\\\\("' + k + '"\\\\)').test(src)
         || new RegExp('setBagTab\\\\("' + k + '"\\\\)').test(src)
         || new RegExp('bagTab === "' + k + '"').test(src)
-        || townDests.has(k);
+        || townDests.has(k) || stallDests.has(k);
       ok(keys.length > 0 && keys.every(reachable),
          l.id + " waits on a panel the game can open (" + keys.join(", ") + ")");
     }
@@ -248,10 +253,15 @@ js += `
     const townDests = new Set(TOWN_SPOTS.map((sp) => sp.dest));
     // Literal search rather than a built regex: escaping one through this harness is what produced
     // three broken patterns before this settled.
+    // The market renders its stalls from MARKET_STALLS, so a literal setTab call no
+    // longer exists for four of these panels. Reading the table is the same move the
+    // Bank's sub-tabs already needed, and it is the honest one: a destination that
+    // only exists inside a JSX callback cannot be checked by anything.
+    const stallDests2 = new Set(MARKET_STALLS.map((st) => st.dest));
     const seenWriter = (k) => outside.indexOf('setTab("' + k + '")') > 0
       || outside.indexOf('setBagTab("' + k + '")') > 0
       || outside.indexOf('bagTab === "' + k + '"') > 0
-      || townDests.has(k);
+      || townDests.has(k) || stallDests2.has(k);
     const fieldWriter = (k) => new RegExp("\\\\b" + k + ":\\\\s*true").test(outside)
       || new RegExp("\\\\[" + k + "\\\\]:\\\\s*true").test(outside)
       || new RegExp("\\\\." + k + "\\\\s*=[^=]").test(outside)
@@ -400,6 +410,8 @@ js += `
     // The Bank renders its sub-tabs from a table rather than literal setBagTab calls.
     const bagIds = [...src.matchAll(/\\["([a-z]+)", "[^"]*(?:Equipment|Items|Gems|Crafting|Quest)[^"]*"\\]/g)].map((m) => m[1]);
     edges.bag = [...new Set([...(edges.bag || []), ...bagIds])];
+    // Same for the market's stalls.
+    edges.market = [...new Set([...(edges.market || []), ...MARKET_STALLS.map((st) => st.dest)])];
     // The town map opens any building directly, and the bottom bar always offers these.
     const ALWAYS = new Set([...TOWN_SPOTS.map((s) => s.dest), "town", "mail", "premium", "combat"]);
 

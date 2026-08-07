@@ -3150,6 +3150,18 @@ function CreateCharacterScreen({ onCreate, onBack }) {
 // ============================================================
 // TOWN HUB — interactive map that replaces the tab bar
 // ============================================================
+/* What the market holds. Data rather than five hand-written buttons, for the same
+   reason TOWN_SPOTS is data: a destination that only exists inside a JSX callback
+   cannot be checked by anything. lessons.test.cjs reads this to prove every
+   panel-visit lesson waits on a panel the game can actually open. */
+const MARKET_STALLS = [
+  { dest: "vendor",       icon: "coin",   name: "Vendor",           blurb: "Potions and scrolls, and a buyer for what you no longer carry" },
+  { dest: "supply",       icon: "flask",  name: "Supply Master",    blurb: "Bottles, flasks and blank scrolls for the crafting hall" },
+  { dest: "temper",       icon: "anvil",  name: "Tempering Forge",  blurb: "Strengthen a piece, or reroll what it rolled \u2014 the deepest gold sink there is" },
+  { dest: "gambitshop",   icon: "target", name: "Gambit Shop",      blurb: "Standing orders, bought by the roll" },
+  { dest: "battlemaster", icon: "shield", name: "Battlemaster",     blurb: "Arena tokens only \u2014 set gear, runes and tickets" },
+];
+
 const TOWN_SPOTS = [
   { dest: "world",     name: "Adventure Gate", x: 180, y: 62,  type: "gate",      ldy: 40 },
   { dest: "bag",       name: "Bank",           x: 74,  y: 152, type: "bank",      ldy: 36 },
@@ -8043,27 +8055,26 @@ function GameScreen({ character: initChar, onSave, onBack }) {
 
         {tab === "market" && (
           <div>
-            <div style={{ color: "var(--ink-soft)", fontSize: 11, textTransform: "uppercase", letterSpacing: 1, marginBottom: 12 }}>Market</div>
-            <button onClick={() => { const c = charRef.current; if (!c.tutorial?.visitedVendor) commitChar({ ...c, tutorial: { ...(c.tutorial || {}), visitedVendor: true } }); setTab("vendor"); }} style={{ width: "100%", textAlign: "left", background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 12, padding: "16px 18px", cursor: "pointer", marginBottom: 10, display: "flex", alignItems: "center", gap: 14 }}>
-              <span style={{ fontSize: 30 }}>🏪</span>
-              <span><span style={{ color: "var(--gilt)", fontWeight: 700, fontSize: 15, fontFamily: "Georgia, serif", display: "block" }}>Vendor</span><span style={{ color: "var(--ink-soft)", fontSize: 11.5 }}>Buy potions & scrolls, sell your gear</span></span>
-            </button>
-            <button onClick={() => setTab("supply")} style={{ width: "100%", textAlign: "left", background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 12, padding: "16px 18px", cursor: "pointer", marginBottom: 10, display: "flex", alignItems: "center", gap: 14 }}>
-              <span style={{ fontSize: 30 }}>📦</span>
-              <span><span style={{ color: "var(--verdigris)", fontWeight: 700, fontSize: 15, fontFamily: "Georgia, serif", display: "block" }}>Supply Master</span><span style={{ color: "var(--ink-soft)", fontSize: 11.5 }}>Bottles, flasks & blank scrolls for crafting</span></span>
-            </button>
-            <button onClick={() => setTab("temper")} style={{ width: "100%", textAlign: "left", background: "var(--sunk)", border: "1px solid var(--bole)", borderRadius: 12, padding: "16px 18px", cursor: "pointer", marginBottom: 10, display: "flex", alignItems: "center", gap: 14 }}>
-              <span style={{ fontSize: 30 }}>⚒️</span>
-              <span><span style={{ color: "var(--bole)", fontWeight: 700, fontSize: 15, fontFamily: "Georgia, serif", display: "block" }}>Tempering Forge</span><span style={{ color: "var(--ink-soft)", fontSize: 11.5 }}>Enhance gear (+) & reroll secondary stats — high-stakes gold sink</span></span>
-            </button>
-            <button onClick={() => setTab("gambitshop")} style={{ width: "100%", textAlign: "left", background: "var(--raised)", border: "1px solid var(--rar-epic)", borderRadius: 12, padding: "16px 18px", cursor: "pointer", marginBottom: 10, display: "flex", alignItems: "center", gap: 14 }}>
-              <span style={{ fontSize: 30 }}>🎰</span>
-              <span><span style={{ color: "var(--rar-epic)", fontWeight: 700, fontSize: 15, fontFamily: "Georgia, serif", display: "block" }}>Gambit Shop {char.level < GAMBIT_UNLOCK_LEVEL && <span style={{ color: "var(--ink-soft)", fontSize: 11 }}><Icon name="lock" /> Lv {GAMBIT_UNLOCK_LEVEL}</span>}</span><span style={{ color: "var(--ink-soft)", fontSize: 11.5 }}>Roll for if/then gambits to automate your skills</span></span>
-            </button>
-            <button onClick={() => setTab("battlemaster")} style={{ width: "100%", textAlign: "left", background: "var(--raised)", border: "1px solid var(--bole)", borderRadius: 12, padding: "16px 18px", cursor: "pointer", display: "flex", alignItems: "center", gap: 14 }}>
-              <span style={{ fontSize: 30 }}>🛡️</span>
-              <span><span style={{ color: "var(--bole)", fontWeight: 700, fontSize: 15, fontFamily: "Georgia, serif", display: "block" }}>Battlemaster</span><span style={{ color: "var(--ink-soft)", fontSize: 11.5 }}>Arena Tokens only — set gear, runes & tickets · 🎟️ {char.arenaTokens || 0}</span></span>
-            </button>
+            <div className="eyebrow"><span>The market</span></div>
+            {MARKET_STALLS.map((st) => {
+              const note = st.dest === "gambitshop" && char.level < GAMBIT_UNLOCK_LEVEL
+                ? `Opens at level ${GAMBIT_UNLOCK_LEVEL}`
+                : st.dest === "battlemaster" ? `${char.arenaTokens || 0} tokens` : null;
+              return (
+                <button key={st.dest} className="gateway" onClick={() => {
+                  if (st.dest === "vendor") {
+                    const c = charRef.current;
+                    if (!c.tutorial?.visitedVendor) commitChar({ ...c, tutorial: { ...(c.tutorial || {}), visitedVendor: true } });
+                  }
+                  setTab(st.dest);
+                }}>
+                  <span className="mark"><Icon name={st.icon} size={18} /></span>
+                  <span className="gateway-body"><b>{st.name}</b><span>{st.blurb}</span></span>
+                  {note && <span className="chip">{note}</span>}
+                  <span className="gateway-more">&rsaquo;</span>
+                </button>
+              );
+            })}
           </div>
         )}
 
@@ -8967,13 +8978,12 @@ function GameScreen({ character: initChar, onSave, onBack }) {
         )}
         {tab === "auction" && (() => {
           if (!getSbC()) return (
-            <div style={{ textAlign: "center", padding: 30, color: "var(--gilt)" }}>
-              <div style={{ fontSize: 34, marginBottom: 10 }}>📡</div>
-              <div style={{ fontWeight: 700, marginBottom: 6 }}>Connection required</div>
-              <div style={{ color: "var(--ink-soft)", fontSize: 12 }}>The Auction House is online. Reconnect to browse, buy, and sell.</div>
+            <div className="empty">
+              <div style={{ fontStyle: "normal", fontWeight: 600, color: "var(--ink)", marginBottom: 4 }}>The hall is shut</div>
+              The Auction House is kept elsewhere. Reconnect to browse, buy and sell.
             </div>
           );
-          const fi = { width: "100%", boxSizing: "border-box", background: "var(--sunk)", border: "1px solid #35305a", borderRadius: 8, color: "#e8e4ff", fontSize: 12, padding: "7px 9px", outline: "none" };
+          const fi = undefined;   // fields are styled by .field now, not by an object
           const MAIN_FILTER = [["str", "Str"], ["agi", "Agi"], ["int", "Int"], ["sta", "Sta"]];
           const RARITY_OPTS = RARITIES.filter((r) => r.id !== "artifact");
           const f = ahFilters;
@@ -9001,62 +9011,70 @@ function GameScreen({ character: initChar, onSave, onBack }) {
             ...Object.entries(char.drops || {}).filter(([, q]) => q >= AH_ECON.stackSize).map(([id, q]) => ({ kind: "drop", id, q })),
           ];
           const stackListingRow = (L) => { const meta = stackMeta(L.kind === "drop" ? "drop" : "mat", L.matId); return (
-            <div key={L.id} style={{ background: "var(--sunk)", border: `1px solid ${meta.color}44`, borderLeft: `3px solid ${meta.color}`, borderRadius: 8, padding: "9px 11px", display: "flex", alignItems: "center", gap: 10 }}>
-              <GameIcon icon={meta.icon} size={22} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ color: meta.color, fontWeight: 700, fontSize: 12.5 }}>{meta.name} ×{L.qty}</div>
-                <div style={{ color: "var(--ink-soft)", fontSize: 10.5 }}>{L.seller} · ⏳ {fmtClock(L.expiresAt - now)}</div>
+            <div key={L.id} className="item">
+              <span className="mark"><GameIcon icon={meta.icon} size={22} /></span>
+              <div className="item-body">
+                <span className="item-name">{meta.name} &times;{L.qty}</span>
+                <span className="item-meta">{L.seller} · {fmtClock(L.expiresAt - now)} left</span>
               </div>
-              <MiniBtn onClick={() => buyAh(L)} color={char.gold >= L.price ? "#FFD700" : "#666"} bg={char.gold >= L.price ? "#1a1830" : "#15131f"}>Buy {L.price}g</MiniBtn>
+              <div className="item-acts">
+                <MiniBtn onClick={() => buyAh(L)} disabled={char.gold < L.price}
+                  tone={char.gold >= L.price ? "gain" : undefined}>Buy · {L.price.toLocaleString()}g</MiniBtn>
+              </div>
             </div>
           ); };
           return (
           <div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-              <div style={{ color: "var(--gilt)", fontWeight: 700, fontSize: 15, fontFamily: "Georgia, serif" }}><Icon name="stall" /> Auction House</div>
-              <div style={{ color: "var(--gilt)", fontSize: 12, fontWeight: 700 }}><Icon name="coin" /> {char.gold}g</div>
+            <div className="eyebrow">
+              <span>The auction house</span>
+              <span className="price"><Icon name="coin" size={11} /> {char.gold.toLocaleString()}</span>
             </div>
             {/* view tabs */}
-            <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-              {[["browse", "🔍 Browse"], ["sell", "🏷️ Sell"], ["mine", `📜 Listings${mine.length ? ` (${mine.length})` : ""}`]].map(([id, label]) => (
-                <button key={id} onClick={() => setAhView(id)} style={{ flex: 1, background: ahView === id ? "var(--raised)" : "var(--raised)", border: `1.5px solid ${ahView === id ? "var(--gilt)" : "var(--rule)"}`, borderRadius: 8, color: ahView === id ? "var(--gilt)" : "var(--ink-soft)", fontSize: 12, fontWeight: 700, padding: "7px 4px", cursor: "pointer" }}>{label}</button>
+            <div className="leaves">
+              {[["browse", "Browse", "target"], ["sell", "Offer", "coin"],
+                ["mine", `Mine${mine.length ? ` (${mine.length})` : ""}`, "scroll"]].map(([id, label, icon]) => (
+                <button key={id} onClick={() => setAhView(id)} className={`leaf${ahView === id ? " is-open" : ""}`}
+                  aria-current={ahView === id ? "page" : undefined}><Icon name={icon} size={13} />{label}</button>
               ))}
             </div>
 
             {ahView === "browse" && (<>
-              <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
-                {[["gear", "⚔️ Gear"], ["mat", "⛏️ Materials"]].map(([id, label]) => (
-                  <button key={id} onClick={() => setAhCat(id)} style={{ flex: 1, background: ahCat === id ? "var(--verdigris)" : "var(--raised)", border: `1px solid ${ahCat === id ? "var(--verdigris)" : "var(--hairline)"}`, borderRadius: 7, color: ahCat === id ? "var(--verdigris)" : "var(--ink-soft)", fontSize: 11.5, fontWeight: 600, padding: "6px 4px", cursor: "pointer" }}>{label}</button>
+              <div className="toggles" style={{ marginBottom: 10 }}>
+                {[["gear", "Gear"], ["mat", "Materials"]].map(([id, label]) => (
+                  <button key={id} onClick={() => setAhCat(id)} className={`toggle${ahCat === id ? " is-on" : ""}`}
+                    aria-pressed={ahCat === id}>{label}</button>
                 ))}
               </div>
-              <div style={{ background: "var(--sunk)", border: "1px solid var(--verdigris)", borderRadius: 10, padding: 9, marginBottom: 10 }}>
-                <input value={f.text} onChange={(e) => setAhFilters({ ...f, text: e.target.value })} placeholder={ahCat === "gear" ? "Search name…" : "Search material…"} style={{ ...fi, marginBottom: ahCat === "gear" ? 8 : 0 }} />
+              <div className="sift">
+                <input className="field" value={f.text} onChange={(e) => setAhFilters({ ...f, text: e.target.value })}
+                  placeholder={ahCat === "gear" ? "Search by name\u2026" : "Search materials\u2026"} />
                 {ahCat === "gear" && (<>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 8 }}>
+                  <div className="toggles">
                     {MAIN_FILTER.map(([k, lbl]) => { const on = f.stats.includes(k); return (
-                      <button key={k} onClick={() => setAhFilters({ ...f, stats: on ? f.stats.filter((x) => x !== k) : [...f.stats, k] })} style={{ background: on ? "var(--verdigris)" : "var(--raised)", border: `1px solid ${on ? "var(--verdigris)" : "var(--hairline)"}`, borderRadius: 6, color: on ? "var(--verdigris)" : "var(--ink-soft)", fontSize: 11, fontWeight: 600, padding: "4px 10px", cursor: "pointer" }}>{lbl}</button>
+                      <button key={k} aria-pressed={on} className={`toggle${on ? " is-on" : ""}`}
+                        onClick={() => setAhFilters({ ...f, stats: on ? f.stats.filter((x) => x !== k) : [...f.stats, k] })}>{lbl}</button>
                     ); })}
                   </div>
-                  <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
-                    <input value={f.ilvlMin} onChange={(e) => setAhFilters({ ...f, ilvlMin: e.target.value.replace(/\D/g, "") })} inputMode="numeric" placeholder="ilvl min" style={fi} />
-                    <input value={f.ilvlMax} onChange={(e) => setAhFilters({ ...f, ilvlMax: e.target.value.replace(/\D/g, "") })} inputMode="numeric" placeholder="ilvl max" style={fi} />
+                  <div className="fields">
+                    <input className="field is-num" value={f.ilvlMin} onChange={(e) => setAhFilters({ ...f, ilvlMin: e.target.value.replace(/\D/g, "") })} inputMode="numeric" placeholder="ilvl from" />
+                    <input className="field is-num" value={f.ilvlMax} onChange={(e) => setAhFilters({ ...f, ilvlMax: e.target.value.replace(/\D/g, "") })} inputMode="numeric" placeholder="ilvl to" />
                   </div>
-                  <div style={{ display: "flex", gap: 6 }}>
-                    <select value={f.slot} onChange={(e) => setAhFilters({ ...f, slot: e.target.value })} style={{ ...fi, cursor: "pointer" }}>
+                  <div className="fields">
+                    <select className="field" value={f.slot} onChange={(e) => setAhFilters({ ...f, slot: e.target.value })}>
                       <option value="">Any slot</option>
                       {LOOT_SLOTS.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                     </select>
-                    <select value={f.rMin} onChange={(e) => setAhFilters({ ...f, rMin: e.target.value })} style={{ ...fi, cursor: "pointer" }}>
+                    <select className="field" value={f.rMin} onChange={(e) => setAhFilters({ ...f, rMin: e.target.value })}>
                       <option value="">Min rarity</option>
                       {RARITY_OPTS.map((r) => <option key={r.id} value={RARITIES.findIndex((x) => x.id === r.id)}>{r.name}</option>)}
                     </select>
-                    <select value={f.rMax} onChange={(e) => setAhFilters({ ...f, rMax: e.target.value })} style={{ ...fi, cursor: "pointer" }}>
+                    <select className="field" value={f.rMax} onChange={(e) => setAhFilters({ ...f, rMax: e.target.value })}>
                       <option value="">Max rarity</option>
                       {RARITY_OPTS.map((r) => <option key={r.id} value={RARITIES.findIndex((x) => x.id === r.id)}>{r.name}</option>)}
                     </select>
                   </div>
                   {(f.text || f.stats.length || f.ilvlMin || f.ilvlMax || f.slot || f.rMin !== "" || f.rMax !== "") && (
-                    <button onClick={() => setAhFilters({ text: "", stats: [], ilvlMin: "", ilvlMax: "", slot: "", rMin: "", rMax: "" })} style={{ marginTop: 8, background: "none", border: "none", color: "var(--ink-soft)", fontSize: 11, cursor: "pointer", textDecoration: "underline" }}>Clear filters</button>
+                    <button className="link" onClick={() => setAhFilters({ text: "", stats: [], ilvlMin: "", ilvlMax: "", slot: "", rMin: "", rMax: "" })}>Start again</button>
                   )}
                 </>)}
               </div>
@@ -9070,17 +9088,18 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                       ])}>
                       <MiniBtn onClick={() => buyAh(L)} color={char.gold >= L.price ? "#FFD700" : "#666"} bg={char.gold >= L.price ? "#1a1830" : "#15131f"}>Buy {L.price}g</MiniBtn>
                     </ItemCard>
-                    <div style={{ color: "var(--ink-faint)", fontSize: 9.5, padding: "2px 4px 0" }}>{L.seller} · ⏳ {fmtClock(L.expiresAt - now)}</div>
+                    <div className="item-meta" style={{ padding: "0 0 4px" }}>{L.seller} · {fmtClock(L.expiresAt - now)} left</div>
                   </div>
                 )) : shown.map(stackListingRow)}
-                {shown.length === 0 && <div style={{ color: "var(--ink-faint)", fontSize: 12, textAlign: "center", padding: 20 }}>No listings match your search.</div>}
+                {shown.length === 0 && <div className="empty">Nothing on the block matches that.</div>}
               </div>
             </>)}
 
             {ahView === "sell" && (<>
-              <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-                {[["gear", "⚔️ Gear"], ["mat", "⛏️ Materials"]].map(([id, label]) => (
-                  <button key={id} onClick={() => { setAhCat(id); setAhSell(null); }} style={{ flex: 1, background: ahCat === id ? "var(--verdigris)" : "var(--raised)", border: `1px solid ${ahCat === id ? "var(--verdigris)" : "var(--hairline)"}`, borderRadius: 7, color: ahCat === id ? "var(--verdigris)" : "var(--ink-soft)", fontSize: 11.5, fontWeight: 600, padding: "6px 4px", cursor: "pointer" }}>{label}</button>
+              <div className="toggles" style={{ marginBottom: 10 }}>
+                {[["gear", "Gear"], ["mat", "Materials"]].map(([id, label]) => (
+                  <button key={id} aria-pressed={ahCat === id} className={`toggle${ahCat === id ? " is-on" : ""}`}
+                    onClick={() => { setAhCat(id); setAhSell(null); }}>{label.replace(/^[^ ]+ /, "")}</button>
                 ))}
               </div>
               {ahSell && (() => {
@@ -9089,12 +9108,14 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                 const priceNum = ahPrice === "" ? base : clamp(Number(ahPrice) || 0, lo, hi);
                 const meta = ahSell.kind === "gear" ? null : stackMeta(ahSell.kind, ahSell.id);
                 return (
-                  <div style={{ background: "var(--sunk)", border: "1px solid var(--rule)", borderRadius: 12, padding: 12, marginBottom: 12 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                      <span style={{ color: "var(--gilt)", fontSize: 13, fontWeight: 700 }}>{ahSell.kind === "gear" ? ahSell.item.name : `${meta.name} ×${AH_ECON.stackSize}`}</span>
-                      <button onClick={() => { setAhSell(null); setAhPrice(""); }} style={{ background: "none", border: "none", color: "var(--ink-faint)", fontSize: 16, cursor: "pointer" }}>×</button>
+                  <div className="aside-note" style={{ borderLeftColor: "var(--gilt)" }}>
+                    <div className="eyebrow" style={{ marginBottom: 6 }}>
+                      <span style={{ textTransform: "none", letterSpacing: 0, fontFamily: "var(--serif)", fontSize: "var(--step-0)", color: "var(--ink)", fontWeight: 600 }}>
+                        {ahSell.kind === "gear" ? ahSell.item.name : `${meta.name} \u00d7${AH_ECON.stackSize}`}
+                      </span>
+                      <button className="link" onClick={() => { setAhSell(null); setAhPrice(""); }}>put back</button>
                     </div>
-                    <div style={{ color: "var(--ink-soft)", fontSize: 11, marginBottom: 8 }}>Market value ≈ <b style={{ color: "var(--bole)" }}>{base}g</b> · allowed range <b style={{ color: "var(--verdigris)" }}>{lo}–{hi}g</b> (±75%)</div>
+                    <div className="item-stats" style={{ marginBottom: 8 }}>Worth about <span className="price">{base.toLocaleString()}g</span>. The hall will take anything between <span className="price">{lo.toLocaleString()}</span> and <span className="price">{hi.toLocaleString()}g</span>.</div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                       <span style={{ color: "var(--ink-soft)", fontSize: 11 }}>Price</span>
                       <input value={ahPrice} onChange={(e) => setAhPrice(e.target.value.replace(/\D/g, ""))} inputMode="numeric" placeholder={String(base)} style={{ ...fi, flex: 1 }} />

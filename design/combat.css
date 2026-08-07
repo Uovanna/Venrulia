@@ -1,0 +1,191 @@
+/* ============================================================================
+   THE COMBAT SCREEN — "The Chronicle"
+   ----------------------------------------------------------------------------
+   Vellum's voice with the Ledger's discipline.
+
+   THE SYNTHESIS IS THE MARGIN. The Ledger's conviction was that the log is the
+   screen and its numbers should form a scannable column. Vellum's voice is prose
+   — "You lacerate it; it bleeds." Those two things look opposed until you
+   remember what a real ledger looks like: prose in the body, quantities ruled off
+   in the margin. So the chronicle keeps its sentences AND the numbers line up,
+   because that is literally how the source material was written.
+
+   The chronicle gets roughly half the screen. Everything above it is a heading;
+   everything below it is a hand.
+   ============================================================================ */
+
+/* Every text element in here is a real semantic tag, so the browser's default
+   paragraph and heading margins have to be cleared explicitly — left in, they
+   added ~15px between chronicle entries and halved how much of the account fits
+   on screen, which is the one thing this layout exists to maximise. */
+.screen :where(p, h1, h2, h3, h4) { margin: 0; }
+
+.screen {
+  height: 100%;              /* the page is the viewport; the chronicle takes what is left */
+  display: flex;
+  flex-direction: column;
+  font-family: var(--serif);
+  color: var(--ink);
+  font-size: var(--step-0);
+  line-height: 1.5;
+}
+
+/* ---- the heading: who is writing, and what they hold --------------------- */
+.hdr {
+  display: flex; align-items: baseline; justify-content: space-between; gap: var(--s-4);
+  padding: var(--s-4) var(--s-5) var(--s-3);
+  border-bottom: 1px solid var(--rule);
+}
+.hdr-who { font-size: var(--step-1); font-weight: 600; line-height: 1.15; }
+.hdr-who small {
+  display: block; font-family: var(--mono); font-size: 9px; font-weight: 400;
+  letter-spacing: .13em; text-transform: uppercase; color: var(--ink-faint); margin-top: 2px;
+}
+.hdr-purse {
+  display: flex; align-items: center; gap: var(--s-2);
+  font-family: var(--mono); font-size: var(--step--1); color: var(--gilt);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- vitals: ink bars, hatched rather than filled ------------------------ */
+/* A solid fill would read as a progress bar from any other app. Hatching reads
+   as something a person shaded in, and it survives being 8px tall. */
+.vitals {
+  display: flex; flex-direction: column; gap: var(--s-2);
+  padding: var(--s-3) var(--s-5) var(--s-4); border-bottom: 1px solid var(--rule);
+}
+.vital { display: flex; align-items: center; gap: var(--s-3); }
+.vital-k {
+  font-family: var(--mono); font-size: 9px; letter-spacing: .13em; text-transform: uppercase;
+  color: var(--ink-faint); width: 46px; flex: none;
+}
+.vital-bar {
+  flex: 1; height: 9px; border: 1px solid var(--rule); padding: 1px;
+  background: var(--sunk); border-radius: var(--r-sm);
+}
+/* Stripes sit ON the trough rather than blending over a solid fill. A blend mode
+   washed out completely against the night ground — the gaps have to be the
+   trough colour showing through, which is also what shading a bar actually is. */
+.vital-bar > i { display: block; height: 100%;
+  background: repeating-linear-gradient(115deg, var(--rubric) 0 2.5px, transparent 2.5px 4.5px); }
+.vital-bar.is-wrath > i {
+  background: repeating-linear-gradient(115deg, var(--gilt) 0 2.5px, transparent 2.5px 4.5px); }
+.vital-bar.is-lore > i {
+  background: repeating-linear-gradient(115deg, var(--verdigris) 0 2.5px, transparent 2.5px 4.5px); }
+.vital-n {
+  font-family: var(--mono); font-size: 10px; color: var(--ink-soft);
+  font-variant-numeric: tabular-nums; width: var(--margin-col); text-align: right; flex: none;
+}
+
+/* ---- the adversary: a woodcut in a ruled frame --------------------------- */
+.foe {
+  display: flex; gap: var(--s-4); align-items: flex-start;
+  padding: var(--s-4) var(--s-5); border-bottom: 1px solid var(--rule);
+}
+.foe-cut {
+  flex: none; border: 1px solid var(--rule); padding: 3px;
+  background: var(--raised); border-radius: var(--r-sm); color: var(--ink);
+}
+.foe-body { flex: 1; min-width: 0; }
+.foe-name {
+  font-size: var(--step-2); line-height: 1.04; margin: 0 0 1px; font-weight: 600;
+  letter-spacing: .002em;
+}
+.foe-where {
+  font-family: var(--mono); font-size: 9px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--ink-faint); margin: 0 0 var(--s-3);
+}
+.foe-wounds { height: 10px; border: 1px solid var(--rule); padding: 1px; background: var(--sunk); }
+.foe-wounds > i { display: block; height: 100%;
+  background: repeating-linear-gradient(115deg, var(--ink) 0 2.5px, transparent 2.5px 4.5px); }
+.foe-tally {
+  font-family: var(--mono); font-size: 10px; color: var(--ink-soft);
+  margin: var(--s-1) 0 0; font-variant-numeric: tabular-nums;
+}
+
+/* ---- THE CHRONICLE ------------------------------------------------------- */
+/* The written area is the one surface that paints flat --raised over the
+   textured ground: small prose deserves an even bed. The margin rule is a real
+   border, not a gradient, because it is structure. */
+.chronicle {
+  flex: 1; min-height: 0; overflow: hidden;
+  background: var(--raised);
+  border-bottom: 1px solid var(--rule);
+  display: flex; flex-direction: column; justify-content: flex-end;
+  padding: var(--s-4) 0 var(--s-3);
+  position: relative;
+}
+/* The chronicle is older than the screen — entries scroll up out of view rather
+   than being clipped mid-letter, so the top edge fades into the page. */
+.chronicle::before {
+  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 26px;
+  background: linear-gradient(var(--raised), transparent); pointer-events: none; z-index: 1;
+}
+.entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--margin-col);
+  align-items: baseline;
+  padding: 3px var(--s-5) 3px var(--s-5);
+}
+.entry-text { padding-left: 13px; text-indent: -13px; }        /* hanging indent */
+.entry-n {
+  font-family: var(--mono); font-size: var(--step--1); font-weight: 600;
+  font-variant-numeric: tabular-nums; text-align: right;
+  border-left: 1px solid var(--hairline); padding-left: var(--s-3); align-self: stretch;
+}
+/* RUBRICATION. Red is the actor's own hand; brown is what is done to them. This
+   is the whole colour system of the log — two hues doing grammar, not decoration. */
+.entry .deed {
+  font-variant: small-caps; letter-spacing: .035em; font-weight: 600; color: var(--rubric);
+}
+.entry-n { color: var(--rubric); }
+.entry.is-foe .deed, .entry.is-foe .entry-n { color: var(--bole); }
+.entry.is-boon .deed, .entry.is-boon .entry-n { color: var(--verdigris); }
+.entry.is-spoil .deed, .entry.is-spoil .entry-n { color: var(--gilt); }
+.entry.is-aside {
+  color: var(--ink-faint); font-style: italic; font-size: var(--step--1);
+}
+.entry.is-aside .entry-n { border-left-color: transparent; }
+
+/* ---- the hand: ability seals -------------------------------------------- */
+.seals {
+  display: flex; gap: var(--s-2); align-items: center;
+  padding: var(--s-3) var(--s-4) calc(var(--s-4) + env(safe-area-inset-bottom, 0px));
+  background: var(--sunk);
+}
+.seal {
+  flex: 1; aspect-ratio: 1; border: 1px solid var(--rule); border-radius: 50%;
+  background: var(--raised); color: var(--ink);
+  display: grid; place-items: center; position: relative;
+  cursor: pointer; padding: 0;
+}
+.seal:focus-visible { outline: 2px solid var(--rubric); outline-offset: 2px; }
+/* A sealed (cooling) ability is struck through, the way a scribe cancels a line,
+   and its remaining seconds sit where its mark was. */
+.seal.is-sealed { background: var(--sunk); color: var(--ink-faint); border-style: dashed; }
+.seal-wait {
+  font-family: var(--mono); font-size: 11px; color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+.seal-draught { flex: none; width: 40px; border-color: var(--verdigris); color: var(--verdigris); }
+.seal-count {
+  position: absolute; right: -2px; bottom: -2px;
+  font-family: var(--mono); font-size: 9px; line-height: 1.6;
+  background: var(--verdigris); color: var(--raised);
+  border-radius: 7px; padding: 0 4px;
+}
+
+/* ---- desktop: the recto/verso spread ------------------------------------ */
+/* Not a stretched phone. A book has two pages: the left carries who you are and
+   what you face, the right carries the account. */
+@media (min-width: 900px) {
+  .screen.is-spread {
+    display: grid;
+    grid-template-columns: 340px minmax(0, 1fr);
+    grid-template-areas: "verso recto";
+  }
+  .screen.is-spread > .hdr,
+  .screen.is-spread > .vitals,
+  .screen.is-spread > .foe   { grid-area: verso; }
+  .screen.is-spread > .chronicle { grid-area: recto; border-left: 1px solid var(--rule); }
+}

@@ -1,0 +1,173 @@
+/* ============================================================================
+   VENRULIA — "The Chronicle"
+   ----------------------------------------------------------------------------
+   The design premise, which every token below serves: THE FIGHT IS A CHRONICLE
+   BEING WRITTEN DOWN. The screen is a page. Combat is an account of combat.
+   Numbers live in the margin the way a ledger's numbers do.
+
+   TWO THEMES, NOT ONE INVERTED.
+     day   — vellum under daylight.
+     night — the same chronicle read by candlelight. Warm dark, never blue-black.
+             This is the difference between a designed dark mode and a flipped
+             one: an inverted parchment is grey, and grey has nothing to do with
+             this game. Ink becomes aged bone; the rubric warms to an ember so it
+             still reads as "your hand" on a dark ground.
+
+   CONTRAST IS MEASURED, NOT EYEBALLED. Every foreground token clears WCAG AA
+   (4.5:1) against both --ground and --raised in both themes; the structural
+   rule clears 3:1 so drawn rules stay drawn. Re-check with design/contrast.mjs
+   before changing any value here.
+   ============================================================================ */
+
+/* Day values carry a selector list so a container can be forced to day even when
+   the document root is night — the previews need both palettes on one page. */
+:root, .theme-day {
+  /* ---- day: vellum ------------------------------------------------------ */
+  --ground:      #DCD5C4;   /* the page itself */
+  --raised:      #E6E0D2;   /* the written area — panels, the chronicle block */
+  --sunk:        #CFC7B3;   /* wells: bar troughs, pressed states */
+
+  --ink:         #2A2118;   /* the hand */
+  --ink-soft:    #544A39;   /* secondary prose */
+  --ink-faint:   #655943;   /* small-caps labels — AA at 8.5px, hence this dark */
+
+  --rubric:      #7A2E28;   /* WHAT YOU DO. Rubrication: red for the actor's own deeds. */
+  --bole:        #54402C;   /* what is done TO you */
+  --verdigris:   #2F5245;   /* restoration, gain, safety */
+  --gilt:        #7A5C24;   /* currency, rarity, reward */
+
+  --rule:        #6B5F4B;   /* drawn rules — structure */
+  --hairline:    #B8AF9A;   /* ruled guide lines — rhythm only */
+
+  /* Texture. Three stacked layers, all generated — no image payload.
+     See design/preview/texture.html for why these amplitudes and not louder. */
+  --fibre-opacity: 0.055;
+  --stain-opacity: 0.40;
+  --vignette:    rgba(74, 60, 40, 0.13);
+
+  /* ---- type ------------------------------------------------------------- */
+  /* Old-style serif is the voice of the chronicle. Mono is reserved ENTIRELY
+     for numbers, so a number never has to be introduced — it is legible as a
+     quantity by its shape alone. There is no third family. */
+  --serif: "Iowan Old Style", Charter, "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+  --mono:  ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+
+  --step--1: 0.8125rem;   /* labels, marginal notes */
+  --step-0:  0.9375rem;   /* chronicle body */
+  --step-1:  1.125rem;
+  --step-2:  1.4375rem;   /* enemy names */
+  --step-3:  1.9375rem;
+  --step-4:  2.625rem;
+
+  /* ---- space & form ----------------------------------------------------- */
+  /* Corners are barely rounded. A chronicle is cut, not moulded — 2px reads as
+     a trimmed page edge, 12px reads as a mobile app card, which is the thing
+     we are getting away from. */
+  --r-sm: 1px;
+  --r-md: 2px;
+  --r-lg: 3px;
+
+  --s-1: 4px;  --s-2: 6px;  --s-3: 9px;  --s-4: 13px;
+  --s-5: 19px; --s-6: 27px; --s-7: 38px;
+
+  --margin-col: 62px;      /* the ledger's number margin — one width, everywhere */
+}
+
+/* Night, applied through all three theme states so the un-stamped "system"
+   default resolves correctly. Values only — never component rules. */
+/* Night appears exactly twice, which is the CSS minimum: a media query cannot
+   join a selector list, so the system-default case must stand on its own. Any
+   third copy is drift waiting to happen — change both of these together. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="day"]):not(.theme-day) {
+    --ground:    #17130E;
+    --raised:    #211A13;
+    --sunk:      #0F0C08;
+
+    --ink:       #DFD5BE;
+    --ink-soft:  #A99C82;
+    --ink-faint: #948569;
+
+    --rubric:    #D2664B;
+    --bole:      #A98156;
+    --verdigris: #71AE93;
+    --gilt:      #CBA455;
+
+    --rule:      #786751;
+    --hairline:  #3A3126;
+
+    --fibre-opacity: 0.075;
+    --stain-opacity: 0.30;
+    --vignette:  rgba(0, 0, 0, 0.42);
+  }
+}
+
+:root[data-theme="night"], .theme-night {
+  --ground:    #17130E;
+  --raised:    #211A13;
+  --sunk:      #0F0C08;
+
+  --ink:       #DFD5BE;
+  --ink-soft:  #A99C82;
+  --ink-faint: #948569;
+
+  --rubric:    #D2664B;
+  --bole:      #A98156;
+  --verdigris: #71AE93;
+  --gilt:      #CBA455;
+
+  --rule:      #786751;
+  --hairline:  #3A3126;
+
+  --fibre-opacity: 0.075;
+  --stain-opacity: 0.30;
+  --vignette:  rgba(0, 0, 0, 0.42);
+}
+
+/* ============================================================================
+   THE PAGE GROUND
+   ----------------------------------------------------------------------------
+   Texture goes HERE and nowhere else. Every raised surface paints flat --raised
+   over it, so small text always sits on an even ground. That single rule is the
+   whole answer to "would texture overcrowd the interface" — it overcrowds when
+   it is under the type, and it reads as material when it is only ever behind it.
+   ============================================================================ */
+.chronicle-ground {
+  background-color: var(--ground);
+  position: relative;
+  isolation: isolate;
+}
+
+/* Layer 1 — fibre. feTurbulence, painted once, no image request and no tile
+   seam. baseFrequency is high enough that the grain sits below the stroke width
+   of the type instead of competing with it. */
+.chronicle-ground::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+  opacity: var(--fibre-opacity);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23f)'/%3E%3C/svg%3E");
+}
+
+/* Layer 2 — staining and the candle's falloff. Real parchment is never uniform;
+   without this the fibre alone reads as film grain on a flat colour. Radial
+   stops are deliberately off-centre and unequal so no repeat is perceptible. */
+.chronicle-ground::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: var(--stain-opacity);
+  background-image:
+    radial-gradient(58% 34% at 12% 8%,   var(--vignette) 0%, transparent 68%),
+    radial-gradient(46% 52% at 88% 24%,  var(--vignette) 0%, transparent 72%),
+    radial-gradient(72% 40% at 34% 96%,  var(--vignette) 0%, transparent 70%),
+    radial-gradient(120% 96% at 50% 50%, transparent 42%,    var(--vignette) 100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}

@@ -54,6 +54,11 @@
   --rar-legendary: #8E4710;
   --rar-artifact:  #AB2637;
 
+  /* A lift, not a glow. The Chronicle has no glows: things sit ON the page or
+     ABOVE it, and the only thing that says "above" is a soft shadow with a real
+     offset. Heavy black drop shadows read as holes cut in parchment. */
+  --lift: 0 6px 22px -12px rgba(74, 60, 40, .55);
+
   /* Texture. Three stacked layers, all generated — no image payload.
      See design/preview/texture.html for why these amplitudes and not louder. */
   --fibre-opacity: 0.055;
@@ -118,6 +123,8 @@
     --rar-legendary: #CF6717;
     --rar-artifact:  #DA5869;
 
+    --lift: 0 8px 26px -12px rgba(0, 0, 0, .75);
+
     --fibre-opacity: 0.075;
     --stain-opacity: 0.30;
     --vignette:  rgba(0, 0, 0, 0.42);
@@ -147,6 +154,8 @@
   --rar-epic:      #A968CF;
   --rar-legendary: #CF6717;
   --rar-artifact:  #DA5869;
+
+    --lift: 0 8px 26px -12px rgba(0, 0, 0, .75);
 
   --fibre-opacity: 0.075;
   --stain-opacity: 0.30;

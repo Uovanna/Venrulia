@@ -128,6 +128,56 @@ sec("It is actually the combat screen");
   ok(app.includes("saveTheme(next)"), "the day/night choice is remembered");
 }
 
+sec("Nothing paints its own colour any more");
+{
+  // Three buckets the first colour sweep could not reach, each invisible in a
+  // different way:
+  //   ternaries   `background: cond ? "#a" : "#b"` — the sweep matched a literal
+  //               value, not an expression, so 296 conditional colours survived
+  //   gradients   101 of them, every one tuned for a dark ground
+  //   glows       shadows with no offset. Parchment does not emit light.
+  const styleBlocks = [];
+  let i = 0;
+  while (true) {
+    const j = app.indexOf("style={{", i);
+    if (j < 0) break;
+    let k = j + 8, depth = 2;
+    while (depth > 0 && k < app.length) {
+      if (app[k] === "{") depth++; else if (app[k] === "}") depth--;
+      k++;
+    }
+    styleBlocks.push(app.slice(j, k)); i = k;
+  }
+  ok(styleBlocks.length > 1000, `${styleBlocks.length} inline style blocks scanned`);
+
+  const withHex = styleBlocks.filter((b) => /#[0-9a-fA-F]{3,8}\b/.test(b));
+  ok(withHex.length === 0, withHex.length
+    ? `${withHex.length} still paint a literal colour, e.g. ${withHex[0].slice(0, 90)}`
+    : "no inline style paints a literal colour — every one resolves through a token");
+
+  // The hatching on vitals and meters IS a gradient and is deliberately spared:
+  // it is a texture, not a surface.
+  const grads = (app.match(/(?<!repeating-)linear-gradient\(/g) || []).length;
+  ok(grads === 0, grads ? `${grads} non-repeating gradients remain` : "no surface is a gradient; the Chronicle has none");
+  ok((app.match(/repeating-linear-gradient\(/g) || []).length >= 1, "…while the hatching survives, because it is a texture");
+
+  const glows = (app.match(/boxShadow: [`"]0 0 [1-9]/g) || []).length;
+  ok(glows === 0, glows ? `${glows} glows remain` : "nothing glows; things sit on the page or above it");
+  ok(!/@keyframes tutflash \{[^`]*#[0-9a-f]{6}/i.test(app),
+     "…including the signpost pulse, which is a drawn ring now rather than a gold halo");
+
+  // The ground behind React, before a single token exists. Left at #08080f this
+  // painted a black frame around the parchment on every screen in both themes,
+  // and no amount of sweeping App.jsx would have found it.
+  const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  ok(html.includes("background: #DCD5C4"), "index.html paints the day ground before React runs");
+  ok(/@media \(prefers-color-scheme: dark\)[^}]*background: #17130E/s.test(html), "…and the night one");
+  // Strip comments first: the note explaining this fix names the old colour, and
+  // failing on prose in a comment teaches people to stop reading the test.
+  const htmlCode = html.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/<!--[\s\S]*?-->/g, " ");
+  ok(!htmlCode.includes("#08080f"), "…and no longer frames the page in black");
+}
+
 sec("Rarity is readable on parchment");
 {
   // The classic rarity palette is tuned for a black ground. On vellum, common

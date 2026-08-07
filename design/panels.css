@@ -271,3 +271,71 @@ select.field { cursor: pointer; }
   color: var(--gilt); white-space: nowrap;
 }
 .price.is-dear { color: var(--ink-faint); }
+
+/* ---- the head of a screen ------------------------------------------------ */
+/* Nearly every screen opens with the same three things: a way back, what you are
+   looking at, and one fact about it. They were hand-written on ~25 screens, each
+   slightly different. */
+.head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: var(--s-3); margin-bottom: var(--s-4);
+  border-bottom: 1px solid var(--rule); padding-bottom: var(--s-3);
+}
+.head-back {
+  background: none; border: 0; padding: 0; cursor: pointer; flex: none;
+  font-family: var(--serif); font-size: var(--step--1); color: var(--ink-soft);
+}
+.head-back:hover { color: var(--ink); }
+.head-back:focus-visible { outline: 2px solid var(--rubric); outline-offset: 2px; }
+.head-title {
+  font-size: var(--step-1); font-weight: 600; color: var(--ink); line-height: 1.1;
+  flex: 1; text-align: center; min-width: 0;
+}
+.head-note {
+  font-family: var(--mono); font-size: 9px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--ink-faint); flex: none; text-align: right;
+}
+
+/* ---- a choice ------------------------------------------------------------ */
+/* One of a set you pick from — a specialization, a piece of group content. The
+   chosen one is ruled down its edge in the rubric, the same mark the chronicle
+   uses for your own hand. Not a filled card: filling it makes the unchosen ones
+   look disabled, which they are not. */
+.choice {
+  display: block; width: 100%; text-align: left; font-family: var(--serif); color: var(--ink);
+  background: var(--raised); border: 1px solid var(--rule); border-left: 3px solid transparent;
+  border-radius: 0 var(--r-md) var(--r-md) 0; padding: var(--s-3) var(--s-4);
+  margin-bottom: var(--s-3); cursor: pointer;
+}
+.choice:focus-visible { outline: 2px solid var(--rubric); outline-offset: 2px; }
+.choice.is-on { border-left-color: var(--rubric); }
+.choice.is-shut { opacity: .55; cursor: default; }
+.choice-head { display: flex; align-items: center; gap: var(--s-3); margin-bottom: var(--s-2); }
+.choice-name { flex: 1; min-width: 0; font-size: var(--step-0); font-weight: 600; line-height: 1.15; }
+.choice-name small {
+  display: block; font-family: var(--mono); font-size: 9px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--ink-faint); font-weight: 400; margin-top: 1px;
+}
+.choice-body { font-size: var(--step--1); color: var(--ink-soft); line-height: 1.45; }
+
+/* ---- a tag --------------------------------------------------------------- */
+/* A named thing in a list of named things — a skill this spec grants, a party
+   member's calling. Dashed when it is available rather than given. */
+.tags { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+.tag {
+  font-size: var(--step--1); color: var(--ink-soft); line-height: 1.4;
+  border-bottom: 1px solid var(--hairline); padding-bottom: 1px;
+  display: inline-flex; align-items: center; gap: var(--s-1);
+}
+.tag.is-given { color: var(--ink); border-bottom-color: var(--rule); }
+
+/* ---- a state ------------------------------------------------------------- */
+/* Whether a thing is open to you right now. The margin hand, so a lockout timer
+   and a run count read as the same kind of fact. */
+.state {
+  font-family: var(--mono); font-size: 9px; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--ink-faint); font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.state.is-open { color: var(--verdigris); }
+.state.is-soon { color: var(--gilt); }
+.state.is-shut { color: var(--bole); }

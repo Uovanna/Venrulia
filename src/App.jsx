@@ -7573,7 +7573,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           return (
             <div>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                <button onClick={() => setTab("town")} style={{ background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 8, color: "var(--ink)", fontSize: 12, padding: "6px 12px", cursor: "pointer" }}>← Town</button>
+                <button className="head-back" onClick={() => setTab("town")}>&larr; Town</button>
                 <span style={{ color: "var(--verdigris)", fontFamily: "Georgia, serif", fontSize: 15 }}><Icon name="gem" /> Premium Shop</span>
                 <span style={{ color: "var(--verdigris)", fontSize: 12, fontWeight: 700 }}><Icon name="gem" /> {(char.ven || 0).toLocaleString()}</span>
               </div>
@@ -7825,17 +7825,26 @@ function GameScreen({ character: initChar, onSave, onBack }) {
             const c = guildQueue;
             return (
               <div style={{ textAlign: "center" }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-                  <button onClick={() => setGuildQueue(null)} style={{ background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 8, color: "var(--ink)", fontSize: 12, padding: "6px 12px", cursor: "pointer" }}>✕ Leave queue</button>
-                  <span style={{ color: "var(--rar-epic)", fontFamily: "Georgia, serif", fontSize: 15 }}><Icon name="sword" /> Forming Party</span><span />
+                <div className="head">
+                  <button className="head-back" onClick={() => setGuildQueue(null)}>&larr; Step out</button>
+                  <span className="head-title">Gathering a party</span>
+                  <span className="head-note" />
                 </div>
-                <div style={{ fontSize: 30, marginBottom: 4 }}>{c.content.icon}</div>
-                <div style={{ color: "var(--ink)", fontFamily: "Georgia, serif", fontSize: 16, fontWeight: 700 }}>{c.content.name}{c.kind.startsWith("hard") ? " (Hard)" : ""}</div>
-                <div style={{ color: "var(--rar-epic)", fontSize: 34, fontWeight: 800, margin: "8px 0" }}>{c.countdown > 0 ? c.countdown : "GO"}</div>
-                <div style={{ color: "var(--ink-soft)", fontSize: 11, marginBottom: 12 }}>Backfilling with adventurers… combat begins on the standard screen.</div>
+                <div style={{ marginBottom: 4 }}><EmojiIcon emoji={c.content.icon} size={26} /></div>
+                <div style={{ fontSize: "var(--step-2)", fontWeight: 600 }}>{c.content.name}{c.kind.startsWith("hard") ? " \u2014 Hard" : ""}</div>
+                <div style={{ fontFamily: "var(--mono)", fontSize: 30, color: "var(--rubric)", margin: "10px 0", fontVariantNumeric: "tabular-nums" }}>{c.countdown > 0 ? c.countdown : "\u2014"}</div>
+                <p className="item-stats" style={{ marginBottom: 12 }}>Filling the empty places. The fight opens on the combat page.</p>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6, textAlign: "left" }}>
-                  {c.party.map((m) => (<div key={m.id} style={{ display: "flex", alignItems: "center", gap: 8, background: m.me ? "var(--verdigris)" : "var(--verdigris)", border: `1px solid ${m.me ? "var(--verdigris)" : "var(--hairline)"}`, borderRadius: 8, padding: "7px 10px" }}><span style={{ fontSize: 16 }}>{m.icon || "🧑"}</span><span style={{ flex: 1, color: m.me ? "var(--verdigris)" : "var(--verdigris)", fontSize: 12, fontWeight: 700 }}>{m.name}{m.me ? " (you)" : ""}</span><span style={{ color: "var(--ink-soft)", fontSize: 9.5 }}>{m.specName}</span></div>))}
-                  {Array.from({ length: Math.max(0, c.size - c.party.length) }).map((_, i) => (<div key={"e" + i} style={{ border: "1px dashed var(--verdigris)", borderRadius: 8, padding: "9px", color: "var(--ink-faint)", fontSize: 11, textAlign: "center" }}>searching…</div>))}
+                  {c.party.map((m) => (
+                    <div key={m.id} className="item">
+                      <span className="mark"><EmojiIcon emoji={m.icon} size={16} /></span>
+                      <div className="item-body">
+                        <span className="item-name">{m.name}{m.me ? " (you)" : ""}</span>
+                        <span className="item-meta">{m.specName}</span>
+                      </div>
+                    </div>))}
+                  {Array.from({ length: Math.max(0, c.size - c.party.length) }).map((_, i) => (
+                    <div key={"e" + i} className="empty" style={{ padding: "10px 0" }}>an empty place</div>))}
                 </div>
               </div>
             );
@@ -7849,22 +7858,30 @@ function GameScreen({ character: initChar, onSave, onBack }) {
             const out = raid ? cdLeft > 0 : runs <= 0;
             const tickets = char.tickets?.dungeonReset || 0;
             const canTicket = out && !raid && tickets > 0;
+            // A tone rather than a hex: open, soon, or shut. Three states beat five
+            // colours, and the theme decides what each one looks like.
             const pill = raid
-              ? (cdLeft > 0 ? { t: `⏳ ${fmtCd(cdLeft)}`, c: "#c96" } : { t: "✓ Available", c: "#5fd35f" })
-              : (runs > 0 ? { t: `${runs}/${GUILD_RUN_LIMIT} runs${winLeft > 0 ? ` · ${fmtCd(winLeft)}` : ""}`, c: runs === GUILD_RUN_LIMIT ? "#5fd35f" : "#e0b050" }
-                          : { t: `0 runs · ${fmtCd(winLeft)}`, c: "#c96" });
+              ? (cdLeft > 0 ? { t: fmtCd(cdLeft), tone: "is-shut" } : { t: "Open", tone: "is-open" })
+              : (runs > 0 ? { t: `${runs}/${GUILD_RUN_LIMIT} runs${winLeft > 0 ? ` · ${fmtCd(winLeft)}` : ""}`,
+                             tone: runs === GUILD_RUN_LIMIT ? "is-open" : "is-soon" }
+                          : { t: `none left · ${fmtCd(winLeft)}`, tone: "is-shut" });
             return (
-              <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--sunk)", border: "1px solid var(--hairline)", borderRadius: 10, padding: "9px 11px", marginBottom: 7, opacity: unlocked ? 1 : 0.6 }}>
-                <span style={{ fontSize: 22 }}><EmojiIcon emoji={item.icon} /></span>
-                <span style={{ flex: 1, minWidth: 0 }}>
-                  <span style={{ color: kind.startsWith("hard") ? "var(--rubric)" : (item.color || "var(--verdigris)"), fontSize: 13, fontWeight: 700 }}>{item.name}{kind.startsWith("hard") ? " 🔥" : ""}</span>
-                  <span style={{ color: "var(--ink-soft)", fontSize: 10, display: "block" }}>{item.boss || "Boss"} · {size} players{req ? ` · ${req}` : ""}</span>
-                  {unlocked && <span style={{ color: pill.c, fontSize: 9.5, fontWeight: 700, display: "block", marginTop: 2 }}>{pill.t}</span>}
-                </span>
-                {!unlocked ? <span style={{ color: "var(--ink-faint)", fontSize: 10, fontWeight: 700 }}>🔒</span>
-                  : canTicket ? <button onClick={() => queueGuild(item, kind, size, true)} style={{ background: "var(--raised)", border: "1px solid var(--bole)", borderRadius: 8, color: "var(--gilt)", fontSize: 11, fontWeight: 700, padding: "8px 10px", cursor: "pointer", whiteSpace: "nowrap" }}><Icon name="ticket" /> Ticket ({tickets})</button>
-                  : out ? <span style={{ color: "var(--ink-faint)", fontSize: 10, fontWeight: 700, whiteSpace: "nowrap" }}><Icon name="hourglass" /> Locked</span>
-                  : <button onClick={() => queueGuild(item, kind, size)} style={{ ...btnPrimary, width: "auto", margin: 0, padding: "8px 14px" }}>Queue</button>}
+              <div key={item.id} className={`item${unlocked ? "" : " is-shut"}`} style={unlocked ? undefined : { opacity: .55 }}>
+                <span className="mark"><EmojiIcon emoji={item.icon} size={20} /></span>
+                <div className="item-body">
+                  <span className="item-name">
+                    {item.name}
+                    {kind.startsWith("hard") && <span className="chip is-hard">Hard</span>}
+                  </span>
+                  <span className="item-meta">{item.boss || "Boss"} · {size} players{req ? ` · ${req}` : ""}</span>
+                  {unlocked && <span className={`state ${pill.tone}`}>{pill.t}</span>}
+                </div>
+                <div className="item-acts">
+                  {!unlocked ? <span className="state is-shut"><Icon name="lock" size={11} /></span>
+                    : canTicket ? <MiniBtn onClick={() => queueGuild(item, kind, size, true)}>Ticket ({tickets})</MiniBtn>
+                    : out ? <span className="state is-shut">Locked</span>
+                    : <MiniBtn onClick={() => queueGuild(item, kind, size)} tone="gain">Queue</MiniBtn>}
+                </div>
               </div>
             );
           };
@@ -7887,21 +7904,20 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           };
           return (
             <div>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                <button onClick={() => setTab("town")} style={{ background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 8, color: "var(--ink)", fontSize: 12, padding: "6px 12px", cursor: "pointer" }}>← Town</button>
-                <span style={{ color: "var(--rar-epic)", fontFamily: "Georgia, serif", fontSize: 15 }}><Icon name="vault" /> The Guild</span>
-                <span style={{ color: "var(--ink-soft)", fontSize: 10.5 }}>ilvl {avg}</span>
+              <div className="head">
+                <button className="head-back" onClick={() => setTab("town")}>&larr; Town</button>
+                <span className="head-title">The Guild</span>
+                <span className="head-note">ilvl {avg}</span>
               </div>
-              <div style={{ color: "var(--ink-soft)", fontSize: 11.5, lineHeight: 1.5, marginBottom: 12 }}>Group PvE fought on the <b style={{ color: "var(--rar-epic)" }}>Trinity engine</b> — you play your spec's role ({ROLES[roleOf(char)].icon} {ROLES[roleOf(char)].name}) while a tank, healer, support and DPS fill the party. Threat, interrupts, tank-busters and healing all matter. <b style={{ color: "var(--gilt)" }}>Guild lockouts are separate from your solo runs.</b></div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--sunk)", border: "1px solid var(--verdigris)", borderRadius: 9, padding: "8px 10px", marginBottom: 10 }}>
-                <span style={{ fontSize: 15 }}>🔑</span>
-                <span style={{ flex: 1, minWidth: 0 }}>
-                  <input value={partyCode} onChange={(e) => setPartyCode(e.target.value.slice(0, 16))} placeholder="Party code (optional)"
-                    style={{ width: "100%", background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 7, color: "var(--ink)", fontSize: 12, padding: "6px 8px", outline: "none" }} />
-                  <span style={{ color: "var(--ink-soft)", fontSize: 9.5, display: "block", marginTop: 3 }}>
-                    Share a code with a friend and you'll always land in the same run. Leave it blank to match with anyone.
-                  </span>
-                </span>
+              <p className="item-stats" style={{ marginBottom: 12 }}>
+                You fight your calling's role here &mdash; <b style={{ color: "var(--ink)" }}>{ROLES[roleOf(char)].name}</b> &mdash;
+                while a tank, a healer, support and damage fill the rest of the party. Threat, interrupts, tank-busters and
+                healing all count. What you spend here is kept separately from your solo runs.
+              </p>
+              <div className="sift" style={{ marginBottom: 12 }}>
+                <input className="field" value={partyCode} placeholder="A word you and a friend agree on"
+                  onChange={(e) => setPartyCode(e.target.value.slice(0, 16))} />
+                <span className="item-stats">Share it and you will always land in the same run. Leave it blank to be matched with anyone.</span>
               </div>
               {/* The Training Delve sits ABOVE the real content, because it is what a player should
                   run first. It flashes while its lesson is open, matching the town-map signpost. */}
@@ -7910,16 +7926,11 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                 const wanted = les && les.id === "guild";
                 const learned = !!char.tutorial?.delveCleared;
                 return (
-                  <button onClick={startTutorialDelve}
-                    style={{ width: "100%", textAlign: "left", background: "var(--raised)",
-                      border: `1.5px solid ${wanted ? "var(--gilt)" : "var(--verdigris)"}`, borderRadius: 12, padding: "12px 14px",
-                      marginBottom: 12, cursor: "pointer", display: "flex", alignItems: "center", gap: 12,
-                      animation: wanted ? "tutflash 1.4s ease-in-out infinite" : "none" }}>
-                    <span style={{ fontSize: 24 }}>🎯</span>
-                    <span style={{ flex: 1 }}>
-                      <span style={{ color: wanted ? "var(--gilt)" : "var(--verdigris)", fontFamily: "Georgia, serif", fontSize: 14, fontWeight: 700, display: "block" }}>
-                        The Training Delve {learned ? <span style={{ color: "var(--verdigris)", fontSize: 11 }}>✓ cleared</span> : null}
-                      </span>
+                  <button onClick={startTutorialDelve} className="gateway"
+                    style={wanted ? { animation: "tutflash 1.4s ease-in-out infinite" } : undefined}>
+                    <span className="mark"><Icon name="target" size={18} /></span>
+                    <span className="gateway-body">
+                      <b>The Training Delve {learned ? <span className="state is-open">cleared</span> : null}</b>
                       <span style={{ color: "var(--ink-soft)", fontSize: 11.5, lineHeight: 1.45, display: "block" }}>
                         A practice party of four against a teaching boss. No lockout, no loot, nothing recorded —
                         and it never occupies a real group.
@@ -7946,47 +7957,48 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           const specs = specsFor(char.cls);
           const specUnlocked = (char.level || 1) >= SPEC_LEVEL;
           const activeSpec = specById(char.spec);
-          const hub = (icon, title, sub, onClick, accent) => (
-            <button onClick={onClick} style={{ width: "100%", textAlign: "left", background: "var(--raised)", border: `1px solid ${accent}55`, borderLeft: `3px solid ${accent}`, borderRadius: 12, padding: "13px 15px", cursor: "pointer", marginBottom: 9, display: "flex", alignItems: "center", gap: 13 }}>
-              <span style={{ fontSize: 26 }}>{icon}</span>
-              <span style={{ flex: 1, minWidth: 0 }}><span style={{ color: accent, fontWeight: 700, fontSize: 14.5, fontFamily: "Georgia, serif", display: "block" }}>{title}</span><span style={{ color: "var(--ink-soft)", fontSize: 11.5 }}>{sub}</span></span>
-              <span style={{ color: "var(--ink-faint)", fontSize: 18 }}>›</span>
+          const hub = (icon, title, sub, onClick) => (
+            <button onClick={onClick} className="gateway">
+              <span className="mark">{typeof icon === "string" ? <EmojiIcon emoji={icon} size={18} /> : icon}</span>
+              <span className="gateway-body"><b>{title}</b><span>{sub}</span></span>
+              <span className="gateway-more">&rsaquo;</span>
             </button>
           );
           return (
             <div>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                <button onClick={() => setTab("town")} style={{ background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 8, color: "var(--ink)", fontSize: 12, padding: "6px 12px", cursor: "pointer" }}>← Town</button>
-                <span style={{ color: "var(--gilt)", fontFamily: "Georgia, serif", fontSize: 15 }}><Icon name="tome" /> Class Hall</span>
-                <span style={{ color: cls?.color, fontSize: 11, fontWeight: 700 }}>{cls?.icon} {cls?.name}</span>
+              <div className="head">
+                <button className="head-back" onClick={() => setTab("town")}>&larr; Town</button>
+                <span className="head-title">Class Hall</span>
+                <span className="head-note">{cls?.name}</span>
               </div>
 
               {/* ---- Specialization picker ---- */}
-              <div style={{ color: "var(--ink-soft)", fontSize: 10.5, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Specialization {activeSpec ? `· ${activeSpec.name}` : specUnlocked ? "· choose one" : `· unlocks Lv ${SPEC_LEVEL}`}</div>
-              <div style={{ color: "var(--ink-soft)", fontSize: 11.5, lineHeight: 1.5, marginBottom: 10 }}>Your calling reshapes how {cls?.name} plays. Selecting a specialization <b style={{ color: "var(--ink)" }}>auto-grants its signature skills</b> and applies its passive. Swap any time — free. Each spec <b style={{ color: "var(--gilt)" }}>remembers its own template</b>: equipped skills, skill mods and Gambits are banked when you leave and restored when you return.</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 9, marginBottom: 16 }}>
+              <div className="eyebrow">
+                <span>Your calling</span>
+                <span>{activeSpec ? activeSpec.name : specUnlocked ? "choose one" : `opens at level ${SPEC_LEVEL}`}</span>
+              </div>
+              <p className="item-stats" style={{ marginBottom: 12 }}>A calling reshapes how {cls?.name} plays: it grants its signature skills and applies its passive. Change it whenever you like, at no cost — each one remembers its own bar, mods and standing orders, and hands them back when you return to it.</p>
+              <div style={{ marginBottom: 16 }}>
                 {specs.map((sp) => {
                   const active = char.spec === sp.id;
                   return (
-                    <div key={sp.id} style={{ background: active ? "var(--verdigris)" : "var(--sunk)", border: `1.5px solid ${active ? cls.color : "var(--hairline)"}`, borderRadius: 11, padding: "11px 13px", opacity: specUnlocked || active ? 1 : 0.85 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-                        <div style={{ fontSize: 24 }}><EmojiIcon emoji={sp.icon} /></div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ color: cls.color, fontSize: 14, fontWeight: 700, fontFamily: "Georgia, serif" }}>{sp.name}</div>
-                          <div style={{ color: "var(--ink-soft)", fontSize: 10 }}>{specCurve(sp.id)}</div>
-                        </div>
-                        {active ? <span style={{ color: "var(--verdigris)", fontSize: 9.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>Active</span>
-                          : hasLoadout(char, sp.id) ? <span title="Saved template: skills, mods and gambits" style={{ color: "var(--gilt)", fontSize: 9.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}><Icon name="scroll" /> Saved</span> : null}
+                    <div key={sp.id} className={`choice${active ? " is-on" : ""}${specUnlocked || active ? "" : " is-shut"}`}>
+                      <div className="choice-head">
+                        <span className="mark"><EmojiIcon emoji={sp.icon} size={18} /></span>
+                        <span className="choice-name">{sp.name}<small>{specCurve(sp.id)}</small></span>
+                        {active ? <span className="state is-open">Chosen</span>
+                          : hasLoadout(char, sp.id) ? <span className="state" title="A saved bar, mods and standing orders">Saved</span> : null}
                       </div>
-                      <div style={{ color: "var(--verdigris)", fontSize: 10.5, lineHeight: 1.45, marginBottom: 8 }}><b style={{ color: "var(--verdigris)" }}>Passive:</b> {sp.desc}</div>
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 9 }}>
+                      <div className="choice-body" style={{ marginBottom: 8 }}>{sp.desc}</div>
+                      <div className="tags" style={{ marginBottom: 9 }}>
                         {specSkillNames(sp.id).map((n, si) => { const sk = (SKILLS[char.cls] || []).find((s) => s.name === n);
                           // Only the first SPEC_AUTOGRANT are put on the bar for you; the rest belong to
                           // the spec and are yours to slot in. Showing all five as though they were all
                           // granted is how a Protection warrior ended up with no room for a damage skill.
                           const granted = si < SPEC_AUTOGRANT; return (
-                          <span key={n} title={granted ? "Granted to your bar when you specialize" : "Available to this spec — slot it in yourself"}
-                            style={{ background: "var(--raised)", border: `1px ${granted ? "solid" : "dashed"} ${cls.color}${granted ? "33" : "22"}`, borderRadius: 6, padding: "3px 7px", fontSize: 9.5, color: granted ? "var(--ink)" : "var(--ink-soft)" }}>{sk?.icon} {n}</span>
+                          <span key={n} className={`tag${granted ? " is-given" : ""}`}
+                            title={granted ? "Put on your bar when you choose this calling" : "Belongs to this calling \u2014 slot it in yourself"}>
+                            <EmojiIcon emoji={sk?.icon} size={11} />{n}</span>
                         ); })}
                       </div>
                       {active ? (

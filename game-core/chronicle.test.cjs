@@ -284,6 +284,36 @@ sec("Market and Auction House reuse the vocabulary");
   ok(/stackListingRow[\s\S]{0,400}className="item"/.test(app), "a listing IS an item row");
 }
 
+sec("Class Hall and the Guild, on the shared vocabulary");
+{
+  // Four patterns came out of these two, and the first is the one that pays: a
+  // screen header was hand-written on roughly twenty-five screens, each slightly
+  // different from the last.
+  for (const [cls, what] of [
+    ["head", "a screen opens with a way back, what you are looking at, and one fact"],
+    ["choice", "one of a set you pick from, ruled down its edge when chosen"],
+    ["tag", "a named thing in a list of named things"],
+    ["state", "whether a thing is open to you right now"],
+  ]) ok(panels.includes("." + cls), `panels.css defines ${what}`);
+  ok(app.includes('className="head-back"') && app.includes('className="head-title"'),
+     "both screens open with the same head");
+  ok(app.includes('className={`choice'), "the calling picker is a set of choices");
+  ok(app.includes('className={`tag'), "…and the skills it grants are tags");
+  ok(app.includes('className={`state '), "the Guild's lockouts are states");
+
+  // A tone, not a hex. The lockout pill used to carry its own colour per branch,
+  // which is four colours describing three situations.
+  ok(/tone: "is-(open|soon|shut)"/.test(app), "…carrying a tone rather than a colour");
+  ok(!/\{ t: `[^`]*`, c: "#/.test(app), "…and no branch picks its own hex any more");
+
+  // The frame around the combat page has retired. It existed to make a parchment
+  // page inset into a DARK shell read as deliberate; the shell is parchment now,
+  // so it was a border around nothing.
+  ok(/\.cpage \{[^}]*border-bottom: 1px solid var\(--rule\)/s.test(combat),
+     "the combat page closes with a rule rather than a frame");
+  ok(!/\.cpage \{[^}]*border: 1px solid var\(--rule\)/s.test(combat), "…and is no longer boxed");
+}
+
 sec("The shell is bound in the same hand");
 {
   // Converting the shell is what decides whether the game reads as one object or

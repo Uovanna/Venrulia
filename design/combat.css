@@ -210,9 +210,13 @@
    the dark panels every other screen still uses would look broken, whereas a page
    you open reads as deliberate — and it is what the premise says the screen is.
    The ground grows outward as the other screens convert. */
+/* The frame has retired. It existed to make a parchment page inset into a DARK
+   shell read as deliberate rather than broken; with the shell converted the
+   ground matches, and a border around the page is now a border around nothing.
+   The rule under the seals is enough to close it off. */
 .cpage {
-  border: 1px solid var(--rule); border-radius: var(--r-lg); overflow: hidden;
-  display: flex; flex-direction: column; margin-bottom: 12px;
+  overflow: hidden; display: flex; flex-direction: column; margin-bottom: 12px;
+  border-bottom: 1px solid var(--rule);
 }
 
 /* Ability seals carry their name in the real game. The sketch relied on

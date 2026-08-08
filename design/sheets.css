@@ -1,0 +1,100 @@
+/* ============================================================================
+   SHEETS — what is laid on top of the page
+   ----------------------------------------------------------------------------
+   Twenty-one overlays, written twenty-one times. They agreed on the shape (a
+   scrim, a centred box, a mark, a title, some prose, one or two buttons) and
+   disagreed on every value: four different scrims, five border colours, radii
+   from 10 to 16, padding from 14 to 22, three z-index families. Reading them
+   side by side is the clearest evidence of the thing this redesign exists to
+   fix — nothing was decided once.
+
+   THE SCRIM IS TRANSLUCENT, ALWAYS. Five of the twenty-one had been swept to a
+   SOLID token, which on a fixed inset:0 element paints the entire viewport: the
+   page you were reading vanished and the sheet floated on a flat field. A modal
+   whose backdrop is opaque is not a modal, it is a screen with a box on it.
+
+   A sheet is a slip of paper laid on the page, so it is bordered the way every
+   other surface here is bordered — one hairline rule — and says what KIND of
+   thing it is with a single heavier rule across its top edge. That top rule is
+   the only colour on the whole object.
+   ============================================================================ */
+
+/* ONE LADDER, TWO RUNGS. The twenty-one overlays carried z-indexes from three
+   unrelated families — 220-560, 400, and 2000-2100 — assigned by whoever wrote
+   each one. Two things were actually wrong, not just untidy:
+
+     · the level-10 talent sheet sat at 260, UNDER the town's own floating rail
+       at 320, so the modal that blocks the game did not block the buttons on
+       top of it;
+     · the socket confirmation sat at 240 while the socket picker that raises it
+       sat at 260 and stays open, so choosing a gem that would dormant your
+       Power appeared to do nothing at all.
+
+   Both are the same mistake: a number picked in isolation. So there is a base
+   layer, above everything the page can draw, and exactly one rung above it for
+   the three sheets that genuinely open ON TOP of another sheet — an item's own
+   sheet, the socket confirmation, and the boss-loot bid over the encounter
+   result. Nothing else is allowed to invent a number. */
+.veil {
+  position: fixed; inset: 0; z-index: 900;
+  background: var(--veil);
+  display: flex; align-items: center; justify-content: center;
+  padding: var(--s-5);
+}
+.veil.is-over { z-index: 1000; }
+
+/* The town's chat sits above the foot rather than in the middle of the page,
+   and it does not dim what is behind it — you are meant to keep watching the
+   town while you talk. */
+.veil.is-foot { align-items: flex-end; background: none; padding-bottom: 120px; }
+
+.sheet {
+  width: 100%; max-width: 360px; box-sizing: border-box;
+  max-height: min(84vh, 760px); overflow-y: auto;
+  background: var(--raised); color: var(--ink); font-family: var(--serif);
+  border: 1px solid var(--rule); border-top: 3px solid var(--rule);
+  border-radius: 0 0 var(--r-md) var(--r-md);
+  box-shadow: var(--lift);
+  padding: var(--s-5);
+}
+/* What kind of thing this is. One rule across the top, and nothing else on the
+   sheet takes a colour from it — a red border AND red text AND a red icon is
+   three statements of one fact. */
+.sheet.is-warn  { border-top-color: var(--rubric); }
+.sheet.is-gain  { border-top-color: var(--verdigris); }
+.sheet.is-prize { border-top-color: var(--gilt); }
+.sheet.is-wide  { max-width: 420px; }
+.sheet.is-narrow { max-width: 300px; }
+/* An item's own sheet takes the item's rarity on that top rule. It is tagged
+   with .rar-*, which would otherwise paint every word in the sheet — reading
+   the hue out of --rar and putting the ink back is what keeps the description
+   legible while the edge still says "legendary". */
+.sheet.is-rarity { border-top-color: var(--rar, var(--rule)); color: var(--ink); }
+
+/* The mark at the head of a sheet. It used to be a 38px emoji, which is the
+   single loudest thing the interface could do. Drawn, at reading scale, in the
+   soft hand — it identifies the sheet, it does not announce it. */
+.sheet-mark {
+  display: flex; align-items: center; justify-content: center;
+  color: var(--ink-soft); margin-bottom: var(--s-2);
+}
+.sheet-title {
+  font-size: var(--step-1); font-weight: 600; line-height: 1.2;
+  text-align: center; margin-bottom: var(--s-2);
+}
+.sheet-lede {
+  font-size: var(--step--1); color: var(--ink-soft); line-height: 1.5;
+  text-align: center; margin-bottom: var(--s-4);
+}
+.sheet-lede b { color: var(--ink); font-weight: 600; }
+/* A fact the sheet is reporting rather than prose — a cost, a count, a timer. */
+.sheet-note {
+  font-family: var(--mono); font-size: 9px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--ink-faint); text-align: center; margin-bottom: var(--s-4);
+}
+
+/* One or two ways out, side by side and equal — the destructive one is not
+   bigger, it is just written in the rubric. */
+.sheet-acts { display: flex; gap: var(--s-3); margin-top: var(--s-4); }
+.sheet-acts > * { flex: 1; min-width: 0; margin-top: 0; }
+.sheet-acts .go { margin-top: 0; }

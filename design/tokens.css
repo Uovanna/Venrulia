@@ -39,6 +39,12 @@
   --rule:        #6B5F4B;   /* drawn rules — structure */
   --hairline:    #B8AF9A;   /* ruled guide lines — rhythm only */
 
+  /* The wash over the page when a sheet is laid on top of it. Translucent by
+     definition: the point of a modal is that the page you were reading is still
+     there, waiting. A warm brown wash rather than black — black over parchment
+     reads as a hole, and this game has no holes in it. */
+  --veil:        rgba(42, 33, 24, 0.44);
+
 
   /* ---- rarity ----------------------------------------------------------- */
   /* Re-derived, not inherited. The classic palette is tuned for a black ground:
@@ -116,6 +122,8 @@
     --rule:      #786751;
     --hairline:  #3A3126;
 
+    --veil:      rgba(6, 4, 3, 0.74);
+
 
     --rar-uncommon:  #389929;
     --rar-rare:      #3387DB;
@@ -147,6 +155,8 @@
 
   --rule:      #786751;
   --hairline:  #3A3126;
+
+  --veil:      rgba(6, 4, 3, 0.74);
 
 
   --rar-uncommon:  #389929;

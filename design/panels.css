@@ -18,13 +18,18 @@
    a raised surface, in both themes. Poor and common take the ordinary ink instead
    of a hue of their own: a common item is written in the ordinary hand, and a
    poor one is faded. */
-.rar-poor      { color: var(--ink-faint); }
-.rar-common    { color: var(--ink); }
-.rar-uncommon  { color: var(--rar-uncommon); }
-.rar-rare      { color: var(--rar-rare); }
-.rar-epic      { color: var(--rar-epic); }
-.rar-legendary { color: var(--rar-legendary); }
-.rar-artifact  { color: var(--rar-artifact); }
+/* Each class publishes its hue as --rar and then paints itself with it, so a
+   container can be TAGGED with a rarity and use the hue on one edge without
+   every word inside it turning that colour too. */
+.rar-poor      { --rar: var(--ink-faint); }
+.rar-common    { --rar: var(--ink); }
+.rar-uncommon  { --rar: var(--rar-uncommon); }
+.rar-rare      { --rar: var(--rar-rare); }
+.rar-epic      { --rar: var(--rar-epic); }
+.rar-legendary { --rar: var(--rar-legendary); }
+.rar-artifact  { --rar: var(--rar-artifact); }
+.rar-poor, .rar-common, .rar-uncommon, .rar-rare,
+.rar-epic, .rar-legendary, .rar-artifact { color: var(--rar); }
 
 /* ---- leaves: a tab strip ------------------------------------------------- */
 /* Not filled pills. The leaves of a book: a row of labels, and the one you are
@@ -311,13 +316,16 @@ select.field { cursor: pointer; }
 .choice:focus-visible { outline: 2px solid var(--rubric); outline-offset: 2px; }
 .choice.is-on { border-left-color: var(--rubric); }
 .choice.is-shut { opacity: .55; cursor: default; }
+/* These are spans, not divs, because a choice is often a <button> and a <div>
+   in there is invalid HTML — so they have to be told to stack. Left inline, the
+   description runs straight into the end of the name. */
 .choice-head { display: flex; align-items: center; gap: var(--s-3); margin-bottom: var(--s-2); }
-.choice-name { flex: 1; min-width: 0; font-size: var(--step-0); font-weight: 600; line-height: 1.15; }
+.choice-name { display: block; flex: 1; min-width: 0; font-size: var(--step-0); font-weight: 600; line-height: 1.15; }
 .choice-name small {
   display: block; font-family: var(--mono); font-size: 9px; letter-spacing: .08em;
   text-transform: uppercase; color: var(--ink-faint); font-weight: 400; margin-top: 1px;
 }
-.choice-body { font-size: var(--step--1); color: var(--ink-soft); line-height: 1.45; }
+.choice-body { display: block; font-size: var(--step--1); color: var(--ink-soft); line-height: 1.45; }
 
 /* ---- a tag --------------------------------------------------------------- */
 /* A named thing in a list of named things — a skill this spec grants, a party

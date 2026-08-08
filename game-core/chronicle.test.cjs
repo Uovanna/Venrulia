@@ -31,6 +31,7 @@ const app = fs.readFileSync(path.join(root, 'src/App.jsx'), 'utf8');
 const tokens = fs.readFileSync(path.join(root, 'design/tokens.css'), 'utf8');
 const shell = fs.readFileSync(path.join(root, 'design/shell.css'), 'utf8');
 const panels = fs.readFileSync(path.join(root, 'design/panels.css'), 'utf8');
+const sheets = fs.readFileSync(path.join(root, 'design/sheets.css'), 'utf8');
 const combat = fs.readFileSync(path.join(root, 'design/combat.css'), 'utf8');
 const genCss = fs.readFileSync(path.join(root, 'src/chronicle-css.js'), 'utf8');
 
@@ -95,8 +96,8 @@ sec("The shipped stylesheet is the designed stylesheet");
 {
   const m = genCss.match(/export const CHRONICLE_CSS = ("(?:[^"\\]|\\.)*");/);
   ok(!!m, "src/chronicle-css.js exports CHRONICLE_CSS");
-  ok(m && JSON.parse(m[1]) === [tokens, shell, panels, combat].join("\n"),
-     "…and it matches tokens + shell + panels + combat (else: node design/build-css.mjs)");
+  ok(m && JSON.parse(m[1]) === [tokens, shell, panels, sheets, combat].join("\n"),
+     "…and it matches tokens + shell + panels + sheets + combat (else: node design/build-css.mjs)");
 }
 
 sec("Both themes resolve in all three states");
@@ -216,8 +217,12 @@ sec("Rarity is readable on parchment");
   // would mean someone had reintroduced white-on-parchment.
   ok(!/--rar-common:/.test(tokens) && !/--rar-poor:/.test(tokens),
      "poor and common take the ordinary ink rather than a colour");
-  ok(/\.rar-common\s+\{ color: var\(--ink\); \}/.test(panels), "…common is the ordinary hand");
-  ok(/\.rar-poor\s+\{ color: var\(--ink-faint\); \}/.test(panels), "…and poor is faded");
+  ok(/\.rar-common\s+\{ --rar: var\(--ink\); \}/.test(panels), "…common is the ordinary hand");
+  ok(/\.rar-poor\s+\{ --rar: var\(--ink-faint\); \}/.test(panels), "…and poor is faded");
+  // The hue is published as a variable and then painted, so a container tagged
+  // with a rarity can use it on one edge without turning all its text that hue.
+  ok(/\.rar-poor, \.rar-common,[\s\S]{0,120}\{ color: var\(--rar\); \}/.test(panels),
+     "…and every rarity paints itself from that variable");
   // The core keeps its own colours: the server has no opinion about what colour
   // an epic is, and changing shared data for a client theme would be wrong.
   ok(app.includes("const rarClass = (r) =>"), "the screen asks for a rarity CLASS, not a hex");
@@ -368,6 +373,68 @@ sec("The Adventure Gate and the Hero's Statue");
     ok(rule && /width: 100%/.test(rule[0]) && /box-sizing: border-box/.test(rule[0]),
        `.${cls} counts its own padding inside its width`);
   }
+}
+
+sec("What is laid on top of the page");
+{
+  // Twenty-one overlays, written twenty-one times: four scrims, five border
+  // colours, radii 10–16, padding 14–22, three unrelated z-index families.
+  ok(!app.includes('position: "fixed", inset: 0'), "no screen paints its own overlay any more");
+  ok(app.split('className="veil').length - 1 >= 20, "…they are all the same veil");
+  ok(app.split('className="sheet').length - 1 + app.split('className={`sheet').length - 1 >= 20,
+     "…carrying the same sheet");
+
+  // THE SCRIM MUST BE TRANSLUCENT. Five of the twenty-one had been swept from an
+  // rgba to a SOLID token, which on a fixed inset:0 element paints the whole
+  // viewport — the page you were reading vanished and the sheet floated on a
+  // flat field. A modal with an opaque backdrop is not a modal.
+  ok(/--veil:\s+rgba\([^)]*0?\.\d+\)/.test(tokens), "the veil is a translucent wash");
+  ok((tokens.match(/--veil:/g) || []).length === 3, "…defined in all three theme states");
+  ok(/\.veil \{[^}]*background: var\(--veil\)/s.test(sheets), "…and every overlay uses it");
+  ok(!/inset: 0[^}]*background: "var\(--(sunk|ground|raised)\)"/.test(app),
+     "…so no overlay blacks the page out with a solid token");
+
+  // ONE LADDER. Both z-index bugs were the same mistake — a number picked in
+  // isolation — and both were invisible until you hit them in play.
+  ok(/\.veil \{[^}]*z-index: 900/s.test(sheets), "there is one layer for sheets, above everything the page draws");
+  ok(/\.veil\.is-over \{ z-index: 1000; \}/.test(sheets), "…and exactly one rung above it");
+  ok(!/className="veil[^"]*" style=\{\{ zIndex/.test(app), "…and no overlay invents a number of its own");
+  // The talent sheet sat at 260, UNDER the town's own floating rail at 320.
+  const rail = /position: "absolute", left: 8, top: 8, zIndex: (\d+)/.exec(app);
+  ok(rail && Number(rail[1]) < 900, `the town rail (${rail && rail[1]}) is below the sheet layer`);
+  // The socket confirmation sat at 240 while the picker that raises it sat at
+  // 260 and stays open — choosing a Power-dormanting gem appeared to do nothing.
+  ok(app.includes('<div onClick={() => setSocketConfirm(null)} className="veil is-over">'),
+     "the socket confirmation opens ABOVE the picker that raises it");
+  ok(app.includes('<div onClick={onClose} className="veil is-over">'),
+     "…and an item's own sheet opens above whatever it was tapped from");
+
+  // A sheet is a slip of paper: one hairline rule, and a single heavier rule
+  // across the top saying what kind of thing it is. Nothing else takes a colour.
+  for (const t of ["is-warn", "is-gain", "is-prize"])
+    ok(new RegExp("\\.sheet\\." + t + "\\s+\\{ border-top-color").test(sheets), `a sheet can be ${t} on one edge`);
+  ok(/\.sheet\.is-rarity \{ border-top-color: var\(--rar/.test(sheets),
+     "…and an item's sheet takes the item's rarity there");
+  ok(app.includes('className={`sheet is-rarity is-narrow ${rarClass(item.rarity)}`}'),
+     "…reading it from the rarity class rather than a data hex");
+  ok(!app.includes('border: `2px solid ${r.color}`'), "…so the item sheet is no longer boxed in its rarity");
+
+  // The 38px emoji at the head of a sheet was the loudest thing the interface
+  // could do. Drawn, at reading scale, in the soft hand.
+  ok(app.split('className="sheet-mark"').length - 1 >= 9, "sheet marks are drawn at reading scale");
+  ok(!/style=\{\{ textAlign: "center", fontSize: 3\d, marginBottom: \d \}\}>/.test(app),
+     "…and nothing opens with a 30-plus-point emoji");
+  ok(app.split('className="sheet-title"').length - 1 >= 15, "every sheet titles itself the same way");
+  ok(app.includes('className="sheet-acts"'), "…and its ways out sit side by side, equal");
+
+  // An item's actions carried a `color` from each call site — four hexes all
+  // saying "you can do this". They are the same kind of thing, so only the one
+  // that cannot be undone is marked.
+  ok(!/\{ label: "(Equip|Compare|Sell|Lock)", color:/.test(app),
+     "an item's actions no longer each pick their own colour");
+  ok(app.includes('{ label: "Sell", tone: "warn"'), "…only Sell is marked, because only Sell is final");
+  ok(app.includes('className={`go${a.tone === "warn" ? "" : " is-quiet"}`}'),
+     "…and the tooltip reads a tone rather than a hex");
 }
 
 sec("The shell is bound in the same hand");

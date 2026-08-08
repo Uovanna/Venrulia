@@ -2943,16 +2943,16 @@ function ItemTooltip({ item, onClose, actions, onSocket }) {
   if (temperBonus > 0 && Array.isArray(item.lines)) for (const ln of item.lines) temperByStat[ln.stat] = (temperByStat[ln.stat] || 0) + temperBonus;
   const temperNote = (k) => temperByStat[k] ? <span style={{ color: "var(--bole)", fontSize: 9.5, fontWeight: 400 }}> (+{temperByStat[k]} ⚒️)</span> : null;
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "var(--sunk)", zIndex: 2100, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--sunk)", border: `2px solid ${r.color}`, borderRadius: 10, padding: "14px 16px", maxWidth: 300, width: "100%", boxShadow: "none" }}>
+    <div onClick={onClose} className="veil is-over">
+      <div onClick={(e) => e.stopPropagation()} className={`sheet is-rarity is-narrow ${rarClass(item.rarity)}`}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-          <GameIcon icon={item.icon} imgKey={item.iconKey} size={36} />
+          <span className="mark"><GameIcon icon={item.icon} imgKey={item.iconKey} size={32} /></span>
           <div style={{ minWidth: 0 }}>
-            <div style={{ color: r.color, fontWeight: 700, fontSize: 15, fontFamily: "Georgia, serif", lineHeight: 1.15 }}>{item.enchant ? "✨ " : ""}{item.name}{temperSuffix(item)}</div>
+            <div className={rarClass(item.rarity)} style={{ fontWeight: 600, fontSize: "var(--step-0)", lineHeight: 1.15 }}>{item.enchant ? "✨ " : ""}{item.name}{temperSuffix(item)}</div>
             {/* The rank sits directly under the name, exactly as asked, and above the rarity line —
                 where the piece came from is the first thing about an Abyss item that matters. */}
-            {item.abyss != null && <div style={{ color: "var(--rar-epic)", fontSize: 11, fontWeight: 800 }}>{abyssLabel(item.abyss)}</div>}
-            <div style={{ color: "var(--ink-soft)", fontSize: 10.5 }}>{r.name} · {slotById(item.slotId)?.name}</div>
+            {item.abyss != null && <div className="rar-epic" style={{ fontSize: 11, fontWeight: 600 }}>{abyssLabel(item.abyss)}</div>}
+            <div className="item-meta">{r.name} · {slotById(item.slotId)?.name}</div>
           </div>
         </div>
         {item.ilvl ? <div style={{ color: "var(--gilt)", fontSize: 11.5, marginBottom: 5 }}>Item Level {item.ilvl}{item.artifact ? <span style={{ color: "var(--rubric)", marginLeft: 6 }}>· re-forges with your level</span> : null}{item.abyss ? <span style={{ color: "var(--rar-epic)", marginLeft: 6 }}>· secondaries roll {Math.round((abyssMult(item.abyss) - 1) * 100)}% higher</span> : null}</div> : null}
@@ -2983,12 +2983,18 @@ function ItemTooltip({ item, onClose, actions, onSocket }) {
           {item.enchant && <div style={{ color: "var(--rar-epic)", fontSize: 12, marginTop: 3 }}><Icon name="spark" /> Enchant: {Object.entries(item.enchant).map(([k, v]) => `+${v} ${STAT_LABEL[k]}`).join(", ")}</div>}
         </div>
         <div style={{ color: "var(--ink-faint)", fontSize: 10.5 }}>Sell value: {item.value}g</div>
+        {/* The actions carry a `color` from their call sites — four different hexes
+            describing "you can do this". They are all the same kind of thing, so
+            they are all written the same way; only a destructive one is marked. */}
         {actions && actions.length > 0 && (
-          <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-            {actions.map((a, i) => <button key={i} onClick={() => { a.onClick(); if (!a.keepOpen) onClose(); }} style={{ flex: 1, minWidth: 78, background: a.bg || "var(--raised)", border: `1.5px solid ${a.color || "var(--rule)"}`, borderRadius: 8, color: a.color || "var(--verdigris)", fontSize: 12.5, fontWeight: 700, padding: 9, cursor: "pointer" }}>{a.label}</button>)}
+          <div className="sheet-acts" style={{ flexWrap: "wrap" }}>
+            {actions.map((a, i) => (
+              <button key={i} onClick={() => { a.onClick(); if (!a.keepOpen) onClose(); }}
+                className={`go${a.tone === "warn" ? "" : " is-quiet"}`} style={{ minWidth: 78 }}>{a.label}</button>
+            ))}
           </div>
         )}
-        <button onClick={onClose} style={{ width: "100%", marginTop: 8, background: "none", border: "none", color: "var(--ink-faint)", fontSize: 12, padding: 6, cursor: "pointer" }}>Close</button>
+        <button onClick={onClose} className="link" style={{ display: "block", margin: "10px auto 0" }}>Close</button>
       </div>
     </div>
   );
@@ -3037,19 +3043,19 @@ function CharacterSelectScreen({ saves, onSelect, onNew, onDelete, exportData, i
           </div>
         )}
         {confirmDel !== null && saves[confirmDel] && (
-          <div onClick={() => setConfirmDel(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.82)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300, padding: 20 }}>
-            <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--raised)", border: "2px solid var(--rubric)", borderRadius: 14, padding: "20px 18px", maxWidth: 360, width: "100%", boxShadow: "var(--lift)" }}>
-              <div style={{ textAlign: "center", fontSize: 32, marginBottom: 8 }}>⚠️</div>
-              <div style={{ color: "var(--rubric)", fontFamily: "Georgia, serif", fontSize: 18, fontWeight: 700, textAlign: "center", marginBottom: 8 }}>Delete Character?</div>
+          <div onClick={() => setConfirmDel(null)} className="veil">
+            <div onClick={(e) => e.stopPropagation()} className="sheet is-warn">
+              <div className="sheet-mark"><EmojiIcon emoji="⚠️" size={22} /></div>
+              <div className="sheet-title">Delete Character?</div>
               <div style={{ color: "var(--ink)", fontSize: 13, lineHeight: 1.55, textAlign: "center", marginBottom: 16 }}>You are about to permanently delete <b style={{ color: "var(--ink)" }}>{saves[confirmDel].name}</b> (Level {saves[confirmDel].level} {CLASSES.find((c) => c.id === saves[confirmDel].cls)?.name}). This <b style={{ color: "var(--rubric)" }}>cannot be undone</b> — all progress will be lost forever.</div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={() => setConfirmDel(null)} style={{ flex: 1, background: "var(--raised)", border: "1px solid var(--rule)", borderRadius: 9, color: "var(--verdigris)", fontSize: 13, fontWeight: 700, padding: 11, cursor: "pointer" }}>Cancel</button>
-                <button onClick={() => { const idx = confirmDel; setConfirmDel(null); onDelete(idx); }} style={{ flex: 1, background: "var(--raised)", border: "1.5px solid var(--rubric)", borderRadius: 9, color: "var(--rubric)", fontSize: 13, fontWeight: 700, padding: 11, cursor: "pointer" }}>Delete Forever</button>
+              <div className="sheet-acts">
+                <button onClick={() => setConfirmDel(null)} className="go is-quiet">Cancel</button>
+                <button onClick={() => { const idx = confirmDel; setConfirmDel(null); onDelete(idx); }} className="go">Delete Forever</button>
               </div>
             </div>
           </div>
         )}
-        <button onClick={onNew} style={{ width: "100%", background: "var(--raised)", border: "2px solid var(--bole)", borderRadius: 10, color: "var(--gilt)", fontSize: 16, fontWeight: 700, padding: 16, cursor: "pointer", fontFamily: "Georgia, serif", letterSpacing: 1 }}><Icon name="spark" /> Create New Character</button>
+        <button onClick={onNew} className="go"><Icon name="spark" /> Create New Character</button>
 
         {/* ---------------- Save data ---------------- */}
         <div style={{ marginTop: 26, background: "var(--sunk)", border: "1px solid var(--verdigris)", borderRadius: 12, padding: 16 }}>
@@ -3068,7 +3074,7 @@ function CharacterSelectScreen({ saves, onSelect, onNew, onDelete, exportData, i
                   <textarea readOnly value={exportCode} onFocus={(e) => e.target.select()} style={{ width: "100%", height: 54, background: "var(--sunk)", border: "1px solid var(--verdigris)", borderRadius: 6, color: "var(--verdigris)", fontSize: 10, padding: 8, marginBottom: 8, boxSizing: "border-box", resize: "none", fontFamily: "ui-monospace, monospace" }} />
                 )}
                 <textarea value={importText} onChange={(e) => setImportText(e.target.value)} placeholder="Paste a backup code here, then tap Restore…" style={{ width: "100%", height: 54, background: "var(--sunk)", border: "1px solid var(--ink-faint)", borderRadius: 6, color: "var(--ink)", fontSize: 10, padding: 8, boxSizing: "border-box", resize: "none", fontFamily: "ui-monospace, monospace" }} />
-                <button onClick={doImport} style={{ width: "100%", marginTop: 8, background: "var(--raised)", border: "1px solid var(--rule)", borderRadius: 6, color: "var(--ink-soft)", fontSize: 12, fontWeight: 600, padding: 9, cursor: "pointer" }}>Restore from code</button>
+                <button onClick={doImport} className="go is-quiet">Restore from code</button>
                 <div style={{ color: "var(--ink-faint)", fontSize: 10, marginTop: 6 }}><Icon name="warn" /> Restoring replaces the characters currently on this device.</div>
               </div>
             )}
@@ -6324,10 +6330,10 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                       onClose={() => { setNetBid(null); setTab("guild"); }} />
       )}
       {offlineReport && (
-        <div onClick={() => setOfflineReport(null)} style={{ position: "fixed", inset: 0, background: "var(--sunk)", zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--raised)", border: `2px solid ${offlineReport.died ? "var(--rubric)" : "var(--gilt)"}`, borderRadius: 16, padding: 22, maxWidth: 340, width: "100%", boxShadow: "var(--lift)" }}>
-            <div style={{ textAlign: "center", fontSize: 34, marginBottom: 4 }}>{offlineReport.died ? "💀" : "🌙"}</div>
-            <h3 style={{ color: offlineReport.died ? "var(--rubric)" : "var(--gilt)", fontFamily: "Georgia, serif", textAlign: "center", margin: "0 0 4px" }}>{offlineReport.died ? "Defeated While Away" : "Welcome Back!"}</h3>
+        <div onClick={() => setOfflineReport(null)} className="veil">
+          <div onClick={(e) => e.stopPropagation()} className={`sheet ${offlineReport.died ? "is-warn" : "is-prize"}`}>
+            <div className="sheet-mark">{offlineReport.died ? <EmojiIcon emoji="💀" size={22} /> : <EmojiIcon emoji="🌙" size={22} />}</div>
+            <h3 className="sheet-title">{offlineReport.died ? "Defeated While Away" : "Welcome Back!"}</h3>
             <div style={{ color: "var(--verdigris)", fontSize: 12, textAlign: "center", marginBottom: 14 }}>
               {Math.floor(offlineReport.secondsSimulated / 3600)}h {Math.floor((offlineReport.secondsSimulated % 3600) / 60)}m of auto-combat{offlineReport.zoneName ? ` in ${offlineReport.zoneName}` : ""}
             </div>
@@ -6337,7 +6343,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
               </div>
             ))}
             {offlineReport.died && <div style={{ color: "var(--rubric)", fontSize: 11.5, textAlign: "center", marginTop: 12, lineHeight: 1.5 }}>Your hero fell in battle, so offline combat has been paused. Re-enable it from the World screen when ready.</div>}
-            <button onClick={() => setOfflineReport(null)} style={{ width: "100%", marginTop: 16, background: offlineReport.died ? "var(--rubric)" : "var(--raised)", border: `1.5px solid ${offlineReport.died ? "var(--rubric)" : "var(--gilt)"}`, borderRadius: 10, color: offlineReport.died ? "var(--rubric)" : "var(--gilt)", fontSize: 14, fontWeight: 700, padding: 11, cursor: "pointer" }}>Continue</button>
+            <button onClick={() => setOfflineReport(null)} className="go is-quiet">Continue</button>
           </div>
         </div>
       )}
@@ -6349,17 +6355,17 @@ function GameScreen({ character: initChar, onSave, onBack }) {
         const g = gemById(socketsOf(reforgeConfirm.item)[reforgeConfirm.idx]);
         const afford = (char.ven || 0) >= REFORGE_SOCKET_VEN;
         return (
-          <div onClick={() => setReforgeConfirm(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.82)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 265, padding: 18 }}>
-            <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--raised)", border: "2px solid var(--rubric)", borderRadius: 14, padding: "18px 16px", maxWidth: 360, width: "100%" }}>
-              <div style={{ textAlign: "center", fontSize: 30, marginBottom: 6 }}>🔥</div>
-              <div style={{ color: "var(--rubric)", fontFamily: "Georgia, serif", fontSize: 17, fontWeight: 700, textAlign: "center", marginBottom: 8 }}>Reforge Socket?</div>
+          <div onClick={() => setReforgeConfirm(null)} className="veil">
+            <div onClick={(e) => e.stopPropagation()} className="sheet is-warn">
+              <div className="sheet-mark"><EmojiIcon emoji="🔥" size={22} /></div>
+              <div className="sheet-title">Reforge Socket?</div>
               <div style={{ color: "var(--ink)", fontSize: 12.5, lineHeight: 1.55, textAlign: "center", marginBottom: 14 }}>
                 This burns <b style={{ color: g ? rarityById(g.rarity).color : "var(--ink)" }}>{g?.icon} {g?.name || "the gem"}</b> out of <b style={{ color: "var(--ink)" }}>{reforgeConfirm.item.name}</b>, freeing the socket.
                 <br /><span style={{ color: "var(--rubric)" }}>The gem is destroyed — it does not return to your bag.</span>
               </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={() => setReforgeConfirm(null)} style={{ flex: 1, background: "var(--raised)", border: "1px solid var(--rule)", borderRadius: 9, color: "var(--verdigris)", fontSize: 13, fontWeight: 700, padding: 11, cursor: "pointer" }}>Cancel</button>
-                <button onClick={() => reforgeSocket(reforgeConfirm.item, reforgeConfirm.idx)} disabled={!afford} style={{ flex: 1, background: afford ? "var(--raised)" : "var(--verdigris)", border: `1.5px solid ${afford ? "var(--rubric)" : "var(--ink)"}`, borderRadius: 9, color: afford ? "var(--rubric)" : "var(--ink-faint)", fontSize: 13, fontWeight: 700, padding: 11, cursor: afford ? "pointer" : "default" }}><Icon name="flame" /> Reforge · 💎 {REFORGE_SOCKET_VEN}</button>
+              <div className="sheet-acts">
+                <button onClick={() => setReforgeConfirm(null)} className="go is-quiet">Cancel</button>
+                <button onClick={() => reforgeSocket(reforgeConfirm.item, reforgeConfirm.idx)} disabled={!afford} className="go"><Icon name="flame" size={14} /> Reforge · <Icon name="gem" size={12} /> {REFORGE_SOCKET_VEN}</button>
               </div>
               {!afford && <div style={{ color: "var(--rubric)", fontSize: 10.5, textAlign: "center", marginTop: 7 }}>You hold 💎 {(char.ven || 0).toLocaleString()}</div>}
             </div>
@@ -6372,9 +6378,9 @@ function GameScreen({ character: initChar, onSave, onBack }) {
         const owned = Object.entries(char.gems || {}).filter(([, n]) => n > 0).map(([id, n]) => ({ g: gemById(id), n })).filter((x) => x.g)
           .sort((a, b) => RARITIES.findIndex((r) => r.id === b.g.rarity) - RARITIES.findIndex((r) => r.id === a.g.rarity));
         return (
-          <div onClick={() => setSocketPick(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.82)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 260, padding: 18 }}>
-            <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--sunk)", border: "2px solid var(--verdigris)", borderRadius: 14, padding: "16px", maxWidth: 380, width: "100%", maxHeight: "78vh", overflowY: "auto" }}>
-              <div style={{ color: "var(--rar-epic)", fontFamily: "Georgia, serif", fontSize: 16, fontWeight: 700, textAlign: "center", marginBottom: 4 }}><Icon name="gem" /> Socket a Gem</div>
+          <div onClick={() => setSocketPick(null)} className="veil">
+            <div onClick={(e) => e.stopPropagation()} className="sheet is-gain is-wide">
+              <div className="sheet-title"><Icon name="gem" /> Socket a Gem</div>
               <div style={{ color: "var(--ink-soft)", fontSize: 11, textAlign: "center", marginBottom: 4 }}>{socketPick.item.name} · socket {socketPick.idx + 1}</div>
               <div style={{ color: "var(--rubric)", fontSize: 10.5, textAlign: "center", marginBottom: 12 }}><Icon name="warn" /> Bonding is permanent. A socket can only be cleared by reforging (💎 {REFORGE_SOCKET_VEN}), which destroys the gem.</div>
               {owned.length === 0 && <div style={{ color: "var(--ink-faint)", fontSize: 12, textAlign: "center", padding: "18px 0" }}>No gems yet — they drop from enemies alongside gear.</div>}
@@ -6389,7 +6395,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                   </button>
                 ); })}
               </div>
-              <button onClick={() => setSocketPick(null)} style={{ width: "100%", marginTop: 12, background: "var(--raised)", border: "1px solid var(--rule)", borderRadius: 9, color: "var(--ink)", fontSize: 12.5, fontWeight: 700, padding: 10, cursor: "pointer" }}>Cancel</button>
+              <button onClick={() => setSocketPick(null)} className="go is-quiet">Cancel</button>
             </div>
           </div>
         );
@@ -6421,9 +6427,9 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           </div>
         );
         return (
-          <div onClick={() => setCompareItem(null)} style={{ position: "fixed", inset: 0, background: "var(--sunk)", zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-            <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--raised)", border: "2px solid var(--verdigris)", borderRadius: 16, padding: 18, maxWidth: 420, width: "100%" }}>
-              <h3 style={{ color: "var(--gilt)", fontFamily: "Georgia, serif", textAlign: "center", margin: "0 0 12px" }}>Compare Gear</h3>
+          <div onClick={() => setCompareItem(null)} className="veil">
+            <div onClick={(e) => e.stopPropagation()} className="sheet is-gain is-wide">
+              <h3 className="sheet-title">Compare Gear</h3>
               {offhandable && (
                 <div className="sets">
                   {[["weapon", "🗡️ vs Main-hand"], ["offhand", "🗡️ vs Off-hand"]].map(([s, label]) => (
@@ -6632,14 +6638,11 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           const hrs = Math.floor(left / 3600000), mins = Math.floor((left % 3600000) / 60000);
           const expired = offerState(char, now) === "expired";
           return (
-            <div onClick={() => setOfferOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 400,
-              background: "rgba(4,4,10,0.8)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-              <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 360,
-                background: "var(--raised)", border: "2px solid var(--rubric)",
-                borderRadius: 16, padding: 18, boxShadow: "var(--lift)" }}>
+            <div onClick={() => setOfferOpen(false)} className="veil">
+              <div onClick={(e) => e.stopPropagation()} className="sheet is-warn">
                 <div style={{ textAlign: "center", marginBottom: 10 }}>
                   <div style={{ fontSize: 30 }}>⚔️</div>
-                  <div style={{ color: "var(--rubric)", fontFamily: "Georgia, serif", fontSize: 18, fontWeight: 700 }}>{OFFER.name}</div>
+                  <div className="sheet-title">{OFFER.name}</div>
                   <div style={{ color: "var(--rubric)", fontSize: 11.5, marginTop: 3 }}>
                     {expired ? "Available in the Ven shop's Offers tab" : `Ends in ${hrs}h ${mins}m`}
                   </div>
@@ -6660,15 +6663,8 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                     <div style={{ color: "var(--ink-soft)", fontSize: 10.5, lineHeight: 1.4, marginLeft: 16 }}>{ch.desc}</div>
                   </button>
                 ))}
-                <button onClick={buyOffer} style={{ width: "100%", marginTop: 6,
-                  background: "var(--raised)", border: "1.5px solid var(--verdigris)",
-                  borderRadius: 10, color: "var(--verdigris)", fontSize: 14, fontWeight: 800, padding: 12, cursor: "pointer" }}>
-                  ${OFFER.usd} — Claim the bundle
-                </button>
-                <button onClick={() => setOfferOpen(false)} style={{ width: "100%", marginTop: 6,
-                  background: "transparent", border: "none", color: "var(--ink-soft)", fontSize: 11.5, padding: 6, cursor: "pointer" }}>
-                  Maybe later
-                </button>
+                <button onClick={buyOffer} className="go">${OFFER.usd} — Claim the bundle</button>
+                <button onClick={() => setOfferOpen(false)} className="go is-quiet">Maybe later</button>
               </div>
             </div>
           );
@@ -6707,16 +6703,14 @@ function GameScreen({ character: initChar, onSave, onBack }) {
             );
           };
           return (
-            <div onClick={() => setPassOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 400,
-                 background: "var(--sunk)", display: "flex", alignItems: "center", justifyContent: "center", padding: 12 }}>
-              <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--raised)",
-                   border: "2px solid var(--verdigris)", borderRadius: 16, width: "100%", maxWidth: 400,
-                   maxHeight: "88vh", display: "flex", flexDirection: "column", boxShadow: "var(--lift)" }}>
+            <div onClick={() => setPassOpen(false)} className="veil">
+              <div onClick={(e) => e.stopPropagation()} className="sheet is-gain is-wide"
+                   style={{ display: "flex", flexDirection: "column", padding: 0, overflow: "hidden" }}>
 
                 {/* Header: what the pass is, and where the player is on it. */}
                 <div style={{ padding: "14px 14px 10px", borderBottom: "1px solid var(--verdigris)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <div style={{ color: "var(--gilt)", fontFamily: "Georgia, serif", fontSize: 17, fontWeight: 700 }}><Icon name="trophy" /> Champion's Pass</div>
+                    <div className="sheet-title"><Icon name="trophy" /> Champion's Pass</div>
                     <button onClick={() => setPassOpen(false)} style={{ background: "none", border: "none", color: "var(--ink-soft)", fontSize: 20, cursor: "pointer", lineHeight: 1 }}>×</button>
                   </div>
                   <div style={{ color: "var(--ink-soft)", fontSize: 11, marginTop: 3 }}>
@@ -6728,21 +6722,15 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                                   height: "100%", background: "var(--ground)" }} />
                   </div>
                   {!owned && (
-                    <button onClick={buyPass} style={{ width: "100%", marginTop: 10, padding: "9px 0", borderRadius: 10,
-                      background: "var(--ground)", border: "none", color: "var(--bole)",
-                      fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
-                      Unlock Champion · {PASS.venCost} 💎 Ven
-                      {rank > 0 && <span style={{ display: "block", fontSize: 9.5, fontWeight: 700, opacity: 0.75 }}>
+                    <button onClick={buyPass} className="go">
+                      Unlock Champion · <Icon name="gem" size={12} /> {PASS.venCost} Ven
+                      {rank > 0 && <span className="sheet-note" style={{ marginBottom: 0, marginTop: 3 }}>
                         {rank} rank{rank > 1 ? "s" : ""} already earned — claimable immediately
                       </span>}
                     </button>
                   )}
                   {waiting > 0 && (
-                    <button onClick={claimPassAll} style={{ width: "100%", marginTop: 8, padding: "8px 0", borderRadius: 10,
-                      background: "var(--verdigris)", border: "1.5px solid var(--verdigris)", color: "var(--verdigris)",
-                      fontWeight: 800, fontSize: 12, cursor: "pointer" }}>
-                      Claim all {waiting} waiting
-                    </button>
+                    <button onClick={claimPassAll} className="go is-quiet is-on">Claim all {waiting} waiting</button>
                   )}
                 </div>
 
@@ -6805,14 +6793,11 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           const streak = char.daily?.streak || 0;
           const nextBonus = DAILY.bonusEvery - ((streak) % DAILY.bonusEvery);
           return (
-            <div onClick={() => setDailyOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 400,
-              background: "rgba(4,4,10,0.78)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-              <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 360,
-                background: "var(--raised)", border: "2px solid var(--verdigris)",
-                borderRadius: 16, padding: 18, boxShadow: "var(--lift)" }}>
+            <div onClick={() => setDailyOpen(false)} className="veil">
+              <div onClick={(e) => e.stopPropagation()} className="sheet is-gain">
                 <div style={{ textAlign: "center", marginBottom: 10 }}>
                   <div style={{ fontSize: 28 }}>📅</div>
-                  <div style={{ color: "var(--verdigris)", fontFamily: "Georgia, serif", fontSize: 17, fontWeight: 700 }}>Daily Sign-In</div>
+                  <div className="sheet-title">Daily Sign-In</div>
                   <div style={{ color: "var(--ink-soft)", fontSize: 11.5, marginTop: 3 }}>
                     {streak > 0 ? `${streak} day${streak === 1 ? "" : "s"} running · ` : ""}
                     {streak > 0 ? `${nextBonus} more to the next bonus` : "Sign in to start a streak"}
@@ -6882,10 +6867,10 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           <>
             <button onClick={() => setTownChatOpen((v) => !v)} aria-label="Global chat" className="foot-btn" style={{ position: "fixed", left: "50%", transform: "translateX(-50%)", bottom: 74, zIndex: 330 }}><Icon name="tavern" size={14} /> Chat{chatState.chatLive ? " ●" : ""}</button>
             {townChatOpen && (
-              <div onClick={() => setTownChatOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 340, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: 16, paddingBottom: 120 }}>
-                <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 460, background: "rgba(16,12,28,0.82)", backdropFilter: "blur(10px)", border: "1px solid var(--rule)", borderRadius: 14, padding: "12px 14px", boxShadow: "var(--lift)" }}>
+              <div onClick={() => setTownChatOpen(false)} className="veil is-foot">
+                <div onClick={(e) => e.stopPropagation()} className="sheet is-wide" style={{ padding: "12px 14px" }}>
                   <ChatPanel chatState={chatState} myName={char.name} height={300} transparent />
-                  <button onClick={() => setTownChatOpen(false)} style={{ ...btnGhost, marginTop: 8, marginBottom: 0 }}>Close</button>
+                  <button onClick={() => setTownChatOpen(false)} className="go is-quiet">Close</button>
                 </div>
               </div>
             )}
@@ -7206,10 +7191,10 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                   {[...char.inventory].sort((a, b) => b.ilvl - a.ilvl || itemScore(b, char.cls) - itemScore(a, char.cls)).map((it) => (
                     <ItemCard key={it.id} item={it} cls={char.cls} compare={itemScore(char.equipment[it.slotId], char.cls)}
                       onClick={() => showItem(it, [
-                        { label: "Equip", color: cls?.color || "var(--verdigris)", onClick: () => equipItem(it) },
-                        { label: "Compare", color: "#69CCF0", keepOpen: false, onClick: () => setCompareItem(it) },
+                        { label: "Equip", onClick: () => equipItem(it) },
+                        { label: "Compare", keepOpen: false, onClick: () => setCompareItem(it) },
                         { label: it.locked ? "🔓 Unlock" : "🔒 Lock", color: "#8fd0e0", onClick: () => toggleLock(it) },
-                        ...(it.locked ? [] : [{ label: "Sell", color: "#d4a017", onClick: () => sellItem(it) }]),
+                        ...(it.locked ? [] : [{ label: "Sell", tone: "warn", onClick: () => sellItem(it) }]),
                       ])}>
                       <MiniBtn onClick={() => equipItem(it)} tone="gain">Wear</MiniBtn>
                       {canOffhandWeapon(it) && <MiniBtn onClick={() => equipItem(it, "offhand")}>Off-hand</MiniBtn>}
@@ -8338,9 +8323,9 @@ function GameScreen({ character: initChar, onSave, onBack }) {
               sub: `Everything in ${STAT_LABEL[k]}, and a focused piece at ilvl ${BM_PIECE_ILVL} also earns ${k === "int" ? "Spell" : "Attack"} Power.` })),
           ];
           return (
-            <div onClick={() => setBmPick(null)} style={{ position: "fixed", inset: 0, zIndex: 400, background: "var(--sunk)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-              <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--raised)", border: "2px solid var(--bole)", borderRadius: 16, padding: 18, width: "100%", maxWidth: 360, boxShadow: "var(--lift)" }}>
-                <div style={{ color: "var(--bole)", fontFamily: "Georgia, serif", fontSize: 16, fontWeight: 700, marginBottom: 3 }}><EmojiIcon emoji={bmPick.icon} /> {bmPick.name}</div>
+            <div onClick={() => setBmPick(null)} className="veil">
+              <div onClick={(e) => e.stopPropagation()} className="sheet is-warn">
+                <div className="sheet-title"><EmojiIcon emoji={bmPick.icon} /> {bmPick.name}</div>
                 <div style={{ color: "var(--ink-soft)", fontSize: 11, lineHeight: 1.5, marginBottom: 12 }}>
                   Choose its main stat. This is permanent — a set piece is fixed at item level {BM_PIECE_ILVL} and never re-forges.
                 </div>
@@ -8352,7 +8337,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                     <span style={{ color: "var(--ink-soft)", fontSize: 10.5, lineHeight: 1.45 }}>{o.sub}</span>
                   </button>
                 ))}
-                <button onClick={() => setBmPick(null)} style={{ width: "100%", background: "none", border: "1px solid var(--hairline)", borderRadius: 10, color: "var(--ink-soft)", fontSize: 12, padding: "9px 0", cursor: "pointer" }}>
+                <button onClick={() => setBmPick(null)} className="go is-quiet">
                   Cancel — keep my {bmPick.cost} tokens
                 </button>
               </div>
@@ -8707,7 +8692,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                   {[...char.inventory].sort((a, b) => b.ilvl - a.ilvl || itemScore(b, char.cls) - itemScore(a, char.cls)).map((it) => (
                     <ItemCard key={it.id} item={it} cls={char.cls} compare={itemScore(char.equipment[it.slotId], char.cls)}
                       onClick={() => showItem(it, [
-                        { label: "Compare", color: "#69CCF0", onClick: () => setCompareItem(it) },
+                        { label: "Compare", onClick: () => setCompareItem(it) },
                         { label: it.locked ? "🔓 Unlock" : "🔒 Lock", color: "#8fd0e0", onClick: () => toggleLock(it) },
                         ...(it.locked ? [] : [{ label: `Sell ${sellPrice(it)}g`, color: "var(--gilt)", onClick: () => sellItem(it) }]),
                       ])}>
@@ -9106,7 +9091,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                   <div key={L.id}>
                     <ItemCard item={L.item} cls={char.cls} compare={itemScore(char.equipment[L.item.slotId], char.cls)}
                       onClick={() => showItem(L.item, [
-                        { label: "Compare", color: "#69CCF0", onClick: () => setCompareItem(L.item) },
+                        { label: "Compare", onClick: () => setCompareItem(L.item) },
                         { label: `Buy ${L.price}g`, color: char.gold >= L.price ? "var(--gilt)" : "var(--ink-faint)", onClick: () => buyAh(L) },
                       ])}>
                       <MiniBtn onClick={() => buyAh(L)} color={char.gold >= L.price ? "#FFD700" : "#666"} bg={char.gold >= L.price ? "#1a1830" : "#15131f"}>Buy {L.price}g</MiniBtn>
@@ -9464,7 +9449,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                       onClick={() => showItem(it, [
                         { label: it.locked ? "🔓 Unlock" : "🔒 Lock", color: "#8fd0e0", onClick: () => toggleLock(it) },
                         ...(it.locked ? [] : [{ label: `♻️ Salvage · ${cost}g → ${dust}✨`, color: "#c08bff", onClick: () => salvageItem(it) }]),
-                        { label: "Compare", color: "#69CCF0", onClick: () => setCompareItem(it) },
+                        { label: "Compare", onClick: () => setCompareItem(it) },
                       ])}>
                       <MiniBtn onClick={() => toggleLock(it)} color={it.locked ? "#8fd0e0" : "#667"}>{it.locked ? "🔒" : "🔓"}</MiniBtn>
                       {!it.locked && <MiniBtn onClick={() => salvageItem(it)} color={afford ? "#c08bff" : "#777"} bg="#1a1330"><Icon name="spark" /> {dust}✨ · {cost}g</MiniBtn>}
@@ -9836,31 +9821,29 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       </div>
 
       {char && tab === "town" && (char.level || 1) >= 10 && !char.talentTutorialDone && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.82)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 260, padding: 18 }}>
-          <div style={{ background: "var(--raised)", border: "2px solid var(--bole)", borderRadius: 16, padding: "20px 18px", maxWidth: 400, width: "100%", boxShadow: "var(--lift)" }}>
-            <div style={{ textAlign: "center", fontSize: 34, marginBottom: 2 }}>🌟</div>
-            <div style={{ color: "var(--gilt)", fontFamily: "Georgia, serif", fontSize: 18, fontWeight: 700, textAlign: "center", marginBottom: 8 }}>Your Talents Awaken!</div>
-            <div style={{ color: "var(--ink-soft)", fontSize: 12, lineHeight: 1.55, marginBottom: 14, textAlign: "center" }}>Reaching level 10 unlocks <b style={{ color: "var(--ink)" }}>Talents</b> — one choice per tier that reshapes how your class plays. New rows open at 20, 30, 40 and 50. At level 10 you also choose a <b style={{ color: "var(--ink)" }}>Specialization</b> in the Class Hall, which grants signature skills. You can change any talent later for {TALENT_RESPEC_COST}g under the Hero's Statue.<br /><br /><b style={{ color: "var(--ink)" }}>Choose your first talent to continue:</b></div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {TALENT_TIERS[0].options.map((o) => (
-                <button key={o.id} onClick={() => completeTalentTutorial(o.id)} style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--sunk)", border: "1.5px solid var(--rule)", borderRadius: 10, padding: "10px 12px", cursor: "pointer", textAlign: "left" }}>
-                  <span style={{ fontSize: 22 }}><EmojiIcon emoji={o.icon} /></span>
-                  <span style={{ flex: 1 }}>
-                    <span style={{ display: "block", color: "var(--gilt)", fontSize: 12.5, fontWeight: 700 }}>{o.name}</span>
-                    <span style={{ display: "block", color: "var(--ink-soft)", fontSize: 10.5 }}>{o.desc}</span>
-                  </span>
-                </button>
-              ))}
-            </div>
-            <div style={{ color: "var(--ink-faint)", fontSize: 9.5, textAlign: "center", marginTop: 10 }}>Crowd Control · Level 10 tier</div>
+        <div className="veil">
+          <div className="sheet is-warn is-wide">
+            <div className="sheet-mark"><EmojiIcon emoji="🌟" size={22} /></div>
+            <div className="sheet-title">Your Talents Awaken!</div>
+            <div className="sheet-lede">Reaching level 10 unlocks <b style={{ color: "var(--ink)" }}>Talents</b> — one choice per tier that reshapes how your class plays. New rows open at 20, 30, 40 and 50. At level 10 you also choose a <b style={{ color: "var(--ink)" }}>Specialization</b> in the Class Hall, which grants signature skills. You can change any talent later for {TALENT_RESPEC_COST}g under the Hero's Statue.<br /><br /><b style={{ color: "var(--ink)" }}>Choose your first talent to continue:</b></div>
+            {TALENT_TIERS[0].options.map((o) => (
+              <button key={o.id} onClick={() => completeTalentTutorial(o.id)} className="choice">
+                <span className="choice-head">
+                  <span className="mark"><EmojiIcon emoji={o.icon} size={20} /></span>
+                  <span className="choice-name">{o.name}</span>
+                </span>
+                <span className="choice-body">{o.desc}</span>
+              </button>
+            ))}
+            <div className="sheet-note">Crowd Control · Level 10 tier</div>
           </div>
         </div>
       )}
 
       {gachaResults && (
-        <div onClick={() => setGachaResults(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.82)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 240, padding: 18 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--raised)", border: "2px solid var(--rar-epic)", borderRadius: 16, padding: "18px 16px", maxWidth: 380, width: "100%", maxHeight: "80vh", overflowY: "auto", boxShadow: "var(--lift)" }}>
-            <div style={{ textAlign: "center", color: "var(--rar-epic)", fontFamily: "Georgia, serif", fontSize: 17, fontWeight: 700, marginBottom: 10 }}><Icon name="arena" /> {gachaResults.length} Gambit{gachaResults.length > 1 ? "s" : ""}!</div>
+        <div onClick={() => setGachaResults(null)} className="veil">
+          <div onClick={(e) => e.stopPropagation()} className="sheet is-prize is-wide">
+            <div className="sheet-title"><Icon name="arena" /> {gachaResults.length} Gambit{gachaResults.length > 1 ? "s" : ""}!</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 12 }}>
               {gachaResults.map((r, i) => { const x = gambitById(r.id); if (!x) return null; const col = rarityById(x.rarity).color; return (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--sunk)", border: `1px solid ${col}55`, borderLeft: `3px solid ${col}`, borderRadius: 8, padding: "7px 10px" }}>
@@ -9874,7 +9857,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                 </div>
               ); })}
             </div>
-            <button onClick={() => setGachaResults(null)} style={{ width: "100%", background: "var(--raised)", border: "1.5px solid var(--rar-epic)", borderRadius: 10, color: "var(--rar-epic)", fontSize: 13, fontWeight: 700, padding: 11, cursor: "pointer" }}>Continue</button>
+            <button onClick={() => setGachaResults(null)} className="go is-quiet">Continue</button>
           </div>
         </div>
       )}
@@ -9885,16 +9868,16 @@ function GameScreen({ character: initChar, onSave, onBack }) {
         const kind = (it.stats.sp || 0) > 0 ? "Spell" : "Attack";
         const amt = (it.stats.sp || 0) > 0 ? it.stats.sp : it.stats.ap;
         return (
-          <div onClick={() => setEnchantConfirm(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.78)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 240, padding: 20 }}>
-            <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--raised)", border: "2px solid var(--bole)", borderRadius: 16, padding: "22px 20px", maxWidth: 360, width: "100%" }}>
-              <div style={{ textAlign: "center", fontSize: 38, marginBottom: 4 }}>⚠️</div>
-              <div style={{ color: "var(--gilt)", fontFamily: "Georgia, serif", fontSize: 17, fontWeight: 700, textAlign: "center", marginBottom: 10 }}>Trade away {kind} Power?</div>
-              <div style={{ color: "var(--ink-soft)", fontSize: 12.5, lineHeight: 1.55, marginBottom: 14, textAlign: "center" }}>
+          <div onClick={() => setEnchantConfirm(null)} className="veil">
+            <div onClick={(e) => e.stopPropagation()} className="sheet is-warn">
+              <div className="sheet-mark"><EmojiIcon emoji="⚠️" size={22} /></div>
+              <div className="sheet-title">Trade away {kind} Power?</div>
+              <div className="sheet-lede">
                 <b style={{ color: "var(--ink)" }}>{it.name}</b> is focused, so it grants <b style={{ color: "var(--gilt)" }}>+{amt} {kind} Power</b>. Adding <b style={{ color: "var(--ink)" }}>+{d.amount} {STAT_LABEL[d.stat]}</b> gives it a second main stat, which puts that Power <b style={{ color: "var(--bole)" }}>dormant</b> until the enchant is replaced.
               </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={() => setEnchantConfirm(null)} style={{ flex: 1, background: "var(--raised)", border: "1px solid var(--ink-faint)", borderRadius: 10, color: "var(--ink-soft)", fontSize: 13, fontWeight: 700, padding: 11, cursor: "pointer" }}>Keep the Power</button>
-                <button onClick={() => { const q = enchantConfirm; setEnchantConfirm(null); enchantGear(q.slotId, q.dustKind, true); }} style={{ flex: 1, background: "var(--raised)", border: "1.5px solid var(--bole)", borderRadius: 10, color: "var(--gilt)", fontSize: 13, fontWeight: 700, padding: 11, cursor: "pointer" }}>Enchant anyway</button>
+              <div className="sheet-acts">
+                <button onClick={() => setEnchantConfirm(null)} className="go is-quiet">Keep the Power</button>
+                <button onClick={() => { const q = enchantConfirm; setEnchantConfirm(null); enchantGear(q.slotId, q.dustKind, true); }} className="go">Enchant anyway</button>
               </div>
             </div>
           </div>
@@ -9907,16 +9890,16 @@ function GameScreen({ character: initChar, onSave, onBack }) {
         const kind = (it.stats.sp || 0) > 0 ? "Spell" : "Attack";
         const amt = (it.stats.sp || 0) > 0 ? it.stats.sp : it.stats.ap;
         return (
-          <div onClick={() => setSocketConfirm(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.78)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 240, padding: 20 }}>
-            <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--raised)", border: "2px solid var(--bole)", borderRadius: 16, padding: "22px 20px", maxWidth: 360, width: "100%" }}>
-              <div style={{ textAlign: "center", fontSize: 38, marginBottom: 4 }}>⚠️</div>
-              <div style={{ color: "var(--gilt)", fontFamily: "Georgia, serif", fontSize: 17, fontWeight: 700, textAlign: "center", marginBottom: 10 }}>Trade away {kind} Power?</div>
-              <div style={{ color: "var(--ink-soft)", fontSize: 12.5, lineHeight: 1.55, marginBottom: 14, textAlign: "center" }}>
+          <div onClick={() => setSocketConfirm(null)} className="veil is-over">
+            <div onClick={(e) => e.stopPropagation()} className="sheet is-warn">
+              <div className="sheet-mark"><EmojiIcon emoji="⚠️" size={22} /></div>
+              <div className="sheet-title">Trade away {kind} Power?</div>
+              <div className="sheet-lede">
                 <b style={{ color: "var(--ink)" }}>{it.name}</b> grants <b style={{ color: "var(--gilt)" }}>+{amt} {kind} Power</b> because it carries one main stat. Bonding <b style={{ color: "var(--ink)" }}>{d.gem.icon} {d.gem.name}</b> adds {STAT_LABEL[d.stat]}, putting that Power <b style={{ color: "var(--bole)" }}>dormant</b>. Socketing is <b style={{ color: "var(--rubric)" }}>permanent</b>.
               </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={() => setSocketConfirm(null)} style={{ flex: 1, background: "var(--raised)", border: "1px solid var(--ink-faint)", borderRadius: 10, color: "var(--ink-soft)", fontSize: 13, fontWeight: 700, padding: 11, cursor: "pointer" }}>Keep the Power</button>
-                <button onClick={() => { const q = socketConfirm; setSocketConfirm(null); socketGem(q.item, q.idx, q.gemId, true); }} style={{ flex: 1, background: "var(--raised)", border: "1.5px solid var(--bole)", borderRadius: 10, color: "var(--gilt)", fontSize: 13, fontWeight: 700, padding: 11, cursor: "pointer" }}>Socket anyway</button>
+              <div className="sheet-acts">
+                <button onClick={() => setSocketConfirm(null)} className="go is-quiet">Keep the Power</button>
+                <button onClick={() => { const q = socketConfirm; setSocketConfirm(null); socketGem(q.item, q.idx, q.gemId, true); }} className="go">Socket anyway</button>
               </div>
             </div>
           </div>
@@ -9927,16 +9910,16 @@ function GameScreen({ character: initChar, onSave, onBack }) {
         const d = resetPrompt;
         const tix = char.tickets?.dungeonReset || 0;
         return (
-          <div onClick={() => setResetPrompt(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.78)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 220, padding: 20 }}>
-            <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--raised)", border: "2px solid var(--verdigris)", borderRadius: 16, padding: "22px 20px", maxWidth: 360, width: "100%", boxShadow: "var(--lift)" }}>
-              <div style={{ textAlign: "center", fontSize: 38, marginBottom: 4 }}>🎟️</div>
-              <div style={{ color: "var(--verdigris)", fontFamily: "Georgia, serif", fontSize: 17, fontWeight: 700, textAlign: "center", marginBottom: 10 }}>Use a Dungeon Reset Ticket?</div>
-              <div style={{ color: "var(--ink-soft)", fontSize: 12.5, lineHeight: 1.55, marginBottom: 14, textAlign: "center" }}>You're out of runs for <b style={{ color: "var(--ink)" }}><EmojiIcon emoji={d.icon} /> {d.name}</b>. Spend one Dungeon Reset Ticket to run it once more now, without waiting for the timer.</div>
+          <div onClick={() => setResetPrompt(null)} className="veil">
+            <div onClick={(e) => e.stopPropagation()} className="sheet is-gain">
+              <div className="sheet-mark"><EmojiIcon emoji="🎟️" size={22} /></div>
+              <div className="sheet-title">Use a Dungeon Reset Ticket?</div>
+              <div className="sheet-lede">You're out of runs for <b style={{ color: "var(--ink)" }}><EmojiIcon emoji={d.icon} /> {d.name}</b>. Spend one Dungeon Reset Ticket to run it once more now, without waiting for the timer.</div>
               <div style={{ background: "var(--raised)", border: "1px solid var(--verdigris)", borderRadius: 10, padding: "8px 12px", marginBottom: 14, textAlign: "center", color: tix > 0 ? "var(--ink-soft)" : "var(--rubric)", fontSize: 12 }}><Icon name="ticket" /> Tickets held: <b style={{ color: "var(--ink)" }}>{tix}</b></div>
               {tix > 0 ? (
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button onClick={() => setResetPrompt(null)} style={{ flex: 1, background: "var(--raised)", border: "1px solid var(--rule)", borderRadius: 10, color: "var(--ink-soft)", fontSize: 13, fontWeight: 700, padding: 11, cursor: "pointer" }}>Cancel</button>
-                  <button onClick={() => { const dn = resetPrompt; setResetPrompt(null); startDungeon(dn, true); }} style={{ flex: 1, background: "var(--raised)", border: "1.5px solid var(--verdigris)", borderRadius: 10, color: "var(--ink-soft)", fontSize: 13, fontWeight: 700, padding: 11, cursor: "pointer" }}>Use Ticket & Run</button>
+                <div className="sheet-acts">
+                  <button onClick={() => setResetPrompt(null)} className="go is-quiet">Cancel</button>
+                  <button onClick={() => { const dn = resetPrompt; setResetPrompt(null); startDungeon(dn, true); }} className="go">Use Ticket &amp; Run</button>
                 </div>
               ) : (
                 <div style={{ display: "flex", gap: 8 }}>
@@ -9950,30 +9933,46 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       })()}
 
       {showSettings && (
-        <div onClick={() => setShowSettings(false)} style={{ position: "fixed", inset: 0, background: "var(--sunk)", zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--raised)", border: "2px solid var(--verdigris)", borderRadius: 16, padding: 20, maxWidth: 360, width: "100%" }}>
-            <h3 style={{ color: "var(--gilt)", fontFamily: "Georgia, serif", textAlign: "center", margin: "0 0 14px" }}><Icon name="gear" /> Settings</h3>
-            {[["autoEquip", "Auto-equip upgrades", "Automatically equip dropped upgrades"], ["autoSellDowngrades", "Auto-sell downgrades", "Vendor loot that isn't an upgrade"]].map(([key, label, desc]) => (
-              <div key={key} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderBottom: "1px solid var(--verdigris)" }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ color: "var(--ink)", fontSize: 13, fontWeight: 600 }}>{label}</div>
-                  <div style={{ color: "var(--ink-soft)", fontSize: 10.5 }}>{desc}</div>
+        <div onClick={() => setShowSettings(false)} className="veil">
+          <div onClick={(e) => e.stopPropagation()} className="sheet is-gain">
+            <h3 className="sheet-title"><Icon name="gear" size={15} /> Settings</h3>
+            <div className="ledger">
+              {[["autoEquip", "Auto-equip upgrades", "Automatically equip dropped upgrades"], ["autoSellDowngrades", "Auto-sell downgrades", "Vendor loot that isn't an upgrade"]].map(([key, label, desc]) => (
+                <div key={key} className="ledger-row">
+                  <div className="ledger-line">
+                    <span className="ledger-label">{label}</span>
+                    <span className="ledger-val">
+                      <button onClick={() => commitChar({ ...charRef.current, [key]: !charRef.current[key] })}
+                        aria-pressed={!!char[key]} className={`mini${char[key] ? " is-gain" : ""}`}>{char[key] ? "On" : "Off"}</button>
+                    </span>
+                  </div>
+                  <div className="ledger-note">{desc}</div>
                 </div>
-                <button onClick={() => commitChar({ ...charRef.current, [key]: !charRef.current[key] })} style={{ background: char[key] ? "var(--verdigris)" : "var(--rar-epic)", border: `1.5px solid ${char[key] ? "var(--verdigris)" : "var(--gilt)"}`, borderRadius: 8, color: char[key] ? "var(--verdigris)" : "var(--ink-soft)", fontSize: 12, fontWeight: 700, padding: "6px 12px", cursor: "pointer", minWidth: 52 }}>{char[key] ? "On" : "Off"}</button>
-              </div>
-            ))}
-            {/* Promo codes */}
-            <div style={{ padding: "12px 0 4px" }}>
-              <div style={{ color: "var(--gilt)", fontWeight: 700, fontSize: 13, marginBottom: 2 }}><Icon name="ticket" /> Promo Codes</div>
-              <div style={{ color: "var(--ink-soft)", fontSize: 10.5, marginBottom: 9 }}>Redeem codes for items and experience.</div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <input value={promo} onChange={(e) => setPromo(e.target.value)} placeholder="Enter code..." onKeyDown={(e) => { if (e.key === "Enter") redeemPromo(); }}
-                  style={{ flex: 1, background: "var(--sunk)", border: "1px solid var(--ink-faint)", borderRadius: 6, color: "var(--ink)", padding: "9px 12px", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
-                <button onClick={redeemPromo} style={{ background: "var(--raised)", border: "2px solid var(--bole)", borderRadius: 6, color: "var(--gilt)", fontWeight: 700, fontSize: 13, padding: "0 16px", cursor: "pointer" }}>Redeem</button>
-              </div>
+              ))}
             </div>
-            <button onClick={() => { setShowSettings(false); onBack(); }} style={{ width: "100%", marginTop: 16, background: "var(--raised)", border: "1px solid var(--ink-faint)", borderRadius: 10, color: "var(--verdigris)", padding: 12, cursor: "pointer", fontSize: 13, fontWeight: 600 }}>💾 Save &amp; Character Select</button>
-            <button onClick={() => setShowSettings(false)} style={{ width: "100%", marginTop: 8, background: "none", border: "none", color: "var(--ink-faint)", padding: 8, cursor: "pointer", fontSize: 12 }}>Close</button>
+
+            {/* How the page is lit. Stored per device, not on the character — which
+                way round the light is has nothing to do with who you are playing. */}
+            <div className="eyebrow">
+              <span>The light</span>
+              <span className="toggles">
+                {[["auto", "System"], ["day", "Day"], ["night", "Night"]].map(([id, lbl]) => (
+                  <button key={id} onClick={() => { setChronicleTheme(id); saveTheme(id); }}
+                    className={`toggle${chronicleTheme === id ? " is-on" : ""}`}>{lbl}</button>
+                ))}
+              </span>
+            </div>
+
+            <div className="eyebrow"><span><Icon name="ticket" size={11} /> Promo codes</span></div>
+            <div className="ledger-note" style={{ marginBottom: 6 }}>Redeem codes for items and experience.</div>
+            <div className="fields" style={{ alignItems: "flex-end" }}>
+              <input value={promo} onChange={(e) => setPromo(e.target.value)} placeholder="Enter code"
+                onKeyDown={(e) => { if (e.key === "Enter") redeemPromo(); }} className="field" />
+              <button onClick={redeemPromo} className="mini" style={{ flex: "none" }}>Redeem</button>
+            </div>
+
+            <button onClick={() => { setShowSettings(false); onBack(); }} className="go is-quiet">Save &amp; Character Select</button>
+            <button onClick={() => setShowSettings(false)} className="link" style={{ display: "block", margin: "10px auto 0" }}>Close</button>
           </div>
         </div>
       )}
@@ -10230,16 +10229,16 @@ function LootBidModal({ items, party, char, commitChar, showNotif, onClose, net,
   };
   const rc = (r) => rarityById(r) || { color: "var(--ink-faint)", name: "" };
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(4,3,10,0.86)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 560, padding: 18 }}>
-      <div style={{ background: "var(--raised)", border: "2px solid var(--rar-epic)", borderRadius: 16, padding: "20px 18px", maxWidth: 380, width: "100%", boxShadow: "var(--lift)", textAlign: "center" }}>
+    <div className="veil is-over">
+      <div className="sheet is-prize is-wide" style={{ textAlign: "center" }}>
         {done || !item ? (
           <>
-            <div style={{ fontSize: 30, marginBottom: 8 }}>🏆</div>
+            <div className="sheet-mark"><EmojiIcon emoji="🏆" size={22} /></div>
             <div style={{ color: "var(--ink)", fontSize: 14, fontWeight: 700, marginBottom: 14 }}>Loot distributed — run complete!</div>
             <button onClick={onClose} style={{ ...btnPrimary, margin: 0 }}>Continue</button>
           </>
         ) : (<>
-          <div style={{ color: "var(--gilt)", fontFamily: "Georgia, serif", fontSize: 15, fontWeight: 700, marginBottom: 8 }}>Boss Loot · Bid Gold {queue.length > 1 ? `(${idx + 1}/${queue.length})` : ""}</div>
+          <div className="sheet-title">Boss Loot · Bid Gold {queue.length > 1 ? `(${idx + 1}/${queue.length})` : ""}</div>
           <div style={{ background: "var(--sunk)", border: `2px solid ${rc(item.rarity).color}`, borderRadius: 12, padding: 12, marginBottom: 10, textAlign: "left" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
               <span style={{ fontSize: 26 }}>{item.icon || "🎁"}</span>
@@ -10692,10 +10691,10 @@ function GroupCombat({ char, commitChar, onExit, bossId, bossDef, ilvl, party, o
         <div>{enc.log.slice(-8).map((l, i) => <div key={i}>{l}</div>)}</div>
       </div>
       {(enc.cleared || enc.wiped) && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(4,3,10,0.86)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 500, padding: 20 }}>
-          <div style={{ background: "var(--raised)", border: `2px solid ${enc.cleared ? "var(--verdigris)" : "var(--rubric)"}`, borderRadius: 16, padding: "22px 20px", textAlign: "center", maxWidth: 340 }}>
-            <div style={{ fontSize: 34, marginBottom: 8 }}>{enc.cleared ? "🏆" : "💀"}</div>
-            <div style={{ color: enc.cleared ? "var(--verdigris)" : "var(--rubric)", fontSize: 17, fontFamily: "Georgia, serif", fontWeight: 700, marginBottom: 6 }}>{enc.cleared ? "Encounter Cleared!" : "Party Wiped"}</div>
+        <div className="veil">
+          <div className={`sheet ${enc.cleared ? "is-gain" : "is-warn"}`} style={{ textAlign: "center" }}>
+            <div className="sheet-mark">{enc.cleared ? <EmojiIcon emoji="🏆" size={22} /> : <EmojiIcon emoji="💀" size={22} />}</div>
+            <div className="sheet-title">{enc.cleared ? "Encounter Cleared!" : "Party Wiped"}</div>
             <div style={{ color: "var(--ink-soft)", fontSize: 12, marginBottom: 14 }}>{enc.cleared ? `Cleared in ${(enc.elapsed / 1000).toFixed(0)}s · +${400 + (char.level || 60) * 25} gold` : "Regroup and try again — mind the interrupts and keep the party healed."}</div>
             <button onClick={onExit} style={{ ...btnPrimary, margin: 0 }}>{enc.cleared ? "Continue" : "Leave"}</button>
           </div>
@@ -11410,10 +11409,10 @@ export default function App() {
   };
 
   const cloudOverlay = showCloud ? (
-    <div onClick={() => setShowCloud(false)} style={{ position: "fixed", inset: 0, background: "rgba(4,3,10,0.86)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 400, padding: 18 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--raised)", border: "2px solid var(--verdigris)", borderRadius: 16, padding: "20px 18px", maxWidth: 380, width: "100%", boxShadow: "var(--lift)" }}>
-        <div style={{ textAlign: "center", fontSize: 32, marginBottom: 2 }}>☁️</div>
-        <div style={{ color: "var(--rar-epic)", fontFamily: "Georgia, serif", fontSize: 17, fontWeight: 700, textAlign: "center", marginBottom: 10 }}>{linked ? "Cloud Save" : "Sync Across Devices"}</div>
+    <div onClick={() => setShowCloud(false)} className="veil">
+      <div onClick={(e) => e.stopPropagation()} className="sheet is-gain is-wide">
+        <div className="sheet-mark"><EmojiIcon emoji="☁️" size={22} /></div>
+        <div className="sheet-title">{linked ? "Cloud Save" : "Sync Across Devices"}</div>
         {linked ? (
           <>
             <div style={{ color: "var(--verdigris)", fontSize: 12, lineHeight: 1.6, marginBottom: 12 }}>Signed in as <b style={{ color: "var(--ink)" }}>{session.user?.email || "your account"}</b>. Your {saves.length} character{saves.length === 1 ? "" : "s"} sync automatically across your devices.</div>
@@ -11455,10 +11454,10 @@ export default function App() {
   const conflictModal = pendingCloud ? (() => {
     const when = pendingCloud.cloudMs ? new Date(pendingCloud.cloudMs).toLocaleString() : "recently";
     return (
-      <div style={{ position: "fixed", inset: 0, background: "rgba(4,3,10,0.88)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 420, padding: 18 }}>
-        <div style={{ background: "var(--raised)", border: "2px solid var(--rar-epic)", borderRadius: 16, padding: "20px 18px", maxWidth: 400, width: "100%", boxShadow: "var(--lift)" }}>
-          <div style={{ textAlign: "center", fontSize: 30, marginBottom: 4 }}>⚠️</div>
-          <div style={{ color: "var(--ink)", fontFamily: "Georgia, serif", fontSize: 16, fontWeight: 700, textAlign: "center", marginBottom: 8 }}>Two versions of your save</div>
+      <div className="veil">
+        <div className="sheet is-prize is-wide">
+          <div className="sheet-mark"><EmojiIcon emoji="⚠️" size={22} /></div>
+          <div className="sheet-title">Two versions of your save</div>
           <div style={{ color: "var(--verdigris)", fontSize: 11.5, lineHeight: 1.55, marginBottom: 12 }}>This device and the cloud have both changed since they last synced. Choose which to keep — the other is replaced.</div>
           <div style={{ background: "var(--raised)", border: "1px solid var(--verdigris)", borderRadius: 10, padding: "9px 11px", marginBottom: 8 }}>
             <div style={{ color: "var(--verdigris)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>☁️ Cloud · saved {when}</div>

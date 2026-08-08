@@ -5,3 +5,6 @@ dist
 .env
 .netlify
 design/dist/
+
+# scratch browser probes — verification scripts, never part of the app
+/.*.mjs

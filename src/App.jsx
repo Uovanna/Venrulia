@@ -3181,94 +3181,94 @@ const TOWN_SPOTS = [
   { dest: "guild",     name: "The Guild",      x: 74,  y: 546, type: "guild",     ldy: 40 },
   { dest: "arena",     name: "Arena",          x: 286, y: 546, type: "colosseum", ldy: 44 },
 ];
-const INK = "#5c4326";
-function House({ roof = "#c06a3a", wall = "#e8d6ac" }) {
+const INK = "var(--ink)";
+function House({ roof = "var(--bole)", wall = "var(--raised)" }) {
   return (<>
     <rect x={-24} y={-6} width={48} height={30} rx={1.5} fill={wall} stroke={INK} strokeWidth={2} />
     <path d="M-29,-6 L0,-27 L29,-6 Z" fill={roof} stroke={INK} strokeWidth={2} strokeLinejoin="round" />
-    <rect x={-6} y={8} width={12} height={16} rx={1} fill="#6f4d2a" stroke="#4a3620" strokeWidth={1.4} />
-    <rect x={-19} y={1} width={8} height={8} fill="#bcd2e0" stroke="#4a3620" strokeWidth={1.1} />
-    <rect x={11} y={1} width={8} height={8} fill="#bcd2e0" stroke="#4a3620" strokeWidth={1.1} />
+    <rect x={-6} y={8} width={12} height={16} rx={1} fill="var(--bole)" stroke="var(--ink)" strokeWidth={1.4} />
+    <rect x={-19} y={1} width={8} height={8} fill="var(--sunk)" stroke="var(--ink)" strokeWidth={1.1} />
+    <rect x={11} y={1} width={8} height={8} fill="var(--sunk)" stroke="var(--ink)" strokeWidth={1.1} />
   </>);
 }
 function BuildingArt({ type }) {
   switch (type) {
     case "gate": return (<>
-      <rect x={-38} y={-28} width={16} height={42} fill="#d8c69a" stroke={INK} strokeWidth={2} />
-      <rect x={22} y={-28} width={16} height={42} fill="#d8c69a" stroke={INK} strokeWidth={2} />
-      <rect x={-38} y={-34} width={76} height={9} fill="#cdb98a" stroke={INK} strokeWidth={2} />
-      <path d="M-20,14 L-20,-10 Q-20,-22 0,-22 Q20,-22 20,-10 L20,14 Z" fill="#3a2f22" stroke={INK} strokeWidth={1.8} />
-      {[-38, -25, 17, 30].map((bx, i) => <rect key={i} x={bx} y={-40} width={8} height={7} fill="#d8c69a" stroke={INK} strokeWidth={1.3} />)}
+      <rect x={-38} y={-28} width={16} height={42} fill="var(--raised)" stroke={INK} strokeWidth={2} />
+      <rect x={22} y={-28} width={16} height={42} fill="var(--raised)" stroke={INK} strokeWidth={2} />
+      <rect x={-38} y={-34} width={76} height={9} fill="var(--sunk)" stroke={INK} strokeWidth={2} />
+      <path d="M-20,14 L-20,-10 Q-20,-22 0,-22 Q20,-22 20,-10 L20,14 Z" fill="var(--sunk)" stroke={INK} strokeWidth={1.8} />
+      {[-38, -25, 17, 30].map((bx, i) => <rect key={i} x={bx} y={-40} width={8} height={7} fill="var(--raised)" stroke={INK} strokeWidth={1.3} />)}
       <path d="M0,-40 L0,-52" stroke={INK} strokeWidth={1.6} />
-      <path d="M0,-52 L13,-48 L0,-44 Z" fill="#b0432f" stroke={INK} strokeWidth={0.8} />
+      <path d="M0,-52 L13,-48 L0,-44 Z" fill="var(--rubric)" stroke={INK} strokeWidth={0.8} />
     </>);
     case "bank": return (<>
-      <House roof="#7f93a8" />
-      <circle cx={0} cy={-13} r={5.5} fill="#e6bf49" stroke={INK} strokeWidth={1.3} />
+      <House roof="var(--ink-soft)" />
+      <circle cx={0} cy={-13} r={5.5} fill="var(--gilt)" stroke={INK} strokeWidth={1.3} />
       <circle cx={0} cy={-13} r={2.4} fill="none" stroke={INK} strokeWidth={0.9} />
     </>);
     case "market": return (<>
-      <rect x={-26} y={6} width={52} height={18} fill="#cdb98a" stroke={INK} strokeWidth={2} />
-      <rect x={-26} y={-20} width={4} height={28} fill="#6f4d2a" />
-      <rect x={22} y={-20} width={4} height={28} fill="#6f4d2a" />
-      <path d="M-30,-20 L30,-20 L26,-7 L-26,-7 Z" fill="#e8d6ac" stroke={INK} strokeWidth={2} />
-      {[-26, -10, 6, 22].map((sx, i) => <path key={i} d={`M${sx},-20 L${sx - 2},-7 L${sx + 6},-7 L${sx + 8},-20 Z`} fill="#b0432f" />)}
-      <rect x={-17} y={12} width={11} height={11} fill="#8a5a2e" stroke={INK} strokeWidth={1} />
-      <rect x={6} y={12} width={11} height={11} fill="#8a5a2e" stroke={INK} strokeWidth={1} />
+      <rect x={-26} y={6} width={52} height={18} fill="var(--sunk)" stroke={INK} strokeWidth={2} />
+      <rect x={-26} y={-20} width={4} height={28} fill="var(--bole)" />
+      <rect x={22} y={-20} width={4} height={28} fill="var(--bole)" />
+      <path d="M-30,-20 L30,-20 L26,-7 L-26,-7 Z" fill="var(--raised)" stroke={INK} strokeWidth={2} />
+      {[-26, -10, 6, 22].map((sx, i) => <path key={i} d={`M${sx},-20 L${sx - 2},-7 L${sx + 6},-7 L${sx + 8},-20 Z`} fill="var(--rubric)" />)}
+      <rect x={-17} y={12} width={11} height={11} fill="var(--bole)" stroke={INK} strokeWidth={1} />
+      <rect x={6} y={12} width={11} height={11} fill="var(--bole)" stroke={INK} strokeWidth={1} />
     </>);
     case "armory": return (<>
-      <House roof="#8a4a3a" />
-      <path d="M0,-19 L6,-16.5 L6,-11 Q6,-7 0,-4 Q-6,-7 -6,-11 L-6,-16.5 Z" fill="#b7c2cc" stroke={INK} strokeWidth={1.3} />
+      <House roof="var(--bole)" />
+      <path d="M0,-19 L6,-16.5 L6,-11 Q6,-7 0,-4 Q-6,-7 -6,-11 L-6,-16.5 Z" fill="var(--hairline)" stroke={INK} strokeWidth={1.3} />
       <path d="M-4,-16 L4,-8 M4,-16 L-4,-8" stroke={INK} strokeWidth={1.2} />
     </>);
     case "auction": return (<>
-      <House roof="#7a5a9a" />
+      <House roof="var(--bole)" />
       <path d="M0,-27 L0,-9" stroke={INK} strokeWidth={1.4} />
-      <path d="M0,-27 L11,-24 L8,-20 L11,-16 L0,-18 Z" fill="#c8973a" stroke={INK} strokeWidth={0.8} />
+      <path d="M0,-27 L11,-24 L8,-20 L11,-16 L0,-18 Z" fill="var(--bole)" stroke={INK} strokeWidth={0.8} />
     </>);
     case "forge": return (<>
-      <House roof="#6a6a72" />
-      <rect x={11} y={-27} width={9} height={13} fill="#8a7250" stroke={INK} strokeWidth={1.3} />
-      <circle cx={15} cy={-31} r={3} fill="#cfcfcf" opacity={0.75} />
-      <circle cx={18} cy={-37} r={4} fill="#cfcfcf" opacity={0.5} />
-      <rect x={-6} y={9} width={12} height={15} rx={1} fill="#ff8a3a" stroke={INK} strokeWidth={1.3} />
-      <path d="M-18,-9 L-8,-9 L-10,-5 L-16,-5 Z" fill="#3a3a40" stroke={INK} strokeWidth={0.7} />
+      <House roof="var(--ink-soft)" />
+      <rect x={11} y={-27} width={9} height={13} fill="var(--bole)" stroke={INK} strokeWidth={1.3} />
+      <circle cx={15} cy={-31} r={3} fill="var(--hairline)" opacity={0.75} />
+      <circle cx={18} cy={-37} r={4} fill="var(--hairline)" opacity={0.5} />
+      <rect x={-6} y={9} width={12} height={15} rx={1} fill="var(--rubric)" stroke={INK} strokeWidth={1.3} />
+      <path d="M-18,-9 L-8,-9 L-10,-5 L-16,-5 Z" fill="var(--sunk)" stroke={INK} strokeWidth={0.7} />
     </>);
     case "tavern": return (<>
-      <House roof="#a06a3a" />
-      <rect x={-19} y={1} width={8} height={8} fill="#ffcf7a" stroke="#4a3620" strokeWidth={1.1} />
-      <rect x={11} y={1} width={8} height={8} fill="#ffcf7a" stroke="#4a3620" strokeWidth={1.1} />
+      <House roof="var(--bole)" />
+      <rect x={-19} y={1} width={8} height={8} fill="var(--rubric)" stroke="var(--ink)" strokeWidth={1.1} />
+      <rect x={11} y={1} width={8} height={8} fill="var(--rubric)" stroke="var(--ink)" strokeWidth={1.1} />
       <path d="M24,-8 L32,-8 L32,2" stroke={INK} strokeWidth={1.3} fill="none" />
-      <rect x={27} y={2} width={10} height={9} rx={1} fill="#efe0b8" stroke={INK} strokeWidth={1} />
-      <rect x={29.5} y={4.5} width={4} height={4} fill="#c08a3a" />
+      <rect x={27} y={2} width={10} height={9} rx={1} fill="var(--raised)" stroke={INK} strokeWidth={1} />
+      <rect x={29.5} y={4.5} width={4} height={4} fill="var(--bole)" />
     </>);
     case "temple": return (<>
-      <rect x={-30} y={23} width={60} height={5} fill="#cdbb8e" stroke={INK} strokeWidth={1.5} />
-      <rect x={-27} y={3} width={54} height={20} fill="#e8d6ac" stroke={INK} strokeWidth={2} />
-      {[-22, -11, 0, 11, 22].map((cx, i) => <rect key={i} x={cx - 2} y={3} width={4} height={20} fill="#d3c295" stroke={INK} strokeWidth={0.9} />)}
-      <path d="M-31,3 L0,-18 L31,3 Z" fill="#d8c79c" stroke={INK} strokeWidth={2} strokeLinejoin="round" />
+      <rect x={-30} y={23} width={60} height={5} fill="var(--raised)" stroke={INK} strokeWidth={1.5} />
+      <rect x={-27} y={3} width={54} height={20} fill="var(--raised)" stroke={INK} strokeWidth={2} />
+      {[-22, -11, 0, 11, 22].map((cx, i) => <rect key={i} x={cx - 2} y={3} width={4} height={20} fill="var(--raised)" stroke={INK} strokeWidth={0.9} />)}
+      <path d="M-31,3 L0,-18 L31,3 Z" fill="var(--raised)" stroke={INK} strokeWidth={2} strokeLinejoin="round" />
     </>);
     case "statue": return (<>
-      <rect x={-20} y={17} width={40} height={9} fill="#cdbb8e" stroke={INK} strokeWidth={2} />
-      <rect x={-13} y={5} width={26} height={13} fill="#d8c79c" stroke={INK} strokeWidth={2} />
-      <path d="M-6,5 Q-9,-6 -4,-6 L4,-6 Q9,-6 6,5 Z" fill="#c3b285" stroke={INK} strokeWidth={1.5} />
-      <circle cx={0} cy={-11} r={5} fill="#c3b285" stroke={INK} strokeWidth={1.5} />
+      <rect x={-20} y={17} width={40} height={9} fill="var(--raised)" stroke={INK} strokeWidth={2} />
+      <rect x={-13} y={5} width={26} height={13} fill="var(--raised)" stroke={INK} strokeWidth={2} />
+      <path d="M-6,5 Q-9,-6 -4,-6 L4,-6 Q9,-6 6,5 Z" fill="var(--sunk)" stroke={INK} strokeWidth={1.5} />
+      <circle cx={0} cy={-11} r={5} fill="var(--sunk)" stroke={INK} strokeWidth={1.5} />
       <path d="M4,-4 L13,-20" stroke={INK} strokeWidth={2} strokeLinecap="round" />
-      <path d="M13,-20 L13,-32" stroke="#9aa2a8" strokeWidth={2.6} strokeLinecap="round" />
+      <path d="M13,-20 L13,-32" stroke="var(--ink-soft)" strokeWidth={2.6} strokeLinecap="round" />
       <path d="M9,-20 L17,-20" stroke={INK} strokeWidth={1.8} />
     </>);
     case "guild": return (<>
-      <rect x={-30} y={-20} width={60} height={40} rx={3} fill="#c9b896" stroke={INK} strokeWidth={2.4} />
-      <path d="M-30,-20 L0,-34 L30,-20 Z" fill="#a8905f" stroke={INK} strokeWidth={2} />
-      <path d="M0,-12 L10,-6 L10,8 L0,14 L-10,8 L-10,-6 Z" fill="#8a5a3a" stroke={INK} strokeWidth={1.8} />
+      <rect x={-30} y={-20} width={60} height={40} rx={3} fill="var(--raised)" stroke={INK} strokeWidth={2.4} />
+      <path d="M-30,-20 L0,-34 L30,-20 Z" fill="var(--sunk)" stroke={INK} strokeWidth={2} />
+      <path d="M0,-12 L10,-6 L10,8 L0,14 L-10,8 L-10,-6 Z" fill="var(--bole)" stroke={INK} strokeWidth={1.8} />
       <path d="M0,-12 L0,14 M-10,1 L10,1" stroke={INK} strokeWidth={1.2} />
     </>);
     case "colosseum": return (<>
-      <ellipse cx={0} cy={0} rx={46} ry={27} fill="#e3d2a6" stroke={INK} strokeWidth={2.4} />
-      <ellipse cx={0} cy={-3} rx={28} ry={14} fill="#b9a271" stroke={INK} strokeWidth={1.6} />
-      {[-32, -18, -4, 10, 24].map((ax, i) => <path key={i} d={`M${ax},15 Q${ax + 5},6 ${ax + 10},15`} fill="#3a2f22" stroke={INK} strokeWidth={1} />)}
-      <path d="M-42,-22 L-42,-36 L-30,-32 L-42,-28" fill="#b0432f" stroke={INK} strokeWidth={0.9} />
-      <path d="M42,-22 L42,-36 L30,-32 L42,-28" fill="#4a72b0" stroke={INK} strokeWidth={0.9} />
+      <ellipse cx={0} cy={0} rx={46} ry={27} fill="var(--raised)" stroke={INK} strokeWidth={2.4} />
+      <ellipse cx={0} cy={-3} rx={28} ry={14} fill="var(--sunk)" stroke={INK} strokeWidth={1.6} />
+      {[-32, -18, -4, 10, 24].map((ax, i) => <path key={i} d={`M${ax},15 Q${ax + 5},6 ${ax + 10},15`} fill="var(--sunk)" stroke={INK} strokeWidth={1} />)}
+      <path d="M-42,-22 L-42,-36 L-30,-32 L-42,-28" fill="var(--rubric)" stroke={INK} strokeWidth={0.9} />
+      <path d="M42,-22 L42,-36 L30,-32 L42,-28" fill="var(--verdigris)" stroke={INK} strokeWidth={0.9} />
     </>);
     default: return <House />;
   }
@@ -3280,20 +3280,20 @@ function TownHub({ onEnter, highlight, charLevel = 1 }) {
         <svg viewBox="0 0 360 620" style={{ width: "100%", display: "block" }} role="img" aria-label="Town map">
           <defs>
             <radialGradient id="parch" cx="50%" cy="42%" r="72%">
-              <stop offset="0%" stopColor="#f3e6c4" />
-              <stop offset="72%" stopColor="#e7d3a6" />
-              <stop offset="100%" stopColor="#d5bd8a" />
+              <stop offset="0%" stopColor="var(--raised)" />
+              <stop offset="72%" stopColor="var(--ground)" />
+              <stop offset="100%" stopColor="var(--ground)" />
             </radialGradient>
-            <style>{`.tspot{cursor:pointer} .tspot:active{opacity:.8} @keyframes townglow{0%,100%{opacity:.3}50%{opacity:.95}}`}</style>
+            <style>{`.tspot{cursor:pointer} .tspot:active{opacity:.8} @keyframes townglow{0%,100%{opacity:.35}50%{opacity:1}}`}</style>
           </defs>
           <path d="M12,10 Q8,20 14,32 L10,120 Q16,132 11,150 L14,300 Q9,320 13,360 L10,470 Q15,500 12,540 L14,600 Q30,606 60,602 L150,606 Q200,602 250,606 L320,602 Q346,606 348,588 L344,470 Q350,430 346,400 L349,220 Q345,180 348,150 L345,60 Q349,30 344,14 Q320,8 290,12 L200,8 Q140,12 90,9 Z"
-            fill="url(#parch)" stroke="#8a6a3a" strokeWidth={3} />
-          <path d="M180,90 L180,560 M74,152 L286,152 M74,262 L286,262 M74,372 L286,372" stroke="#c9b68c" strokeWidth={6} strokeLinecap="round" opacity={0.55} />
-          <path d="M180,90 L180,560 M74,152 L286,152 M74,262 L286,262 M74,372 L286,372" stroke="#b09858" strokeWidth={1.4} strokeDasharray="2 5" opacity={0.7} />
+            fill="url(#parch)" stroke="var(--rule)" strokeWidth={3} />
+          <path d="M180,90 L180,560 M74,152 L286,152 M74,262 L286,262 M74,372 L286,372" stroke="var(--hairline)" strokeWidth={6} strokeLinecap="round" opacity={0.55} />
+          <path d="M180,90 L180,560 M74,152 L286,152 M74,262 L286,262 M74,372 L286,372" stroke="var(--hairline)" strokeWidth={1.4} strokeDasharray="2 5" opacity={0.7} />
           <g transform="translate(324,42)" opacity={0.75}>
             <circle r={13} fill="none" stroke={INK} strokeWidth={1} />
-            <path d="M0,-13 L3,0 L0,13 L-3,0 Z" fill="#b0432f" stroke={INK} strokeWidth={0.6} />
-            <path d="M-13,0 L0,3 L13,0 L0,-3 Z" fill="#e8d6ac" stroke={INK} strokeWidth={0.6} />
+            <path d="M0,-13 L3,0 L0,13 L-3,0 Z" fill="var(--rubric)" stroke={INK} strokeWidth={0.6} />
+            <path d="M-13,0 L0,3 L13,0 L0,-3 Z" fill="var(--raised)" stroke={INK} strokeWidth={0.6} />
             <text x={0} y={-15} textAnchor="middle" fontSize={7} fontWeight="700" fill={INK}>N</text>
           </g>
           {TOWN_SPOTS.map((s) => {
@@ -3302,12 +3302,12 @@ function TownHub({ onEnter, highlight, charLevel = 1 }) {
             const lw = Math.max(40, s.name.length * 5.9 + 14);
             return (
               <g key={s.dest} className="tspot" onClick={() => onEnter(s.dest)} role="button" aria-label={s.name} style={{ opacity: locked ? 0.55 : 1 }}>
-                {hot && <ellipse cx={s.x} cy={s.y - 2} rx={44} ry={38} fill="#f0b42933" stroke="#f0b429" strokeWidth={2.5} style={{ animation: "townglow 1.1s ease-in-out infinite" }} />}
+                {hot && <ellipse cx={s.x} cy={s.y - 2} rx={44} ry={38} fill="none" stroke="var(--rubric)" strokeWidth={2} strokeDasharray="5 4" style={{ animation: "townglow 1.1s ease-in-out infinite" }} />}
                 <g transform={`translate(${s.x},${s.y})`}><BuildingArt type={s.type} /></g>
-                {locked && <text x={s.x} y={s.y - 2} textAnchor="middle" fontSize={18}>🔒</text>}
+                {locked && <g transform={`translate(${s.x - 8},${s.y - 10})`}><Icon name="lock" size={16} /></g>}
                 <g transform={`translate(${s.x},${s.y + s.ldy})`}>
-                  <rect x={-lw / 2} y={-9} width={lw} height={16} rx={3} fill={hot ? "#3a2a08" : "#f4e8c6"} stroke={hot ? "#f0b429" : INK} strokeWidth={1.2} />
-                  <text x={0} y={2.5} textAnchor="middle" fontSize={10} fontWeight="700" fontFamily="Georgia, serif" fill={hot ? "#ffe08a" : "#463620"}>{(hot ? "▸ " : "") + (locked ? `${s.name} · Lv${AH_ECON.unlockLevel}` : s.name)}</text>
+                  <rect x={-lw / 2} y={-9} width={lw} height={16} rx={3} fill={hot ? "var(--ink)" : "var(--raised)"} stroke={hot ? "var(--rubric)" : INK} strokeWidth={1.2} />
+                  <text x={0} y={2.5} textAnchor="middle" fontSize={10} fontWeight="600" fontFamily="var(--serif)" fill={hot ? "var(--raised)" : "var(--ink)"}>{(hot ? "▸ " : "") + (locked ? `${s.name} · Lv${AH_ECON.unlockLevel}` : s.name)}</text>
                 </g>
               </g>
             );
@@ -6560,54 +6560,36 @@ function GameScreen({ character: initChar, onSave, onBack }) {
             {/* Top-left cluster: sign-in, then anything else that wants the player's eye.
                 The battle pass sits to the RIGHT of the sign-in, so the first row reads
                 [daily][pass] and the offer hangs below the daily. */}
-            <div style={{ position: "absolute", left: 8, top: 8, zIndex: 320,
-                          display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 6 }}>
-              <div style={{ display: "flex", alignItems: "flex-start", gap: 6 }}>
-              {/* Badged while today is unclaimed — the badge is the only thing that tells a
-                  returning player there is something waiting. */}
+            <div className="hails">
+              <div className="hails-row">
+              {/* Marked due while today is unclaimed — that mark is the only thing that
+                  tells a returning player there is something waiting. */}
               {(() => {
                 const today = utcDayString();
                 const claimed = (char.daily?.lastDay || null) === today;
                 const streak = char.daily?.streak || 0;
                 return (
                   <button onClick={() => { setDailyResult(null); setDailyOpen(true); }} aria-label="Daily sign-in"
-                    style={{ position: "relative", width: 52, height: 52,
-                      background: "var(--raised)", border: `2px solid ${claimed ? "var(--verdigris)" : "var(--gilt)"}`,
-                      borderRadius: 12, cursor: "pointer", color: claimed ? "var(--verdigris)" : "var(--gilt)",
-                      boxShadow: claimed ? "none" : "0 0 14px var(--bole)",
-                      animation: claimed ? "none" : "tutflash 1.6s ease-in-out infinite" }}>
-                    <div style={{ fontSize: 20, lineHeight: 1 }}>📅</div>
-                    <div style={{ fontSize: 9, fontWeight: 800, marginTop: 2 }}>{streak > 0 ? `${streak}d` : "Daily"}</div>
-                    {!claimed && <span style={{ position: "absolute", top: -4, right: -4, background: "var(--rubric)", color: "var(--ink)",
-                      fontSize: 9, fontWeight: 800, width: 16, height: 16, borderRadius: 8, display: "flex",
-                      alignItems: "center", justifyContent: "center", boxShadow: "0 0 0 1.5px var(--ground)" }}>!</span>}
+                    className={`hail${claimed ? "" : " is-due"}`}>
+                    <Icon name="scroll" size={18} />
+                    <span className="hail-label">{streak > 0 ? `${streak}d` : "Daily"}</span>
+                    {!claimed && <span className="hail-tally">!</span>}
                   </button>
                 );
               })()}
 
-              {/* Battle pass, to the right of the sign-in. The badge counts rewards WAITING, not
-                  ranks earned — an unclaimed count is the only number worth interrupting for. */}
+              {/* Battle pass, to the right of the sign-in. The tally counts rewards WAITING,
+                  not ranks earned — an unclaimed count is the only number worth interrupting for. */}
               {(() => {
-                const rank = passRank(char), waiting = passUnclaimed(char), owned = passOwnsPaid(char);
+                const rank = passRank(char), waiting = passUnclaimed(char);
                 const pct = rank >= PASS.ranks ? 100 : Math.round(passKillsInto(char) / PASS.killsPerRank * 100);
                 return (
                   <button onClick={() => setPassOpen(true)} aria-label="Battle pass"
-                    style={{ position: "relative", width: 52, height: 52,
-                      background: owned ? "var(--raised)" : "var(--raised)",
-                      border: `2px solid ${waiting ? "var(--gilt)" : owned ? "var(--bole)" : "var(--rule)"}`,
-                      borderRadius: 12, cursor: "pointer", color: waiting ? "var(--gilt)" : "var(--verdigris)",
-                      boxShadow: waiting ? "0 0 14px var(--bole)" : "none",
-                      animation: waiting ? "tutflash 1.6s ease-in-out infinite" : "none" }}>
-                    <div style={{ fontSize: 19, lineHeight: 1 }}>🏅</div>
-                    <div style={{ fontSize: 9, fontWeight: 800, marginTop: 1 }}>R{rank}</div>
-                    {/* A sliver of the current rank's progress, so the icon says "nearly there". */}
-                    <div style={{ position: "absolute", left: 5, right: 5, bottom: 4, height: 2.5,
-                                  background: "var(--sunk)", borderRadius: 2, overflow: "hidden" }}>
-                      <div style={{ width: `${pct}%`, height: "100%", background: "var(--ground)" }} />
-                    </div>
-                    {waiting > 0 && <span style={{ position: "absolute", top: -4, right: -4, background: "var(--rubric)", color: "var(--ink)",
-                      fontSize: 9, fontWeight: 800, minWidth: 16, height: 16, padding: "0 3px", borderRadius: 8, display: "flex",
-                      alignItems: "center", justifyContent: "center", boxShadow: "0 0 0 1.5px var(--ground)" }}>{waiting}</span>}
+                    className={`hail${waiting ? " is-due" : ""}`}>
+                    <Icon name="trophy" size={18} />
+                    <span className="hail-label">R{rank}</span>
+                    <span className="hail-rail"><i style={{ width: `${pct}%` }} /></span>
+                    {waiting > 0 && <span className="hail-tally">{waiting}</span>}
                   </button>
                 );
               })()}
@@ -6619,14 +6601,10 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                 const left = offerMsLeft(char, now);
                 const hrs = Math.floor(left / 3600000), mins = Math.floor((left % 3600000) / 60000);
                 return (
-                  <button onClick={() => setOfferOpen(true)} aria-label="Limited offer"
-                    style={{ position: "relative", width: 52, height: 56,
-                      background: "var(--raised)", border: "2px solid var(--rubric)",
-                      borderRadius: 12, cursor: "pointer", color: "var(--rubric)",
-                      boxShadow: "none", animation: "tutflash 1.6s ease-in-out infinite" }}>
-                    <div style={{ fontSize: 19, lineHeight: 1 }}>⚔️</div>
-                    <div style={{ fontSize: 8, fontWeight: 800, marginTop: 1 }}>${OFFER.usd}</div>
-                    <div style={{ fontSize: 7.5, color: "var(--rubric)" }}>{hrs}h {mins}m</div>
+                  <button onClick={() => setOfferOpen(true)} aria-label="Limited offer" className="hail is-due">
+                    <Icon name="sword" size={18} />
+                    <span className="hail-label">${OFFER.usd}</span>
+                    <span className="hail-label">{hrs}h {mins}m</span>
                   </button>
                 );
               })()}

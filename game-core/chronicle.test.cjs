@@ -375,6 +375,45 @@ sec("The Adventure Gate and the Hero's Statue");
   }
 }
 
+sec("The town is a chart drawn on the page");
+{
+  // THE MAP HAD ITS OWN PALETTE — 48 hexes across 73 places, none of them from
+  // the design system. That was survivable while it was only unfashionable; it
+  // stopped being survivable the moment the game grew a night theme, because a
+  // full-colour illustrated map does not get darker when the page does. Every
+  // one of them now resolves to a token, so the town is lit by whatever is
+  // lighting the rest of the chronicle.
+  const map = app.slice(app.indexOf("const INK ="), app.indexOf("function GameScreen"));
+  const hexes = map.match(/#[0-9a-fA-F]{6}/g) || [];
+  ok(hexes.length === 0, hexes.length ? `the map still paints itself: ${[...new Set(hexes)].join(" ")}`
+                                      : "the town map takes every colour from the theme");
+  ok(map.includes('const INK = "var(--ink)"'), "…it is drawn in the same ink as everything else");
+  ok(/stopColor="var\(--(raised|ground)\)"/.test(map), "…on ground that follows the theme");
+  // A roof is timber. Only the two faction banners and the market's awning keep
+  // a colour of their own — a purple roof on the auction house was the last
+  // thing on the screen shouting.
+  ok(!map.includes('<House roof="var(--rar-'), "no building is roofed in a rarity colour");
+
+  // The tutorial used to point with a filled amber glow. The Chronicle has no
+  // glows: it points by drawing a ring, in the rubric, the same mark it uses
+  // for your own hand.
+  ok(/hot && <ellipse[^>]*fill="none"[^>]*stroke="var\(--rubric\)"[^>]*strokeDasharray/.test(map),
+     "the tutorial points with a drawn ring rather than a glow");
+
+  // The three things that interrupt rather than wait to be found were 52px
+  // glowing tiles with 20-point emoji — the loudest object on the screen the
+  // player looks at most.
+  ok(panels.includes(".hail {"), "panels.css defines something hailing you from the edge of the page");
+  ok(app.split('className={`hail').length - 1 + app.split('className="hail').length - 1 >= 3,
+     "the daily, the pass and the offer are all hails");
+  // A glow is a blur radius with no offset. The three tiles each had one, and
+  // the Chronicle's whole answer to "how do you say IMPORTANT" is a drawn rule.
+  const rail = app.slice(app.indexOf("Top-left cluster"), app.indexOf("The level-10 offer, under the sign-in") + 900);
+  const glows = rail.match(/boxShadow: [^,\n]*0 0 \d+px/g) || [];
+  ok(glows.length === 0, glows.length ? `still glowing: ${glows.join(" | ")}` : "…and none of them glows");
+  ok(app.includes('<span className="hail-tally">'), "what is waiting is written in the corner of the plate");
+}
+
 sec("What is laid on top of the page");
 {
   // Twenty-one overlays, written twenty-one times: four scrims, five border
@@ -399,9 +438,11 @@ sec("What is laid on top of the page");
   ok(/\.veil \{[^}]*z-index: 900/s.test(sheets), "there is one layer for sheets, above everything the page draws");
   ok(/\.veil\.is-over \{ z-index: 1000; \}/.test(sheets), "…and exactly one rung above it");
   ok(!/className="veil[^"]*" style=\{\{ zIndex/.test(app), "…and no overlay invents a number of its own");
-  // The talent sheet sat at 260, UNDER the town's own floating rail at 320.
-  const rail = /position: "absolute", left: 8, top: 8, zIndex: (\d+)/.exec(app);
-  ok(rail && Number(rail[1]) < 900, `the town rail (${rail && rail[1]}) is below the sheet layer`);
+  // The talent sheet sat at 260, UNDER the town's own floating rail at 320. The
+  // rail is .hails now and carries its layer in the stylesheet, so the guard
+  // reads it from there.
+  const hailZ = /\.hails \{[^}]*z-index: (\d+)/s.exec(panels);
+  ok(hailZ && Number(hailZ[1]) < 900, `the town rail (${hailZ && hailZ[1]}) is below the sheet layer`);
   // The socket confirmation sat at 240 while the picker that raises it sat at
   // 260 and stays open — choosing a Power-dormanting gem appeared to do nothing.
   ok(app.includes('<div onClick={() => setSocketConfirm(null)} className="veil is-over">'),

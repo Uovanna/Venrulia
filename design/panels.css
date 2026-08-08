@@ -406,6 +406,46 @@ select.field { cursor: pointer; }
 /* What the stat actually does, in the marginal voice, under the number. */
 .ledger-note { font-size: var(--step--1); color: var(--ink-faint); line-height: 1.4; margin-top: 2px; }
 
+/* ---- something hailing you from the edge of the page --------------------- */
+/* The daily, the pass, the timed offer. They are the only things in the game
+   that interrupt rather than wait to be found, and they had been drawn as three
+   glowing 52px rounded tiles with 20-point emoji in them — the loudest object on
+   the most-looked-at screen, and the one that most made the town read as a
+   free-to-play launcher.
+   A hail is a small ruled plate pinned to the corner of the page. It says what
+   it is, and whether it is due. The count is a written note in the margin of
+   the plate, not a red circle. */
+.hails {
+  position: absolute; left: 8px; top: 8px; z-index: 20;
+  display: flex; flex-direction: column; align-items: flex-start; gap: var(--s-2);
+}
+.hails-row { display: flex; align-items: flex-start; gap: var(--s-2); }
+.hail {
+  position: relative; width: 50px; box-sizing: border-box; padding: 6px 4px 7px;
+  background: var(--raised); border: 1px solid var(--rule); border-radius: var(--r-md);
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  color: var(--ink-soft); cursor: pointer; font-family: var(--serif); line-height: 1;
+}
+.hail:focus-visible { outline: 2px solid var(--rubric); outline-offset: 2px; }
+/* Due. A drawn border and the rubric — the same mark the chronicle uses for
+   your own hand, because a thing waiting for you is a thing you have to do. */
+.hail.is-due { border-color: var(--rubric); color: var(--rubric); animation: tutflash 1.6s ease-in-out infinite; }
+.hail-label {
+  font-family: var(--mono); font-size: 8px; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--ink-faint); font-variant-numeric: tabular-nums;
+}
+.hail.is-due .hail-label { color: var(--rubric); }
+/* How many are waiting, written into the corner of the plate. */
+.hail-tally {
+  position: absolute; top: -5px; right: -5px;
+  background: var(--raised); border: 1px solid var(--rubric); border-radius: var(--r-sm);
+  color: var(--rubric); font-family: var(--mono); font-size: 8px; line-height: 1;
+  padding: 2px 3px; min-width: 12px; text-align: center;
+}
+/* A sliver of the current rank, so the plate can say "nearly there". */
+.hail-rail { width: 100%; height: 2px; background: var(--sunk); margin-top: 2px; }
+.hail-rail > i { display: block; height: 100%; background: var(--gilt); }
+
 /* ---- a state ------------------------------------------------------------- */
 /* Whether a thing is open to you right now. The margin hand, so a lockout timer
    and a run count read as the same kind of fact. */

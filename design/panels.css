@@ -604,3 +604,24 @@ select.field { cursor: pointer; }
 .item.is-tap:focus-visible { outline: 2px solid var(--rubric); outline-offset: 2px; }
 .item.is-tap[disabled] { opacity: .5; cursor: default; }
 .item.is-tap[disabled]:hover .item-name { color: inherit; }
+
+/* ---- what people are saying ---------------------------------------------- */
+/* The chat transcript was verdigris ink throughout — every name AND every
+   message body, on a panel whose entire content is other people's words. A
+   speaker is named in the ordinary hand; you are the one in the rubric. */
+.talk {
+  background: var(--sunk); border: 1px solid var(--rule); border-radius: var(--r-sm);
+  padding: var(--s-3); overflow-y: auto; display: flex; flex-direction: column; gap: 3px;
+}
+/* Laid over the town. It used to be a dark translucent wash — rgba(8,7,15,.55),
+   which on parchment is a grey rectangle with words on it, and the town does not
+   show through a scrim anyway. It is a slip of paper laid on the map: opaque,
+   and lifted off it by a shadow. */
+.talk.is-over { background: var(--raised); box-shadow: var(--lift); }
+.said { font-size: var(--step--1); color: var(--ink); line-height: 1.45; }
+.said b { font-weight: 600; color: var(--ink-soft); }
+.said b.is-me { color: var(--rubric); }
+
+/* A quiet action the lesson is currently pointing at. Same flash the tutorial
+   hail uses, so "the game wants you to press this" is one mark everywhere. */
+.go.is-due { border-color: var(--rubric); color: var(--rubric); animation: tutflash 1.6s ease-in-out infinite; }

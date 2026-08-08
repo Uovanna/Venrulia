@@ -283,6 +283,9 @@
 .ally.is-me { border-left: 3px solid var(--rubric); padding-left: var(--s-3); }
 .ally.is-down { opacity: .5; }
 .ally-body { flex: 1; min-width: 0; }
+/* A roster row stacks a name over a stat line. Left inline, "GorionusV" and
+   "71% · 699 games" ran together into one word. */
+.ally-body > span { display: block; }
 .ally-line { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s-2); }
 .ally-name {
   font-size: var(--step--1); color: var(--ink);
@@ -320,3 +323,141 @@
 
 /* The foot of the fight: leave, re-enter, and the light. */
 .cfoot { display: flex; gap: var(--s-2); padding: 0 var(--s-4) var(--s-4); background: var(--sunk); }
+
+/* ============================================================================
+   GROUP CONTENT
+   ----------------------------------------------------------------------------
+   The one screen where several things are simultaneously true and you have to
+   read all of them in about a second: five allies, one or more enemies, who has
+   aggro, what is being cast, what lands next, and whether your finisher is up.
+   It said all of that with COLOUR AND GLOW — eleven hexes, five box-shadows, and
+   a role tint on every health bar — which is the failure mode a busy screen
+   invites. State is said with the edge of the frame, in the same three marks the
+   rest of the game uses: the rubric for what you are attending to, the bole for
+   what is about to hurt, and a dashed edge for what is out.
+   ============================================================================ */
+.frames { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-2); margin-bottom: var(--s-3); }
+.frame {
+  width: 100%; box-sizing: border-box; display: block; text-align: left;
+  background: var(--raised); border: 1px solid var(--rule); border-radius: var(--r-md);
+  padding: var(--s-3) var(--s-3); margin-bottom: var(--s-2);
+  font-family: var(--serif); color: var(--ink); cursor: pointer;
+}
+.frame:focus-visible { outline: 2px solid var(--rubric); outline-offset: 2px; }
+/* What you are attending to. */
+.frame.is-target { border-color: var(--rubric); }
+/* Something lands on this one shortly. */
+.frame.is-warned { border-color: var(--bole); }
+/* You. */
+.frame.is-me { border-left: 3px solid var(--rubric); }
+.frame.is-down { opacity: .45; cursor: default; border-style: dashed; }
+.frame-line {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: var(--s-2); margin-bottom: 3px;
+}
+.frame-name {
+  font-size: var(--step--1); font-weight: 600; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  display: flex; align-items: baseline; gap: var(--s-1);
+}
+.frame-n {
+  font-family: var(--mono); font-size: 9px; color: var(--ink-soft);
+  font-variant-numeric: tabular-nums; flex: none;
+}
+.frame.is-down .frame-n { color: var(--rubric); }
+/* What is coming, written under the bar. */
+.frame-note {
+  font-family: var(--mono); font-size: 9px; letter-spacing: .04em;
+  color: var(--ink-faint); margin-top: 3px;
+  display: flex; align-items: center; gap: var(--s-1);
+}
+.frame-note.is-warn { color: var(--bole); }
+.frame-note.is-urgent { color: var(--rubric); }
+.frame .meter { margin-top: 3px; }
+/* An enemy's cast bar is the one measure that runs OUT rather than up, so it is
+   the one drawn in the bole. */
+.meter.is-cast > i {
+  background: repeating-linear-gradient(115deg, var(--bole) 0 2.5px, transparent 2.5px 4.5px);
+}
+
+/* ---- the call -------------------------------------------------------------
+   One line telling you what your role should be doing right now. It carried its
+   own colour plus a 22-alpha wash of the same colour behind it; it is the only
+   instruction on the screen, so it does not also need to be the only colour. */
+.call {
+  border: 1px solid var(--rubric); border-radius: var(--r-md);
+  background: var(--raised); color: var(--rubric);
+  padding: var(--s-2) var(--s-3); margin-bottom: var(--s-2);
+  text-align: center; font-size: var(--step--1);
+}
+
+/* ---- your resource ------------------------------------------------------- */
+/* Combo points and the like: a row of boxes, filled or not. They were tinted
+   with the class resource's own hex and given a 5px glow each. */
+.pips { display: flex; gap: 3px; }
+.pip { flex: 1; height: 8px; border: 1px solid var(--rule); background: var(--sunk); }
+.pip.is-lit { background: var(--ink-soft); }
+.res-line {
+  display: flex; align-items: baseline; justify-content: space-between;
+  font-family: var(--mono); font-size: 9px; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--ink-faint); margin-bottom: 3px;
+}
+.res-line .is-ripe { color: var(--rubric); }
+/* The global cooldown: a hairline that empties. Not a colour change. */
+.gcd { height: 2px; background: var(--sunk); margin-top: 3px; }
+.gcd > i { display: block; height: 100%; background: var(--ink-faint); }
+
+/* ---- the group action bar ------------------------------------------------ */
+/* Wide seals rather than round ones, because a group skill needs its name: you
+   are choosing between an interrupt, a taunt and a heal under time pressure and
+   an icon alone is not enough. Cooling is a dashed edge and the seconds in the
+   margin, exactly as it is solo. */
+.hand { display: flex; flex-wrap: wrap; gap: var(--s-2); margin-bottom: var(--s-3); }
+.act {
+  flex: 1 1 30%; position: relative; overflow: hidden;
+  background: var(--raised); border: 1px solid var(--rule); border-radius: var(--r-md);
+  color: var(--ink); font-family: var(--serif); font-size: var(--step--1);
+  padding: 8px 5px; cursor: pointer; line-height: 1.3;
+  display: flex; align-items: center; justify-content: center; gap: var(--s-1);
+}
+.act:focus-visible { outline: 2px solid var(--rubric); outline-offset: 2px; }
+.act.is-sealed { border-style: dashed; color: var(--ink-faint); }
+/* Unaffordable is not the same as cooling, and the player has to be able to tell
+   which — that is the whole reason these buttons are never actually disabled. */
+.act.is-poor { color: var(--ink-faint); }
+.act.is-poor .act-n { color: var(--rubric); }
+.act.is-queued { border-color: var(--rubric); color: var(--rubric); }
+.act-n { font-family: var(--mono); font-size: 9px; font-variant-numeric: tabular-nums; }
+/* The cooling sweep, drawn as ink filling the seal from the left rather than a
+   translucent black square laid over it. */
+.act > .act-wipe {
+  position: absolute; left: 0; top: 0; bottom: 0; z-index: 0;
+  background: var(--sunk); pointer-events: none;
+}
+.act > span { position: relative; z-index: 1; }
+.act.is-gcd::after {
+  content: ""; position: absolute; inset: 0; background: var(--sunk); opacity: .55; z-index: 0;
+}
+
+/* Why the last tap did nothing. */
+.refusal {
+  border: 1px solid var(--rubric); border-radius: var(--r-md); background: var(--raised);
+  color: var(--rubric); padding: var(--s-2) var(--s-3); margin: var(--s-2) 0;
+  text-align: center; font-size: var(--step--1);
+}
+
+/* The group log, which is plain lines rather than the parsed chronicle. */
+.grouplog {
+  background: var(--sunk); border: 1px solid var(--rule); border-radius: var(--r-sm);
+  padding: var(--s-3); height: 96px; overflow-y: auto;
+  font-size: var(--step--1); color: var(--ink-soft); line-height: 1.5;
+  display: flex; flex-direction: column-reverse;
+}
+
+/* The head of a group fight: leave, whether it is real, and your role. */
+.ghead {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--s-3); margin-bottom: var(--s-3);
+  padding-bottom: var(--s-3); border-bottom: 1px solid var(--rule);
+}
+.gwrap { max-width: 520px; margin: 0 auto; padding: var(--s-2); }

@@ -927,6 +927,56 @@ sec("Ten more screens, and the colours that were arguments");
   ok(!/col:/.test(tavern), "…and its table carries no colours");
 }
 
+sec("Group content, and the panel that had been crashing");
+{
+  // THE GROUP ENCOUNTER is the one screen where several things are true at once
+  // and you have a second to read all of them: five allies, one or more enemies,
+  // who has aggro, what is casting, what lands next. It said all of that with
+  // ELEVEN HEXES AND FIVE GLOWS — the failure mode a busy screen invites. State
+  // is now the edge of the frame, in the three marks the rest of the game uses.
+  const grp = (() => {
+    const i = app.indexOf("function GroupCombat(");
+    return i < 0 ? "" : app.slice(i, app.indexOf("\nfunction MultiplayerHub("));
+  })();
+  ok(grp.length > 2000, "the group encounter is findable");
+  ok(combat.includes(".frame {") && combat.includes(".frame.is-target") && combat.includes(".frame.is-warned"),
+     "a targetable frame is furniture");
+  ok(!/#5fd39a|#ff9838|#241f3c|#3a6ea5|#5b8fd6|#c8a0ff/.test(grp),
+     "…and none of the six frame hexes survive");
+  ok(!/ROLES\[a\.role\]\.color/.test(grp), "an ally's bar is not tinted by role");
+  ok(combat.includes(".pips") && !/boxShadow: `0 0 5px \$\{ri\.color\}/.test(grp),
+     "a combo point is a box that is inked or not, and does not glow");
+  ok(combat.includes(".act {") && combat.includes(".act.is-sealed") && combat.includes(".act.is-poor"),
+     "the group action bar shares the seal grammar");
+  ok(!/rgba\(10,8,18/.test(grp), "…and cooling is ink filling the seal, not a black square over it");
+
+  // NOT ONE GLOW LEFT IN THE GAME. Five in group content, and the last of them
+  // was the reason a busy screen read as a light show rather than a page.
+  const glows = (app.match(/boxShadow: "0 0 /g) || []).length;
+  ok(glows === 0, glows ? `${glows} glows remain` : "nothing in the game glows");
+  const rgbas = [...app.matchAll(/rgba\(\d+,\s*\d+,\s*\d+[^)]*\)/g)].map((m) => m[0]);
+  ok(rgbas.length === 0, rgbas.length
+    ? `${rgbas.length} raw rgba colours remain: ${[...new Set(rgbas)].slice(0, 4).join(", ")}`
+    : "…and no colour is written as a raw rgba");
+
+  // GLOBAL CHAT WAS THROWING. Its input spread `inpStyle`, which was retired
+  // when .field replaced it — an undefined identifier in a spread. A React error
+  // boundary catches it, which is exactly why page-error checks stayed silent
+  // and why the browser audit had to learn to read the DOM for the fallback.
+  ok(!/\.\.\.inpStyle/.test(app), "nothing spreads a style object that no longer exists");
+  ok(panels.includes(".talk {") && panels.includes(".said b.is-me"),
+     "a chat transcript is furniture, and you are the one in the rubric");
+  ok(!/color: \(m\.me \|\| m\.name === myName\) \? "var\(--verdigris\)" : "var\(--rar-epic\)"/.test(app),
+     "…rather than every word in the accent colour");
+  ok(!/background: transparent \? "rgba\(8,7,15/.test(app),
+     "…and the overlay copy is a slip of paper, not a grey wash");
+
+  // The hub's sub-tabs were filled pills whose UNSELECTED state was solid
+  // verdigris, so the tab you were not on was the loud one.
+  ok(/className=\{`leaf\$\{sub === id \? " is-open" : ""\}`\}/.test(app),
+     "the Arena's sub-tabs are leaves like every other tab strip");
+}
+
 sec("The shell is bound in the same hand");
 {
   // Converting the shell is what decides whether the game reads as one object or

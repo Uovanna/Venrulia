@@ -10654,17 +10654,28 @@ function ChatPanel({ chatState, myName, height = 260, transparent }) {
   useEffect(() => { if (ref.current) ref.current.scrollTop = ref.current.scrollHeight; }, [chat]);
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-        <span style={{ color: "var(--ink-soft)", fontSize: 11, fontWeight: 700 }}>🌐 Global Chat</span>
-        <span style={{ color: chatLive ? "var(--verdigris)" : "var(--ink-soft)", fontSize: 9.5, fontWeight: 700 }}>{chatLive ? "● live" : "○ connecting…"}</span>
+      <div className="eyebrow">
+        <span><Icon name="speak" size={11} /> Global chat</span>
+        <span className={chatLive ? "item-note" : undefined}>{chatLive ? "live" : "connecting…"}</span>
       </div>
-      <div ref={ref} style={{ background: transparent ? "rgba(8,7,15,0.55)" : "var(--sunk)", border: "1px solid var(--hairline)", borderRadius: 8, padding: 10, height, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
-        {chat.length === 0 && <div style={{ color: "var(--ink-faint)", fontSize: 11 }}>No messages yet — say hello!</div>}
-        {chat.map((m) => (<div key={m.id} style={{ fontSize: 11.5, lineHeight: 1.4 }}><span style={{ color: (m.me || m.name === myName) ? "var(--verdigris)" : "var(--rar-epic)", fontWeight: 700 }}>{m.name}:</span> <span style={{ color: "var(--verdigris)" }}>{m.text}</span></div>))}
+      {/* The whole transcript was verdigris — every name AND every message body,
+          on a screen whose entire content is other people's words. A speaker is
+          named in the ordinary hand; you are the one in the rubric. */}
+      <div ref={ref} className={`talk${transparent ? " is-over" : ""}`} style={{ height }}>
+        {chat.length === 0 && <div className="empty" style={{ padding: "var(--s-4)" }}>No messages yet — say hello.</div>}
+        {chat.map((m) => (
+          <div key={m.id} className="said">
+            <b className={(m.me || m.name === myName) ? "is-me" : undefined}>{m.name}:</b> {withIcons(m.text, 12)}
+          </div>
+        ))}
       </div>
-      <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-        <input value={chatInput} onChange={(e) => setChatInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") sendChat(); }} placeholder="Say something…" style={{ ...inpStyle, marginBottom: 0, flex: 1 }} />
-        <button onClick={sendChat} className="go" style={{ width: "auto", margin: 0 }}>Send</button>
+      {/* This input spread `inpStyle`, which was retired when .field replaced it —
+          an undefined identifier in a spread, so opening chat threw straight into
+          the error boundary. A React error boundary catches it, which is exactly
+          why no page-error check ever saw it. */}
+      <div className="fields" style={{ marginTop: "var(--s-3)" }}>
+        <input value={chatInput} onChange={(e) => setChatInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") sendChat(); }} placeholder="Say something…" className="field" />
+        <button onClick={sendChat} className="go" style={{ flex: "none", width: "auto", marginTop: 0 }}>Send</button>
       </div>
     </div>
   );
@@ -10851,24 +10862,35 @@ function GroupCombat({ char, commitChar, onExit, bossId, bossDef, ilvl, party, o
     if (onCleared) onCleared(enc);
   }, [enc?.cleared]);
   if (!enc) return (
-    <div style={{ maxWidth: 520, margin: "0 auto", padding: "18px 14px", textAlign: "center" }}>
-      <button onClick={onExit} style={{ float: "left", background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 8, color: "var(--ink)", fontSize: 12, padding: "6px 12px", cursor: "pointer" }}>← Leave</button>
-      <div style={{ color: "var(--ink-soft)", fontSize: 11, fontWeight: 700, paddingTop: 6 }}>🌐 Online — authoritative server</div>
-      <div style={{ color: "var(--rar-epic)", fontFamily: "Georgia, serif", fontSize: 17, marginBottom: 2 }}><Icon name="sword" /> Forming Party</div>
-      <div style={{ color: "var(--ink)", fontSize: 13, marginBottom: 10 }}>{lobby?.contentName || label || "Encounter"}</div>
-      {lobby?.code ? <div style={{ color: "var(--gilt)", fontSize: 11, marginBottom: 8 }}><Icon name="unlock" /> Party code <b>{lobby.code}</b> — anyone using it joins you</div> : null}
-      <div style={{ color: "var(--verdigris)", fontSize: 30, fontWeight: 800, margin: "6px 0" }}>{lobby ? `${lobby.players.length}/${lobby.size}` : "…"}</div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6, textAlign: "left", margin: "10px 0" }}>
+    <div className="gwrap">
+      <div className="ghead">
+        <button onClick={onExit} className="head-back">&#8592; Leave</button>
+        <span className="head-title" style={{ fontSize: "var(--step-0)" }}><Icon name="sword" size={14} /> Forming party</span>
+        <span className="head-note"><Icon name="globe" size={10} /> online</span>
+      </div>
+      <div className="statline">
+        <span>{lobby?.contentName || label || "Encounter"}</span>
+        <span>Seats <b>{lobby ? `${lobby.players.length}/${lobby.size}` : "…"}</b></span>
+      </div>
+      {lobby?.code ? <div className="ledger-note" style={{ marginTop: "var(--s-3)" }}><Icon name="unlock" size={10} /> Party code <b>{lobby.code}</b> — anyone using it joins you</div> : null}
+      {/* A filled seat was a solid verdigris block and an empty one a dashed
+          verdigris box, so the whole lobby was two shades of the accent colour.
+          A seat is a row; an empty one is drawn with a dashed mark. */}
+      <div style={{ marginTop: "var(--s-4)" }}>
         {(lobby?.players || []).map((p, i) => (
-          <div key={i} style={{ background: "var(--verdigris)", border: "1px solid var(--verdigris)", borderRadius: 8, padding: "7px 10px", color: "var(--ink-soft)", fontSize: 12, fontWeight: 700 }}>
-            {ROLES[p.role]?.icon || "🧑"} {p.name}
+          <div key={i} className="ally">
+            <span className="mark">{withIcons(ROLES[p.role]?.icon || "🧑", 14)}</span>
+            <span className="ally-body"><span className="ally-name">{p.name}</span></span>
           </div>
         ))}
         {Array.from({ length: Math.max(0, (lobby?.size || 4) - (lobby?.players.length || 1)) }).map((_, i) => (
-          <div key={"e" + i} style={{ border: "1px dashed var(--verdigris)", borderRadius: 8, padding: 8, color: "var(--ink-faint)", fontSize: 11, textAlign: "center" }}>waiting for a player…</div>
+          <div key={"e" + i} className="ally">
+            <span className="mark is-empty"><Icon name="figure" size={14} /></span>
+            <span className="ally-body"><span className="item-meta" style={{ marginTop: 0 }}>waiting for a player…</span></span>
+          </div>
         ))}
       </div>
-      <div style={{ color: "var(--ink-soft)", fontSize: 11 }}>
+      <div className="ledger-note" style={{ textAlign: "center", marginTop: "var(--s-4)" }}>
         {lobby ? `Empty seats fill with adventurers in ${lobby.secondsLeft}s` : "Connecting to the server…"}
       </div>
     </div>
@@ -10918,44 +10940,67 @@ function GroupCombat({ char, commitChar, onExit, bossId, bossDef, ilvl, party, o
   };
   const barPct = (c, m) => Math.max(0, Math.min(100, (c / (m || 1)) * 100));
   return (
-    <div style={{ maxWidth: 520, margin: "0 auto", padding: "4px 2px" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-        <button onClick={onExit} style={{ background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 8, color: "var(--ink)", fontSize: 12, padding: "6px 12px", cursor: "pointer" }}>← Leave</button>
-        <span style={{ color: "var(--rar-epic)", fontFamily: "Georgia, serif", fontSize: 15 }}>
+    <div className="gwrap">
+      <div className="ghead">
+        <button onClick={onExit} className="head-back">&#8592; Leave</button>
+        <span className="head-title" style={{ fontSize: "var(--step-0)" }}>
           {networked
-            ? <span style={{ color: "var(--verdigris)" }} title="Authoritative server — real players">🌐 Online</span>
-            : <span style={{ color: "var(--bole)" }} title={offlineReason || "Local fight with bots"}>🤖 Solo</span>}
+            ? <span className="item-note" title="Authoritative server — real players"><Icon name="globe" size={12} /> Online</span>
+            : <span className="state is-shut" title={offlineReason || "Local fight with bots"}><Icon name="figure" size={12} /> Solo</span>}
         </span>
-        <span style={{ color: "var(--ink-soft)", fontSize: 10 }}>{ROLES[me.role].icon} You: {ROLES[me.role].name}</span>
+        <span className="head-note">{ROLES[me.role].name}</span>
       </div>
       {offlineReason && (
-        <div style={{ background: "var(--raised)", border: "1px solid var(--bole)", borderRadius: 9, padding: "7px 10px", marginBottom: 6, color: "var(--bole)", fontSize: 11, lineHeight: 1.4 }}>
-          <Icon name="warn" /> <b>Offline fight</b> — couldn't reach the game server, so this party is bots. Reason: {offlineReason}
+        <div className="aside-note is-warn">
+          <b><Icon name="warn" size={13} /> Offline fight</b>
+          <span>Couldn&apos;t reach the game server, so this party is bots. Reason: {offlineReason}</span>
         </div>
       )}
       {/* enemies */}
       {enc.enemies.map((en) => { const aggro = enc.allies.find((a) => a.id === en.targetId); const onMe = aggro && isMe(aggro); const sel = target && target.type === "enemy" && target.id === en.id; return (
-        <div key={en.id} onClick={() => en.hp > 0 && setTarget({ type: "enemy", id: en.id })} style={{ background: "var(--raised)", border: `${sel ? 2 : 1}px solid ${sel ? "var(--rubric)" : "var(--rubric)"}`, borderRadius: 10, padding: "8px 10px", marginBottom: 6, opacity: en.hp <= 0 ? 0.4 : 1, cursor: en.hp > 0 ? "pointer" : "default", boxShadow: sel ? "0 0 8px rgba(255,107,74,0.4)" : "none" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}><span style={{ color: "var(--rubric)", fontSize: 13, fontWeight: 700 }}>{sel ? "🎯 " : ""}{en.name}{en.isBoss ? " 👑" : ""}</span><span style={{ color: "var(--ink-soft)", fontSize: 10 }}>{mpFmt(en.hp)}/{mpFmt(en.maxHp)}{aggro ? ` · 🎯 ${isMe(aggro) ? "YOU" : aggro.name}` : ""}</span></div>
-          <div style={{ height: 9, background: "var(--raised)", borderRadius: 5, overflow: "hidden" }}><div style={{ height: "100%", width: `${barPct(en.hp, en.maxHp)}%`, background: "var(--ground)", transition: "width 0.14s linear" }} /></div>
-          {en.castBar && (<div style={{ marginTop: 4 }}><div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "var(--bole)", fontSize: 10, fontWeight: 700 }}><Icon name="hourglass" /> {en.castBar.name} — INTERRUPT!</span></div><div style={{ height: 5, background: "var(--bole)", borderRadius: 3, overflow: "hidden" }}><div style={{ height: "100%", width: `${barPct(en.castBar.endsAt - nowE, en.castBar.endsAt - (en.castBar.endsAt - 2400)) }%`, background: "var(--gilt)", transition: "width .2s" }} /></div></div>)}
-          {!en.castBar && en.hp > 0 && (() => { const tg = grpNextTelegraph(en, nowE); if (!tg || tg.t > 6000) return null; const secs = Math.ceil(tg.t / 1000); const soon = tg.t < 2500; const label = tg.ab.name || (tg.ab.kind === "raidtick" ? "Raid damage" : tg.ab.kind === "summon" ? "Summon" : tg.ab.kind); return (<div style={{ marginTop: 4, color: soon ? "var(--bole)" : "var(--ink-soft)", fontSize: 9.5, fontWeight: soon ? 700 : 400 }}>{ABILITY_ICON[tg.ab.kind] || "•"} {label} in {secs}s{tg.ab.kind === "tankbuster" ? " (tank: mitigate)" : tg.ab.kind === "raidcast" ? " (support: interrupt)" : tg.ab.kind === "raidtick" ? " (healer: AoE)" : ""}</div>); })()}
-          {onMe && !me.role.includes("tank") && <div style={{ color: "var(--rubric)", fontSize: 9.5, marginTop: 3, fontWeight: 700 }}><Icon name="warn" /> It's targeting you — you have aggro!</div>}
-        </div>
+        <button key={en.id} onClick={() => en.hp > 0 && setTarget({ type: "enemy", id: en.id })}
+          className={`frame${sel ? " is-target" : ""}${en.hp <= 0 ? " is-down" : ""}${en.castBar ? " is-warned" : ""}`}>
+          <span className="frame-line">
+            <span className="frame-name">
+              <Icon name={enemyMark(en.name)} size={13} />{en.name}{en.isBoss ? <Icon name="crown" size={11} /> : null}
+            </span>
+            <span className="frame-n">{mpFmt(en.hp)}/{mpFmt(en.maxHp)}{aggro ? ` · on ${isMe(aggro) ? "you" : aggro.name}` : ""}</span>
+          </span>
+          <span className="meter"><i style={{ width: `${barPct(en.hp, en.maxHp)}%` }} /></span>
+          {en.castBar && (<>
+            <span className="frame-note is-warn"><Icon name="hourglass" size={10} /> {en.castBar.name} — interrupt</span>
+            <span className="meter is-cast"><i style={{ width: `${barPct(en.castBar.endsAt - nowE, 2400)}%` }} /></span>
+          </>)}
+          {!en.castBar && en.hp > 0 && (() => { const tg = grpNextTelegraph(en, nowE); if (!tg || tg.t > 6000) return null; const secs = Math.ceil(tg.t / 1000); const soon = tg.t < 2500; const label = tg.ab.name || (tg.ab.kind === "raidtick" ? "Raid damage" : tg.ab.kind === "summon" ? "Summon" : tg.ab.kind); return (<span className={`frame-note${soon ? " is-warn" : ""}`}>{withIcons(ABILITY_ICON[tg.ab.kind] || "•", 10)} {label} in {secs}s{tg.ab.kind === "tankbuster" ? " (tank: mitigate)" : tg.ab.kind === "raidcast" ? " (support: interrupt)" : tg.ab.kind === "raidtick" ? " (healer: AoE)" : ""}</span>); })()}
+          {onMe && !me.role.includes("tank") && <span className="frame-note is-urgent"><Icon name="warn" size={10} /> It&apos;s targeting you — you have aggro</span>}
+        </button>
       ); })}
       {/* party */}
-      <div style={{ color: "var(--ink-soft)", fontSize: 10, textTransform: "uppercase", letterSpacing: 1, margin: "8px 0 4px" }}>Party · ✚ {enc.reses} battle-res</div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 8 }}>
-        {(() => { const inc = grpIncoming(enc, nowE); const boss = enc.enemies.find((e) => e.isBoss && e.hp > 0); const busterId = boss ? boss.targetId : null; return enc.allies.map((a) => { const sel = target && target.type === "ally" && target.id === a.id; const incoming = !a.down && (inc.raidSoon || (inc.busterSoon && a.id === busterId)); const glow = sel ? "#5fd39a" : incoming ? "#ff9838" : (isMe(a) ? "#3a6ea5" : "#241f3c"); return (
-          <div key={a.id} onClick={() => !a.down && setTarget({ type: "ally", id: a.id })} style={{ background: isMe(a) ? "var(--verdigris)" : "var(--sunk)", border: `${sel || incoming ? 2 : 1}px solid ${glow}`, borderRadius: 8, padding: "6px 8px", opacity: a.down ? 0.45 : 1, cursor: a.down ? "default" : "pointer", boxShadow: sel ? "0 0 8px rgba(95,211,154,0.4)" : incoming ? "0 0 9px rgba(255,152,56,0.55)" : "none" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}><span style={{ color: isMe(a) ? "var(--verdigris)" : "var(--verdigris)", fontSize: 11, fontWeight: 700 }}>{sel ? "🎯 " : ""}{ROLES[a.role].icon} {isMe(a) ? "You" : a.name}{(a.debuffs || []).length ? " " + (a.debuffs[0].icon || "☠️") : ""}{(a.hots || []).length ? " 🕯️" : ""}</span><span style={{ color: a.down ? "var(--rubric)" : (a.debuffs || []).length ? "var(--rubric)" : incoming ? "var(--bole)" : "var(--ink-soft)", fontSize: 9 }}>{a.down ? "DOWN" : (a.debuffs || []).length ? "cleanse!" : incoming ? "⚠ incoming" : Math.round(barPct(a.hp, a.maxHp)) + "%"}</span></div>
-            <div style={{ height: 7, background: "var(--sunk)", borderRadius: 4, overflow: "hidden" }}><div style={{ height: "100%", width: `${a.down ? 0 : barPct(a.hp, a.maxHp)}%`, background: ROLES[a.role].color, transition: "width 0.14s linear" }} /></div>
-          </div>
+      <div className="eyebrow"><span>Party</span><span>{enc.reses} battle-res</span></div>
+      {/* Four states on one small frame — targeted, incoming, you, down — said
+          with four glows, four border hexes and a role tint on the bar. They are
+          now the same three marks the rest of the game uses, and a bar that is
+          just a bar. */}
+      <div className="frames">
+        {(() => { const inc = grpIncoming(enc, nowE); const boss = enc.enemies.find((e) => e.isBoss && e.hp > 0); const busterId = boss ? boss.targetId : null; return enc.allies.map((a) => { const sel = target && target.type === "ally" && target.id === a.id; const incoming = !a.down && (inc.raidSoon || (inc.busterSoon && a.id === busterId)); return (
+          <button key={a.id} onClick={() => !a.down && setTarget({ type: "ally", id: a.id })}
+            className={`frame${sel ? " is-target" : ""}${incoming ? " is-warned" : ""}${isMe(a) ? " is-me" : ""}${a.down ? " is-down" : ""}`}
+            style={{ marginBottom: 0 }}>
+            <span className="frame-line">
+              <span className="frame-name">
+                {withIcons(ROLES[a.role].icon, 11)}{isMe(a) ? "You" : a.name}
+                {(a.debuffs || []).length ? withIcons(a.debuffs[0].icon || "☠️", 10) : null}
+                {(a.hots || []).length ? <Icon name="shrine" size={10} /> : null}
+              </span>
+              <span className="frame-n">{a.down ? "down" : (a.debuffs || []).length ? "cleanse" : incoming ? "incoming" : Math.round(barPct(a.hp, a.maxHp)) + "%"}</span>
+            </span>
+            <span className="meter"><i style={{ width: `${a.down ? 0 : barPct(a.hp, a.maxHp)}%` }} /></span>
+          </button>
         ); }); })()}
       </div>
       {/* your-call banner */}
       {(() => { const call = grpYourCall(enc, me, nowE); if (!call) return null; return (
-        <div style={{ background: `${call.color}22`, border: `1px solid ${call.color}`, borderRadius: 9, padding: "7px 10px", marginBottom: 6, textAlign: "center", color: call.color, fontSize: 12, fontWeight: 700, boxShadow: "none" }}>→ Your call: {call.text}</div>
+        <div className="call">Your call: {call.text}</div>
       ); })()}
       {/* resource meter + GCD */}
       {(() => {
@@ -10964,44 +11009,57 @@ function GroupCombat({ char, commitChar, onExit, bossId, bossDef, ilvl, party, o
         const spender = mySkills.find((s) => s.spend); const ripe = (rmax <= 10 ? res >= rmax : res >= rmax * 0.75); const finisherReady = ripe && (spender ? botCanAfford(char, me.bw, spender) : rmax <= 10);
         return (
           <div style={{ margin: "2px 0 6px" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 3 }}>
-              <span style={{ color: ri.color, fontSize: 10, fontWeight: 700 }}><EmojiIcon emoji={ri.icon} /> {ri.name}</span>
-              <span style={{ fontSize: 9.5 }}>{finisherReady ? <span style={{ color: ri.color, fontWeight: 700 }}><Icon name="haste" /> {spender ? spender.name + " ready" : "ready — spend it"}</span> : <span style={{ color: "var(--ink-soft)" }}>{rmax <= 10 ? "" : `${res}/${rmax}`}</span>}</span>
+            <div className="res-line">
+              <span>{withIcons(ri.icon, 10)} {ri.name}</span>
+              <span className={finisherReady ? "is-ripe" : undefined}>
+                {finisherReady ? (spender ? spender.name + " ready" : "ready — spend it") : (rmax <= 10 ? "" : `${res}/${rmax}`)}
+              </span>
             </div>
+            {/* Pips were filled with the class resource's own hex and given a 5px
+                glow each. A combo point is a box that is either inked or not. */}
             {rmax <= 10 ? (
-              <div style={{ display: "flex", gap: 4 }}>{Array.from({ length: rmax }).map((_, i) => (<div key={i} style={{ flex: 1, height: 8, borderRadius: 3, background: i < res ? ri.color : "var(--verdigris)", border: `1px solid ${i < res ? ri.color : "var(--verdigris)"}`, boxShadow: i < res ? `0 0 5px ${ri.color}66` : "none" }} />))}</div>
+              <div className="pips">{Array.from({ length: rmax }).map((_, i) => (<div key={i} className={`pip${i < res ? " is-lit" : ""}`} />))}</div>
             ) : (
-              <div style={{ height: 8, background: "var(--raised)", borderRadius: 4, overflow: "hidden" }}><div style={{ height: "100%", width: `${Math.min(100, (res / rmax) * 100)}%`, background: ri.color, transition: "width .2s" }} /></div>
+              <div className="meter"><i style={{ width: `${Math.min(100, (res / rmax) * 100)}%` }} /></div>
             )}
-            <div style={{ height: 3, marginTop: 3, background: onGcd ? "var(--verdigris)" : "transparent", borderRadius: 2, overflow: "hidden" }}>{onGcd && <div style={{ height: "100%", width: `${(1 - gcdFrac) * 100}%`, background: "var(--verdigris)", transition: "width .1s linear" }} />}</div>
+            <div className="gcd">{onGcd && <i style={{ width: `${(1 - gcdFrac) * 100}%` }} />}</div>
           </div>
         );
       })()}
       {/* action bar */}
-      <div style={{ color: "var(--ink-soft)", fontSize: 9.5, marginBottom: 4, textAlign: "center" }}>{target ? (() => { const t = target.type === "ally" ? enc.allies.find((a) => a.id === target.id) : enc.enemies.find((e) => e.id === target.id); return t ? `🎯 Target: ${t && isMe(t) ? "You" : t.name}${target.type === "ally" ? " (heal)" : ""} · tap a frame to change` : "tap a frame to target"; })() : "Tap an ally to heal them or an enemy to focus — otherwise skills auto-target"}</div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
-        {mySkills.map((sk) => { const cd = (me.bw.cooldowns[sk.name] || 0); const onCd = cd > nowE; const onGcd = nowE < (me.nextGcd || 0); const afford = botCanAfford(char, me.bw, sk); const ready = !onCd && afford && !me.down; const queued = queuedName === sk.name; const util = sk.heal || sk.healAoe ? "#5fd39a" : sk.taunt ? "#5b8fd6" : sk.interrupt ? "#c8a0ff" : "#e0a955"; const cdFrac = onCd && sk.cd ? Math.max(0, Math.min(1, (cd - nowE) / (sk.cd * 1000))) : 0; return (
+      <div className="sheet-note" style={{ marginBottom: "var(--s-2)" }}>{target ? (() => { const t = target.type === "ally" ? enc.allies.find((a) => a.id === target.id) : enc.enemies.find((e) => e.id === target.id); return t ? `Target: ${t && isMe(t) ? "You" : t.name}${target.type === "ally" ? " (heal)" : ""} · tap a frame to change` : "tap a frame to target"; })() : "Tap an ally to heal them or an enemy to focus — otherwise skills auto-target"}</div>
+      <div className="hand">
+        {/* Four utility hexes framed these by KIND — heal, taunt, interrupt,
+            everything else — which is a fact the skill's own name already gives
+            you, painted in a palette drawn for a black ground. The frame is left
+            to say the thing only it can: cooling, unaffordable, or queued. */}
+        {mySkills.map((sk) => { const cd = (me.bw.cooldowns[sk.name] || 0); const onCd = cd > nowE; const onGcd = nowE < (me.nextGcd || 0); const afford = botCanAfford(char, me.bw, sk); const ready = !onCd && afford && !me.down; const queued = queuedName === sk.name; const cdFrac = onCd && sk.cd ? Math.max(0, Math.min(1, (cd - nowE) / (sk.cd * 1000))) : 0; return (
           // Deliberately NOT disabled when unavailable. A greyed-out button answers "you can't"
           // but never "why", which is the actual complaint — you are left guessing whether the
           // skill is on cooldown, unaffordable, or the button is simply broken. A tap now says.
-          <button key={sk.name} onClick={() => cast(sk)} style={{ position: "relative", overflow: "hidden", flex: "1 1 30%", background: ready ? "var(--raised)" : "var(--verdigris)", border: `${queued ? 2 : 1}px solid ${queued ? "var(--bole)" : ready ? util : !afford ? "var(--rubric)" : "var(--hairline)"}`, borderRadius: 9, color: ready ? "var(--ink)" : "var(--ink-faint)", fontSize: 11, fontWeight: 700, padding: "9px 5px", cursor: "pointer", boxShadow: queued ? "0 0 7px rgba(255,212,121,0.5)" : "none" }}>
-            <span style={{ position: "relative", zIndex: 2 }}>{queued ? "▸ " : ""}{sk.icon || "✦"} {sk.name}{onCd ? ` ${Math.ceil((cd - nowE) / 1000)}s` : !afford ? " ·" : ""}</span>
-            {onCd && <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${cdFrac * 100}%`, background: "rgba(10,8,18,0.72)", zIndex: 1, transition: "width 0.14s linear" }} />}
-            {!onCd && onGcd && !me.down && !queued && <div style={{ position: "absolute", inset: 0, background: "rgba(10,8,18,0.45)", zIndex: 1 }} />}
+          <button key={sk.name} onClick={() => cast(sk)}
+            className={`act${queued ? " is-queued" : ""}${onCd ? " is-sealed" : ""}${!afford && !onCd ? " is-poor" : ""}${!onCd && onGcd && !me.down && !queued ? " is-gcd" : ""}`}>
+            {onCd && <span className="act-wipe" style={{ width: `${cdFrac * 100}%` }} />}
+            <span>{queued ? "▸ " : ""}{withIcons(sk.icon || "✦", 12)} {sk.name}
+              {onCd ? <span className="act-n"> {Math.ceil((cd - nowE) / 1000)}s</span> : !afford ? <span className="act-n"> ·</span> : ""}</span>
           </button>
         ); })}
-        <button onClick={potion} style={{ flex: "1 1 30%", background: enc.potionsUsed < enc.potionCap ? "var(--raised)" : "var(--verdigris)", border: `1px solid ${enc.potionsUsed < enc.potionCap ? "var(--gilt)" : "var(--hairline)"}`, borderRadius: 9, color: enc.potionsUsed < enc.potionCap ? "var(--bole)" : "var(--ink-faint)", fontSize: 11, fontWeight: 700, padding: "9px 5px", cursor: "pointer" }}><Icon name="flask" /> Potion ({enc.potionCap - enc.potionsUsed})</button>
+        <button onClick={potion} className={`act${enc.potionsUsed < enc.potionCap ? "" : " is-sealed"}`}>
+          <span><Icon name="flask" size={12} /> Potion <span className="act-n">{enc.potionCap - enc.potionsUsed}</span></span>
+        </button>
       </div>
       {/* Why the last tap did nothing. Sits directly under the bar so it reads as an answer to
           the button you just pressed, and clears itself after a couple of seconds. */}
       {notice && (
-        <div style={{ background: "var(--raised)", border: "1px solid var(--rubric)", borderRadius: 8, padding: "6px 10px", margin: "6px 0", color: "var(--rubric)", fontSize: 11, fontWeight: 700, textAlign: "center" }}>
-          {notice.code === "resource" ? "⚡" : notice.code === "cooldown" ? "⏳" : notice.code === "nopotions" ? "🧪" : "⛔"} {notice.text}
+        <div className="refusal">
+          <Icon name={notice.code === "resource" ? "spark" : notice.code === "cooldown" ? "hourglass" : notice.code === "nopotions" ? "flask" : "ban"} size={11} /> {notice.text}
         </div>
       )}
       {/* log */}
-      <div style={{ background: "var(--sunk)", border: "1px solid var(--verdigris)", borderRadius: 8, padding: 8, height: 96, overflowY: "auto", fontSize: 10.5, color: "var(--verdigris)", lineHeight: 1.5, display: "flex", flexDirection: "column-reverse" }}>
-        <div>{enc.log.slice(-8).map((l, i) => <div key={i}>{l}</div>)}</div>
+      {/* The whole log was verdigris ink on a verdigris-bordered box — the fight's
+          entire account written in the accent colour. */}
+      <div className="grouplog">
+        <div>{enc.log.slice(-8).map((l, i) => <div key={i}>{withIcons(l, 11)}</div>)}</div>
       </div>
       {(enc.cleared || enc.wiped) && (
         <div className="veil">
@@ -11288,18 +11346,23 @@ function MultiplayerHub({ char, commitChar, showNotif, onExit, onStartRated, onS
       {extra}
     </div>
   );
-  const bar = (val, max, color) => (<div style={{ background: "var(--sunk)", borderRadius: 6, height: 12, overflow: "hidden", border: "1px solid var(--hairline)" }}><div style={{ width: `${Math.max(0, Math.min(100, (val / max) * 100))}%`, height: "100%", background: color, transition: "width .3s" }} /></div>);
-  const tabBtn = (id, label) => (<button onClick={() => setSub(id)} style={{ flex: 1, background: sub === id ? "var(--raised)" : "var(--verdigris)", border: `1px solid ${sub === id ? "var(--rule)" : "var(--hairline)"}`, borderRadius: 8, color: sub === id ? "var(--ink)" : "var(--ink-soft)", fontSize: 11.5, fontWeight: 700, padding: "8px 4px", cursor: "pointer" }}>{label}</button>);
+  const bar = (val, max) => (<div className="meter"><i style={{ width: `${Math.max(0, Math.min(100, (val / max) * 100))}%` }} /></div>);
+  // The sub-tabs were filled pills whose UNSELECTED state was solid verdigris —
+  // so the tab you were not on was the loud one. The rest of the game reads its
+  // tabs as leaves of a book.
+  const tabBtn = (id, icon, label) => (
+    <button onClick={() => setSub(id)} className={`leaf${sub === id ? " is-open" : ""}`}><Icon name={icon} size={13} /> {label}</button>
+  );
 
   return (
     <div style={{ paddingBottom: 20 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-        <button onClick={onExit} style={{ background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 8, color: "var(--ink)", fontSize: 12, padding: "6px 12px", cursor: "pointer" }}>← Town</button>
-        <span style={{ color: "var(--rar-epic)", fontFamily: "Georgia, serif", fontSize: 15 }}><Icon name="sword" /> Multiplayer</span>
-        <span style={{ color: "var(--ink-soft)", fontSize: 10.5 }}>Power {mpFmt(myPower)}</span>
+      <div className="head">
+        <button onClick={onExit} className="head-back">&#8592; Town</button>
+        <span className="head-title"><Icon name="arena" /> Arena</span>
+        <span className="head-note">power {mpFmt(myPower)}</span>
       </div>
-      <div style={{ background: "var(--raised)", border: "1px solid var(--rule)", borderRadius: 8, padding: "6px 10px", marginBottom: 10, color: "var(--ink-soft)", fontSize: 10, lineHeight: 1.4, textAlign: "center" }}>Arena — Ladder & Rated PvP. You face real players' loadouts when they're online; training bots fill in the rest.</div>
-      <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>{tabBtn("ladder", "🏆 Ladder")}{tabBtn("rated", "⚔️ Rated PvP")}</div>
+      <div className="ledger-note" style={{ marginBottom: "var(--s-4)" }}>Ladder and rated PvP. You face real players&apos; loadouts when they&apos;re online; training bots fill in the rest.</div>
+      <div className="leaves">{tabBtn("ladder", "trophy", "Ladder")}{tabBtn("rated", "sword", "Rated PvP")}</div>
 
       {sub === "finder" && phase === "browse" && (
         <div>
@@ -11308,10 +11371,13 @@ function MultiplayerHub({ char, commitChar, showNotif, onExit, onStartRated, onS
             <div key={kind}>
               <div className="eyebrow"><span>{kind === "dungeon" ? "Dungeons · 4 players" : "Raids · 6 players"}</span></div>
               {MP_CONTENT.filter((c) => c.kind === kind).map((c) => (
-                <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--sunk)", border: "1px solid var(--hairline)", borderRadius: 10, padding: "9px 11px", marginBottom: 7 }}>
-                  <span style={{ fontSize: 22 }}><EmojiIcon emoji={c.icon} /></span>
-                  <span style={{ flex: 1, minWidth: 0 }}><span style={{ color: c.color || "var(--verdigris)", fontSize: 13, fontWeight: 700 }}>{c.name}</span><span style={{ color: "var(--ink-soft)", fontSize: 10, display: "block" }}>{c.boss} · Lv {c.level} · ilvl {c.ilvl}{c.hard ? " · Hard" : ""}</span></span>
-                  <button onClick={() => startQueue(c)} className="go" style={{ width: "auto", margin: 0 }}>Queue</button>
+                <div key={c.id} className="item">
+                  <span className="mark"><EmojiIcon emoji={c.icon} size={19} /></span>
+                  <span className="item-body">
+                    <span className="item-name">{c.name}</span>
+                    <span className="item-meta">{c.boss} · Lv {c.level} · ilvl {c.ilvl}{c.hard ? " · Hard" : ""}</span>
+                  </span>
+                  <span className="item-acts"><button onClick={() => startQueue(c)} className="mini">Queue</button></span>
                 </div>
               ))}
             </div>
@@ -11320,14 +11386,21 @@ function MultiplayerHub({ char, commitChar, showNotif, onExit, onStartRated, onS
       )}
 
       {sub === "finder" && phase === "queue" && content && (
-        <div style={{ textAlign: "center" }}>
-          <div style={{ fontSize: 30, marginBottom: 4 }}><EmojiIcon emoji={content.icon} /></div>
-          <div style={{ color: "var(--ink)", fontFamily: "Georgia, serif", fontSize: 16, fontWeight: 700 }}>{content.name}</div>
-          <div style={{ color: "var(--rar-epic)", fontSize: 34, fontWeight: 800, margin: "8px 0" }}>{countdown}</div>
-          <div style={{ color: "var(--ink-soft)", fontSize: 11, marginBottom: 12 }}>Finding players… filling with available adventurers at 0.</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12, textAlign: "left" }}>
+        <div>
+          <div className="figure" style={{ padding: "var(--s-5)", marginBottom: "var(--s-4)" }}>
+            <EmojiIcon emoji={content.icon} size={30} />
+            <span className="figure-cls">{content.name}</span>
+            <span className="figure-note">filling in {countdown}s</span>
+          </div>
+          <div className="ledger-note" style={{ textAlign: "center", marginBottom: "var(--s-4)" }}>Finding players… filling with available adventurers at 0.</div>
+          <div style={{ marginBottom: "var(--s-4)" }}>
             {party.map((m) => memberRow(m))}
-            {Array.from({ length: Math.max(0, content.size - party.length) }).map((_, i) => (<div key={"e" + i} style={{ border: "1px dashed var(--verdigris)", borderRadius: 8, padding: "10px 9px", color: "var(--ink-faint)", fontSize: 11, textAlign: "center" }}>searching…</div>))}
+            {Array.from({ length: Math.max(0, content.size - party.length) }).map((_, i) => (
+              <div key={"e" + i} className="ally">
+                <span className="mark is-empty"><Icon name="figure" size={14} /></span>
+                <span className="ally-body"><span className="item-meta" style={{ marginTop: 0 }}>searching…</span></span>
+              </div>
+            ))}
           </div>
           <button onClick={leaveGroup} className="go is-quiet">Leave queue</button>
         </div>
@@ -11337,38 +11410,56 @@ function MultiplayerHub({ char, commitChar, showNotif, onExit, onStartRated, onS
         const w = enc.w; const now = Date.now(); const myMax = maxHpFor(char);
         return (
         <div>
-          <div style={{ textAlign: "center", marginBottom: 6 }}><span style={{ color: "var(--rubric)", fontFamily: "Georgia, serif", fontSize: 16, fontWeight: 700 }}>{enc.bossName}</span>{label && label !== enc.bossName && <span style={{ color: "var(--ink-soft)", fontSize: 10.5, display: "block" }}>{label}</span>}</div>
-          <div style={{ marginBottom: 4 }}>{bar(w.enemy.hp, enc.bossMax, "var(--rubric)")}</div>
-          <div style={{ display: "flex", justifyContent: "space-between", color: "var(--ink-soft)", fontSize: 9.5, marginBottom: 8 }}><span>{mpFmt(w.enemy.hp)} / {mpFmt(enc.bossMax)}</span><span>{enc.elapsed >= enc.enrage ? "🔥 ENRAGED" : `enrage in ${Math.max(0, Math.ceil(enc.enrage - enc.elapsed))}s`}</span></div>
-          <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-            <div style={{ flex: 1 }}><div style={{ color: "var(--ink-soft)", fontSize: 9.5, marginBottom: 2 }}>Party</div>{bar(enc.partyHp, enc.partyMax, "var(--verdigris)")}</div>
-            <div style={{ flex: 1 }}><div style={{ color: "var(--ink-soft)", fontSize: 9.5, marginBottom: 2 }}>You · {mpFmt(w.hp)}/{mpFmt(myMax)}{(w.res || 0) > 0 ? ` · ${classResource(char.cls).icon}${Math.floor(w.res)}` : ""}</div>{bar(w.hp, myMax, "var(--verdigris)")}</div>
+          <div className="eyebrow">
+            <span>{enc.bossName}</span>
+            <span className={enc.elapsed >= enc.enrage ? "is-ripe" : undefined}>
+              {enc.elapsed >= enc.enrage ? "enraged" : `enrage in ${Math.max(0, Math.ceil(enc.enrage - enc.elapsed))}s`}
+            </span>
           </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+          {label && label !== enc.bossName && <div className="ledger-note" style={{ marginBottom: "var(--s-2)" }}>{label}</div>}
+          {bar(w.enemy.hp, enc.bossMax)}
+          <div className="statline" style={{ marginTop: "var(--s-3)" }}>
+            <span>{mpFmt(w.enemy.hp)} / {mpFmt(enc.bossMax)}</span>
+          </div>
+          <div className="fields" style={{ margin: "var(--s-3) 0" }}>
+            <div><div className="res-line"><span>Party</span></div>{bar(enc.partyHp, enc.partyMax)}</div>
+            <div><div className="res-line"><span>You {mpFmt(w.hp)}/{mpFmt(myMax)}{(w.res || 0) > 0 ? ` · ${Math.floor(w.res)}` : ""}</span></div>{bar(w.hp, myMax)}</div>
+          </div>
+          <div className="hand">
             {playerSkills.length ? playerSkills.map((sk) => { const cd = (w.cooldowns && w.cooldowns[sk.name]) || 0; const ready = now >= cd; return (
-              <button key={sk.name} onClick={() => castSkill(sk)} disabled={!ready} style={{ flex: "1 1 44%", background: ready ? "var(--raised)" : "var(--verdigris)", border: `1px solid ${ready ? "var(--rule)" : "var(--hairline)"}`, borderRadius: 9, color: ready ? "var(--ink)" : "var(--ink-faint)", fontSize: 11.5, fontWeight: 700, padding: "10px 6px", cursor: ready ? "pointer" : "default" }}>{sk.icon || "✨"} {sk.name}{!ready ? ` (${Math.ceil((cd - now) / 1000)}s)` : ""}</button>
+              <button key={sk.name} onClick={() => castSkill(sk)} disabled={!ready} className={`act${ready ? "" : " is-sealed"}`} style={{ flex: "1 1 44%" }}>
+                <span>{withIcons(sk.icon || "✨", 12)} {sk.name}{!ready ? <span className="act-n"> {Math.ceil((cd - now) / 1000)}s</span> : ""}</span>
+              </button>
             ); }) : <button onClick={() => castSkill({ name: "Strike", mult: 1.5, cd: 3, icon: "🗡️" })} className="go"><Icon name="sword" /> Strike</button>}
           </div>
-          <div style={{ background: "var(--sunk)", border: "1px solid var(--verdigris)", borderRadius: 8, padding: 8, height: 92, overflowY: "auto", fontSize: 10, color: "var(--verdigris)", lineHeight: 1.5 }}>{enc.log.map((l, i) => <div key={i}>{withIcons(l, 12)}</div>)}</div>
+          <div className="grouplog" style={{ height: 92 }}>{enc.log.map((l, i) => <div key={i}>{withIcons(l, 12)}</div>)}</div>
         </div>
         );
       })()}
 
       {sub === "finder" && phase === "loot" && loot && (
-        <div style={{ textAlign: "center" }}>
-          <div style={{ color: "var(--gilt)", fontFamily: "Georgia, serif", fontSize: 15, fontWeight: 700, marginBottom: 8 }}>Loot Roll · Bid Gold</div>
-          <div style={{ background: "var(--sunk)", border: `2px solid ${rarityById(loot.item.rarity).color || "var(--ink-faint)"}`, borderRadius: 12, padding: "12px", marginBottom: 10 }}>
-            <div style={{ fontSize: 26 }}>{loot.item.icon || "🎁"}</div>
-            <div style={{ color: rarityById(loot.item.rarity).color || "var(--ink)", fontSize: 14, fontWeight: 700 }}>{loot.item.name}</div>
-            <div style={{ color: "var(--ink-soft)", fontSize: 10 }}>ilvl {loot.item.ilvl} · {rarityById(loot.item.rarity).name}</div>
+        <div>
+          <div className="eyebrow"><span>Loot roll · bid gold</span><span>{loot.timeLeft}s</span></div>
+          {/* The rarity was written on a 2px frame AND on the name, out of the
+              data hex rather than the theme's — the palette that fails on
+              parchment. The sheet's own grammar already puts a rarity on one
+              edge and leaves the words readable. */}
+          <div className={`figure ${rarClass(loot.item.rarity)}`} style={{ borderStyle: "solid", borderColor: "var(--rar)", marginBottom: "var(--s-4)" }}>
+            <EmojiIcon emoji={loot.item.icon || "🎁"} size={26} />
+            <span className="figure-cls" style={{ color: "var(--rar)" }}>{loot.item.name}</span>
+            <span className="figure-note">ilvl {loot.item.ilvl} · {rarityById(loot.item.rarity).name}</span>
           </div>
           {!loot.resolved ? (
             <>
-              <div style={{ color: "var(--rar-epic)", fontSize: 13, marginBottom: 2 }}>High bid: <b>{loot.high ? mpFmt(loot.high) + "g" : "—"}</b>{loot.highName ? ` · ${loot.highName}` : ""}</div>
-              <div style={{ color: "var(--ink-soft)", fontSize: 11, marginBottom: 10 }}>Reserve <b>{mpFmt(loot.min || 0)}g</b> · {loot.timeLeft}s left · your gold: {mpFmt(char.gold || 0)}</div>
+              <div className="statline">
+                <span>High bid <b>{loot.high ? mpFmt(loot.high) + "g" : "—"}</b>{loot.highName ? ` · ${loot.highName}` : ""}</span>
+                <span>Reserve <b>{mpFmt(loot.min || 0)}g</b></span>
+                <span>Your gold <b>{mpFmt(char.gold || 0)}</b></span>
+              </div>
               {loot.passed ? (
-                <div style={{ background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 9, padding: "10px 12px", color: "var(--ink-soft)", fontSize: 11.5, lineHeight: 1.5 }}>
-                  ✋ <b>You passed.</b> Staying until the hammer falls so your cut is a share of the final price.
+                <div className="aside-note">
+                  <b>You passed</b>
+                  <span>Staying until the hammer falls so your cut is a share of the final price.</span>
                 </div>
               ) : (<>
                 <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
@@ -11379,11 +11470,14 @@ function MultiplayerHub({ char, commitChar, showNotif, onExit, onStartRated, onS
               </>)}
             </>
           ) : loot.iWon ? (
-            <div style={{ color: "var(--verdigris)", fontSize: 13, fontWeight: 700 }}>{rewardMsg || "You won the item!"}</div>
+            <div className="aside-note is-gain"><b>{rewardMsg || "You won the item."}</b></div>
           ) : (
             <>
-              <div style={{ color: "var(--rubric)", fontSize: 12, marginBottom: 4 }}>{loot.autoPassed ? "Time expired — you passed. " : loot.passed ? "You passed. " : ""}{loot.highName || "A rival"} won the roll{loot.payout ? ` — your full share: +${mpFmt(loot.payout)}g` : ""}.</div>
-              <div style={{ color: "var(--ink-soft)", fontSize: 11, marginBottom: 10 }}>Buy an exact copy for {COPY_ITEM_VEN} 💎 Ven? (you have {char.ven || 0})</div>
+              <div className="aside-note is-warn">
+                <b>{loot.highName || "A rival"} won the roll</b>
+                <span>{loot.autoPassed ? "Time expired — you passed. " : loot.passed ? "You passed. " : ""}{loot.payout ? `Your full share: +${mpFmt(loot.payout)}g.` : ""}</span>
+              </div>
+              <div className="ledger-note" style={{ marginBottom: "var(--s-3)" }}>Buy an exact copy for {COPY_ITEM_VEN} Ven? You have {char.ven || 0}.</div>
               <button onClick={buyCopy} className="go"><Icon name="gem" /> Buy copy · {COPY_ITEM_VEN} Ven</button>
               <button onClick={skipCopy} className="go is-quiet">No thanks</button>
             </>
@@ -11393,8 +11487,8 @@ function MultiplayerHub({ char, commitChar, showNotif, onExit, onStartRated, onS
 
       {sub === "finder" && phase === "done" && (
         <div style={{ textAlign: "center", padding: "20px 0" }}>
-          <div style={{ fontSize: 30, marginBottom: 8 }}>🏁</div>
-          <div style={{ color: "var(--ink)", fontSize: 13, lineHeight: 1.6, marginBottom: 16 }}>{rewardMsg || "Run complete."}</div>
+          <div className="sheet-mark"><Icon name="trophy" size={26} /></div>
+          <div className="sheet-lede">{rewardMsg || "Run complete."}</div>
           <button onClick={leaveGroup} className="go">Back to Group Finder</button>
         </div>
       )}
@@ -11427,51 +11521,56 @@ function MultiplayerHub({ char, commitChar, showNotif, onExit, onStartRated, onS
 
       {sub === "rated" && (
         <div>
-          <div className="ledger-note" style={{ marginBottom: 12 }}>Rated Arena — live 1v1 matchmaking. Every <b>win</b> grants a 🎟️ Arena Token and raises your Rating; wins over 24h pay prizes (losses subtract).</div>
-          <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-            <div style={{ flex: 1, background: "var(--raised)", border: "1px solid var(--rule)", borderRadius: 10, padding: "10px", textAlign: "center" }}><div style={{ color: "var(--gilt)", fontSize: 22, fontWeight: 800 }}>{myRating}</div><div style={{ color: "var(--ink-soft)", fontSize: 9.5 }}>Rating</div></div>
-            <div style={{ flex: 1, background: "var(--raised)", border: "1px solid var(--bole)", borderRadius: 10, padding: "10px", textAlign: "center" }}><div style={{ color: "var(--bole)", fontSize: 22, fontWeight: 800 }}><Icon name="ticket" /> {char.arenaTokens || 0}</div><div style={{ color: "var(--ink-soft)", fontSize: 9.5 }}>Arena Tokens</div></div>
+          <div className="ledger-note" style={{ marginBottom: 12 }}>Rated Arena — live 1v1 matchmaking. Every <b>win</b> grants an Arena Token and raises your Rating; wins over 24h pay prizes (losses subtract).</div>
+          {/* Five tinted score boxes across two rows, each with its own border
+              colour and a 20-22px number — the loudest thing on a screen whose
+              actual job is one button. They are quantities, so they go where
+              every other quantity in the game goes. */}
+          <div className="statline">
+            <span>Rating <b>{myRating}</b></span>
+            <span>Arena tokens <b>{char.arenaTokens || 0}</b></span>
+            <span>Lifetime <b>{lifetime.wins || 0}W</b> / <b>{lifetime.losses || 0}L</b></span>
           </div>
-          <div style={{ color: "var(--ink-faint)", fontSize: 9.5, textAlign: "center", marginBottom: 8 }}>Lifetime {lifetime.wins || 0}W / {lifetime.losses || 0}L · Spend tokens at the 🛡️ Battlemaster in the Market</div>
+          <div className="ledger-note" style={{ textAlign: "center", marginTop: "var(--s-3)" }}>Spend tokens at the Battlemaster in the Market.</div>
           {/* Attempts and streak. Shown BEFORE the queue button, because running out mid-session
               with no warning is how a limit reads as a bug rather than a rule. */}
           {(() => {
             const left = arenaRunsLeft(char), tix = arenaTicketsLeft(char), st = arenaToday(char).streak;
             const next = arenaPayout(true, st);
             return (
-              <div style={{ display: "flex", justifyContent: "center", gap: 12, flexWrap: "wrap",
-                            fontSize: 10.5, marginBottom: 10, color: "var(--ink-soft)" }}>
-                <span>Attempts today: <b style={{ color: left > 0 ? "var(--verdigris)" : "var(--rubric)" }}>{left}/{ARENA.dailyRuns}</b></span>
-                {left === 0 && tix > 0 && <span><Icon name="arena" /> Tickets: <b>{tix}</b></span>}
-                {st > 0 && <span><Icon name="flame" /> Streak <b style={{ color: "var(--bole)" }}>{st}</b></span>}
-                <span>Next win: <b style={{ color: "var(--bole)" }}>+{next} 🎟️</b></span>
+              <div className="statline">
+                <span>Attempts today <b className={left > 0 ? undefined : "rar-artifact"}>{left}/{ARENA.dailyRuns}</b></span>
+                {left === 0 && tix > 0 && <span>Tickets <b>{tix}</b></span>}
+                {st > 0 && <span>Streak <b>{st}</b></span>}
+                <span>Next win <b>+{next}</b></span>
               </div>
             );
           })()}
-          <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-            <div style={{ flex: 1, background: "var(--raised)", border: "1px solid var(--verdigris)", borderRadius: 10, padding: "10px", textAlign: "center" }}><div style={{ color: "var(--verdigris)", fontSize: 20, fontWeight: 800 }}>{rated.wins || 0}</div><div style={{ color: "var(--ink-soft)", fontSize: 9.5 }}>Wins</div></div>
-            <div style={{ flex: 1, background: "var(--raised)", border: "1px solid var(--verdigris)", borderRadius: 10, padding: "10px", textAlign: "center" }}><div style={{ color: "var(--rubric)", fontSize: 20, fontWeight: 800 }}>{rated.losses || 0}</div><div style={{ color: "var(--ink-soft)", fontSize: 9.5 }}>Losses</div></div>
-            <div style={{ flex: 1, background: "var(--raised)", border: "1px solid var(--rule)", borderRadius: 10, padding: "10px", textAlign: "center" }}><div style={{ color: "var(--rar-epic)", fontSize: 20, fontWeight: 800 }}>{net}</div><div style={{ color: "var(--ink-soft)", fontSize: 9.5 }}>Net</div></div>
+          <div className="statline" style={{ marginTop: "var(--s-3)" }}>
+            <span>Wins <b>{rated.wins || 0}</b></span>
+            <span>Losses <b>{rated.losses || 0}</b></span>
+            <span>Net <b>{net}</b></span>
           </div>
-          <div style={{ color: "var(--ink-soft)", fontSize: 10.5, textAlign: "center", marginBottom: 12 }}>{windowOver ? "Window ended — claim your prizes to start a new one." : `Window resets in ${fmtDur(windowLeft)}`}</div>
+          <div className="ledger-note" style={{ textAlign: "center", margin: "var(--s-3) 0 var(--s-4)" }}>{windowOver ? "Window ended — claim your prizes to start a new one." : `Window resets in ${fmtDur(windowLeft)}`}</div>
           {windowOver ? (
             <button onClick={claimRated} className="go"><Icon name="trophy" /> Claim prizes (net {net})</button>
           ) : match && match.state === "searching" ? (
-            <div style={{ textAlign: "center", padding: "16px 0", color: "var(--rar-epic)", fontSize: 13 }}><Icon name="target" /> Finding an opponent near your power…</div>
+            <div className="empty"><Icon name="target" size={13} /> Finding an opponent near your power…</div>
           ) : match && match.state === "result" ? (
-            <div style={{ textAlign: "center" }}>
-              <div style={{ fontSize: 26, marginBottom: 4 }}>{match.win ? "🏆" : "💀"}</div>
-              <div style={{ color: match.win ? "var(--verdigris)" : "var(--rubric)", fontSize: 15, fontWeight: 800, marginBottom: 2 }}>{match.win ? "Victory!" : "Defeat"}</div>
-              <div style={{ color: "var(--ink-soft)", fontSize: 11, marginBottom: 12 }}>vs {match.opp.name} · {mpFmt(match.opp.power)} pwr</div>
+            <div>
+              <div className={`aside-note ${match.win ? "is-gain" : "is-warn"}`}>
+                <b>{match.win ? "Victory" : "Defeat"}</b>
+                <span>vs {match.opp.name} · {mpFmt(match.opp.power)} power</span>
+              </div>
               <button onClick={findMatch} className="go">Queue again</button>
             </div>
           ) : !arenaCanEnter(char) ? (
-            <div style={{ textAlign: "center", padding: "14px 10px", background: "var(--raised)", border: "1px solid var(--rubric)", borderRadius: 10, marginBottom: 8 }}>
-              <div style={{ color: "var(--rubric)", fontSize: 13, fontWeight: 700, marginBottom: 3 }}>Out of attempts today</div>
-              <div style={{ color: "var(--ink-soft)", fontSize: 11, lineHeight: 1.5 }}>
-                {ARENA.dailyRuns} rated bouts a day. A 🏟️ Arena Challenge Ticket buys another —
+            <div className="aside-note is-warn">
+              <b>Out of attempts today</b>
+              <span>
+                {ARENA.dailyRuns} rated bouts a day. An Arena Challenge Ticket buys another —
                 50 tokens at the Battlemaster, or 99 Ven in the shop. Practice Duels stay free.
-              </div>
+              </span>
             </div>
           ) : (
             <>
@@ -11479,13 +11578,9 @@ function MultiplayerHub({ char, commitChar, showNotif, onExit, onStartRated, onS
                   explicitly built bot — never mpProvider.findOpponent, which can return a real
                   player's loadout — and neither a win nor a loss is recorded. */}
               <button onClick={onStartPractice} disabled={!onStartPractice}
-                style={{ width: "100%", background: "var(--raised)",
-                  border: `1.5px solid ${lessonWantsDuel ? "var(--gilt)" : "var(--verdigris)"}`, borderRadius: 10,
-                  color: lessonWantsDuel ? "var(--gilt)" : "var(--verdigris)", fontSize: 13, fontWeight: 700,
-                  padding: "11px", cursor: "pointer", marginBottom: 8,
-                  animation: lessonWantsDuel ? "tutflash 1.4s ease-in-out infinite" : "none" }}>
-                <Icon name="target" /> Practice Duel {char.tutorial?.duelDone ? "✓" : ""}
-                <span style={{ display: "block", color: "var(--ink-soft)", fontSize: 10, fontWeight: 400, marginTop: 2 }}>
+                className={`go is-quiet${lessonWantsDuel ? " is-due" : ""}`}>
+                <Icon name="target" size={12} /> Practice duel {char.tutorial?.duelDone ? <Icon name="check" size={11} /> : null}
+                <span className="sheet-note" style={{ marginBottom: 0, marginTop: 3 }}>
                   Unranked, against a training partner. Nothing is recorded, win or lose.
                 </span>
               </button>

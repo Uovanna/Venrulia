@@ -418,11 +418,11 @@ function GameIcon({ icon, imgKey, size = 28, rounded = true, style }) {
 
 // Relics are rare, gameplay-altering items (one per applicable dungeon). Not enchantable, no random stats.
 const RELICS = [
-  { id: "miners_charm", name: "Miner's Charm", icon: "⛏️", dungeonId: "deadmines", color: "#e0a955", desc: "Mining “Smash” cooldown −1s · 50% chance for double ore when manually mining." },
-  { id: "verdant_idol", name: "Verdant Idol", icon: "🌿", dungeonId: "scarlet", color: "var(--verdigris)", desc: "Herbalism “Harvest” cooldown −1s · 50% chance for double herbs when manually harvesting." },
+  { id: "miners_charm", name: "Miner's Charm", icon: "⛏️", dungeonId: "deadmines", desc: "Mining “Smash” cooldown −1s · 50% chance for double ore when manually mining." },
+  { id: "verdant_idol", name: "Verdant Idol", icon: "🌿", dungeonId: "scarlet", desc: "Herbalism “Harvest” cooldown −1s · 50% chance for double herbs when manually harvesting." },
 ];
 const relicForDungeon = (dungeonId) => RELICS.find((r) => r.dungeonId === dungeonId);
-const makeRelic = (def, ilvl) => ({ id: uid(), name: def.name, slotId: "relic", icon: def.icon, rarity: "legendary", ilvl: null, relicId: def.id, relicDesc: def.desc, relicColor: def.color, stats: {}, enchant: null });
+const makeRelic = (def, ilvl) => ({ id: uid(), name: def.name, slotId: "relic", icon: def.icon, rarity: "legendary", ilvl: null, relicId: def.id, relicDesc: def.desc, stats: {}, enchant: null });
 
 
 
@@ -2999,48 +2999,67 @@ function ItemTooltip({ item, onClose, actions, onSocket }) {
   const temperBonus = item.temperBonus || 0;
   const temperByStat = {};
   if (temperBonus > 0 && Array.isArray(item.lines)) for (const ln of item.lines) temperByStat[ln.stat] = (temperByStat[ln.stat] || 0) + temperBonus;
-  const temperNote = (k) => temperByStat[k] ? <span style={{ color: "var(--bole)", fontSize: 9.5, fontWeight: 400 }}> (+{temperByStat[k]} ⚒️)</span> : null;
+  const temperNote = (k) => temperByStat[k] ? <small>+{temperByStat[k]} tempered</small> : null;
   return (
     <div onClick={onClose} className="veil is-over">
       <div onClick={(e) => e.stopPropagation()} className={`sheet is-rarity is-narrow ${rarClass(item.rarity)}`}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+        <div className="item" style={{ paddingTop: 0, borderBottom: 0 }}>
           <span className="mark"><GameIcon icon={item.icon} imgKey={item.iconKey} size={32} /></span>
-          <div style={{ minWidth: 0 }}>
-            <div className={rarClass(item.rarity)} style={{ fontWeight: 600, fontSize: "var(--step-0)", lineHeight: 1.15 }}>{item.enchant ? "✨ " : ""}{item.name}{temperSuffix(item)}</div>
+          <span className="item-body">
+            <span className={`item-name ${rarClass(item.rarity)}`}>
+              {item.enchant ? <Icon name="spark" size={12} style={{ marginRight: ".2em" }} /> : null}{item.name}{temperSuffix(item)}
+            </span>
             {/* The rank sits directly under the name, exactly as asked, and above the rarity line —
                 where the piece came from is the first thing about an Abyss item that matters. */}
-            {item.abyss != null && <div className="rar-epic" style={{ fontSize: 11, fontWeight: 600 }}>{abyssLabel(item.abyss)}</div>}
-            <div className="item-meta">{r.name} · {slotById(item.slotId)?.name}</div>
-          </div>
+            {item.abyss != null && <span className="item-meta rar-epic">{abyssLabel(item.abyss)}</span>}
+            <span className="item-meta">{r.name} · {slotById(item.slotId)?.name}</span>
+          </span>
         </div>
-        {item.ilvl ? <div style={{ color: "var(--gilt)", fontSize: 11.5, marginBottom: 5 }}>Item Level {item.ilvl}{item.artifact ? <span style={{ color: "var(--rubric)", marginLeft: 6 }}>· re-forges with your level</span> : null}{item.abyss ? <span style={{ color: "var(--rar-epic)", marginLeft: 6 }}>· secondaries roll {Math.round((abyssMult(item.abyss) - 1) * 100)}% higher</span> : null}</div> : null}
-        {item.temper > 0 ? <div style={{ color: "var(--bole)", fontSize: 11, marginBottom: 5, fontWeight: 700 }}><Icon name="anvil" /> Tempered +{item.temper} <span style={{ color: "var(--bole)", fontWeight: 400 }}>· +{temperBonus} to each of its {item.lines?.length || 0} secondary line{(item.lines?.length || 0) === 1 ? "" : "s"}</span></div> : null}
-        {(() => { const suf = suffixByMains(item.mains && item.mains.length ? item.mains : mainStatsOf(item)); return suf
-          ? <div style={{ color: "var(--ink-soft)", fontSize: 10.5, marginBottom: 5 }}>{suf.name} <span style={{ color: "var(--ink-faint)" }}>— always {suf.desc}</span></div> : null; })()}
-        {itemHasPower(item) && !itemPowerActive(item) && (
-          <div style={{ color: "var(--bole)", fontSize: 10.5, marginBottom: 5 }}><Icon name="warn" /> {item.stats.sp > 0 ? "Spell" : "Attack"} Power inactive — two main stats</div>
-        )}
+        <div className="facts">
+          {item.ilvl ? (
+            <div className="fact is-prize">
+              Item Level {item.ilvl}
+              {item.artifact ? <small>re-forges with your level</small> : null}
+              {item.abyss ? <small>secondaries roll {Math.round((abyssMult(item.abyss) - 1) * 100)}% higher</small> : null}
+            </div>
+          ) : null}
+          {item.temper > 0 ? (
+            <div className="fact is-warn">
+              <Icon name="anvil" size={12} /> Tempered +{item.temper}
+              <small>+{temperBonus} to each of its {item.lines?.length || 0} secondary line{(item.lines?.length || 0) === 1 ? "" : "s"}</small>
+            </div>
+          ) : null}
+          {(() => { const suf = suffixByMains(item.mains && item.mains.length ? item.mains : mainStatsOf(item)); return suf
+            ? <div className="fact">{suf.name} <small>always {suf.desc}</small></div> : null; })()}
+          {itemHasPower(item) && !itemPowerActive(item) && (
+            <div className="fact is-warn"><Icon name="warn" size={12} /> {item.stats.sp > 0 ? "Spell" : "Attack"} Power inactive — two main stats</div>
+          )}
+        </div>
         {socketsOf(item).length > 0 && (
-          <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 6 }}>
-            <span style={{ color: "var(--ink-soft)", fontSize: 10.5 }}>Sockets</span>
+          <div className="sockets">
+            <span className="item-meta" style={{ marginTop: 0 }}>Sockets</span>
             {socketsOf(item).map((gid, i) => { const g = gid && gemById(gid); return (
               <span key={i} onClick={onSocket ? (e) => { e.stopPropagation(); onSocket(item, i); } : undefined}
                 title={g ? `${g.name} — ${g.desc}` : "Empty socket"}
-                style={{ width: 19, height: 19, borderRadius: "50%", background: g ? "var(--raised)" : "var(--sunk)", border: `1.5px solid ${g ? rarityById(g.rarity).color : "var(--rule)"}`, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, cursor: onSocket ? "pointer" : "default" }}>{g ? g.icon : ""}</span>
+                className={`socket${g ? ` is-set ${rarClass(g.rarity)}` : ""}${onSocket ? " is-tap" : ""}`}>
+                {g ? <EmojiIcon emoji={g.icon} size={11} /> : null}</span>
             ); })}
-            <span style={{ color: "var(--ink-soft)", fontSize: 9.5 }}>({openSockets(item)} empty{onSocket ? " · tap to bond" : ""})</span>
+            <span className="item-meta" style={{ marginTop: 0 }}>{openSockets(item)} empty{onSocket ? " · tap to bond" : ""}</span>
           </div>
         )}
-        {item.wdmg && <div style={{ color: "var(--bole)", fontSize: 12.5, fontWeight: 600, marginBottom: 2 }}><Icon name="sword" /> {item.wdmg.min} – {item.wdmg.max} Damage</div>}
-        {merged.armor > 0 && <div style={{ color: "var(--ink-soft)", fontSize: 12.5, marginBottom: 2 }}><Icon name="shield" /> {merged.armor} Armor</div>}
-        <div style={{ borderTop: "1px solid var(--hairline)", margin: "7px 0", paddingTop: 6 }}>
-          {mainKeys.filter((k) => merged[k] > 0).map((k) => <div key={k} style={{ color: "var(--ink)", fontSize: 12 }}>+{merged[k]} {STAT_LABEL[k]}{temperNote(k)}</div>)}
-          {secKeys.filter((k) => merged[k] > 0).map((k) => <div key={k} style={{ color: "var(--ink-soft)", fontSize: 12 }}>+{merged[k]} {STAT_LABEL[k]}{temperNote(k)}</div>)}
-          {mainKeys.concat(secKeys).every((k) => !(merged[k] > 0)) && !item.wdmg && merged.armor <= 0 && !item.relicDesc && <div style={{ color: "var(--ink-faint)", fontSize: 12 }}>No bonuses</div>}
-          {item.relicDesc && <div style={{ color: item.relicColor || "var(--gilt)", fontSize: 12, lineHeight: 1.35 }}><Icon name="sword" /> {item.relicDesc}</div>}
-          {item.enchant && <div style={{ color: "var(--rar-epic)", fontSize: 12, marginTop: 3 }}><Icon name="spark" /> Enchant: {Object.entries(item.enchant).map(([k, v]) => `+${v} ${STAT_LABEL[k]}`).join(", ")}</div>}
+        <div className="facts is-ruled">
+          {item.wdmg && <div className="fact is-weapon"><Icon name="sword" size={12} /> {item.wdmg.min} – {item.wdmg.max} Damage</div>}
+          {merged.armor > 0 && <div className="fact"><Icon name="shield" size={12} /> {merged.armor} Armor</div>}
+          {mainKeys.filter((k) => merged[k] > 0).map((k) => <div key={k} className="fact is-main">+{merged[k]} {STAT_LABEL[k]}{temperNote(k)}</div>)}
+          {secKeys.filter((k) => merged[k] > 0).map((k) => <div key={k} className="fact">+{merged[k]} {STAT_LABEL[k]}{temperNote(k)}</div>)}
+          {mainKeys.concat(secKeys).every((k) => !(merged[k] > 0)) && !item.wdmg && merged.armor <= 0 && !item.relicDesc && <div className="fact is-quiet">No bonuses</div>}
+          {/* A relic is legendary, so its text is written in the legendary hue.
+              relicColor carried one raw hex and one token for two relics — two
+              answers to a question the rarity had already answered. */}
+          {item.relicDesc && <div className="fact is-relic"><Icon name="sword" size={12} /> {item.relicDesc}</div>}
+          {item.enchant && <div className="fact is-enchant"><Icon name="spark" size={12} /> Enchant: {Object.entries(item.enchant).map(([k, v]) => `+${v} ${STAT_LABEL[k]}`).join(", ")}</div>}
         </div>
-        <div style={{ color: "var(--ink-faint)", fontSize: 10.5 }}>Sell value: {item.value}g</div>
+        <div className="fact is-quiet">Sell value: {item.value}g</div>
         {/* The actions carry a `color` from their call sites — four different hexes
             describing "you can do this". They are all the same kind of thing, so
             they are all written the same way; only a destructive one is marked. */}
@@ -3048,7 +3067,7 @@ function ItemTooltip({ item, onClose, actions, onSocket }) {
           <div className="sheet-acts" style={{ flexWrap: "wrap" }}>
             {actions.map((a, i) => (
               <button key={i} onClick={() => { a.onClick(); if (!a.keepOpen) onClose(); }}
-                className={`go${a.tone === "warn" ? "" : " is-quiet"}`} style={{ minWidth: 78 }}>{a.label}</button>
+                className={`go${a.tone === "warn" ? "" : " is-quiet"}`} style={{ minWidth: 78 }}>{withIcons(a.label, 13)}</button>
             ))}
           </div>
         )}
@@ -10520,7 +10539,7 @@ function LootBidModal({ items, party, char, commitChar, showNotif, onClose, net,
                   {merged.armor > 0 && <div style={{ color: "var(--ink-soft)", fontSize: 11.5 }}><Icon name="shield" /> {merged.armor} Armor</div>}
                   {mainKeys.filter((k) => merged[k] > 0).map((k) => <div key={k} style={{ color: "var(--ink)", fontSize: 11.5 }}>+{merged[k]} {STAT_LABEL[k]}</div>)}
                   {secKeys.filter((k) => merged[k] > 0).map((k) => <div key={k} style={{ color: "var(--ink-soft)", fontSize: 11.5 }}>+{merged[k]} {STAT_LABEL[k]}</div>)}
-                  {item.relicDesc && <div style={{ color: item.relicColor || "var(--gilt)", fontSize: 11, lineHeight: 1.3 }}><Icon name="sword" /> {item.relicDesc}</div>}
+                  {item.relicDesc && <div className="fact is-relic"><Icon name="sword" size={12} /> {item.relicDesc}</div>}
                   {socks.length > 0 && <div style={{ color: "var(--ink-soft)", fontSize: 10, marginTop: 2 }}><Icon name="gem" /> Sockets: {socks.map((gid) => { const g = gid && gemById(gid); return g ? g.icon : "○"; }).join(" ")}</div>}
                   {item.enchant && <div style={{ color: "var(--rar-epic)", fontSize: 10.5 }}><Icon name="spark" /> {Object.entries(item.enchant).map(([k, v]) => `+${v} ${STAT_LABEL[k]}`).join(", ")}</div>}
                   {bare && <div style={{ color: "var(--ink-faint)", fontSize: 11 }}>No bonuses</div>}

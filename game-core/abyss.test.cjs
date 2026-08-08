@@ -533,7 +533,12 @@ js += `
     ok(src.indexOf('{difficulty === "abyss" && (() => {') > 0, "\\u2026and the screen renders");
     ok(src.indexOf("onClick={() => startAbyss(p)}") > 0, "every unlocked rank can be entered");
     ok(src.indexOf("onClick={() => toggleOfflineAbyss(p)}") > 0, "\\u2026and parked in");
-    ok(src.indexOf("{item.abyss != null && <div") > 0, "the item tooltip prints the rank under the name");
+    // Matches the rank being PRINTED, not the tag it is printed in. Written as
+    // a literal <div it broke the moment the sheet became a list of facts, which is the
+    // second time a reachability check has been pinned to markup that was always
+    // going to be rewritten.
+    ok(/\\{item\\.abyss != null && <\\w+[^>]*>\\{abyssLabel\\(item\\.abyss\\)\\}/.test(src),
+       "the item tooltip prints the rank under the name");
     ok(src.indexOf("secondaries roll {Math.round((abyssMult(item.abyss) - 1) * 100)}% higher") > 0,
        "\\u2026and says what the rank is actually worth");
   }

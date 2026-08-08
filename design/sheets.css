@@ -163,3 +163,44 @@
 .sheet-acts { display: flex; gap: var(--s-3); margin-top: var(--s-4); }
 .sheet-acts > * { flex: 1; min-width: 0; margin-top: 0; }
 .sheet-acts .go { margin-top: 0; }
+
+/* ---- what an item is ----------------------------------------------------- */
+/* An item sheet is a list of facts about one object. It was written as sixteen
+   <div>s, each with its own colour and its own font size between 9.5 and 12.5 —
+   six sizes for what is one voice. A fact is a line; what KIND of fact it is
+   picks the ink, and nothing picks the size. */
+.facts { margin: var(--s-3) 0; }
+.fact {
+  font-size: var(--step--1); color: var(--ink-soft); line-height: 1.45;
+  display: flex; align-items: baseline; gap: var(--s-2); flex-wrap: wrap;
+}
+.fact.is-main    { color: var(--ink); }
+.fact.is-weapon  { color: var(--bole); font-weight: 600; }
+.fact.is-warn    { color: var(--bole); }
+.fact.is-prize   { color: var(--gilt); }
+.fact.is-enchant { color: var(--rar-epic); }
+.fact.is-relic   { color: var(--rar-legendary); }
+.fact.is-quiet   { color: var(--ink-faint); }
+/* A stat's tempered portion, and any other parenthetical: the margin voice,
+   inline. Not a second colour on the same line. */
+.fact small {
+  font-family: var(--mono); font-size: 9px; color: var(--ink-faint);
+  font-variant-numeric: tabular-nums; letter-spacing: .04em;
+}
+/* The stat block is ruled off from the prose above it, the way the ledger is. */
+.facts.is-ruled {
+  border-top: 1px solid var(--hairline); padding-top: var(--s-3); margin-top: var(--s-3);
+}
+
+/* ---- sockets ------------------------------------------------------------- */
+/* Round, because a socket is a hole. The only round thing in the game, and it
+   earns it. The filled one takes the gem's rarity on its rim. */
+.sockets { display: flex; align-items: center; gap: var(--s-2); margin-bottom: var(--s-3); }
+.socket {
+  width: 19px; height: 19px; flex: none; padding: 0; border-radius: 50%;
+  background: var(--sunk); border: 1px solid var(--rule);
+  display: inline-grid; place-items: center; color: var(--ink); cursor: default;
+}
+.socket.is-set { background: var(--raised); border-color: var(--rar, var(--rule)); }
+.socket.is-tap { cursor: pointer; }
+.socket.is-tap:focus-visible { outline: 2px solid var(--rubric); outline-offset: 2px; }

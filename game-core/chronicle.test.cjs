@@ -826,6 +826,43 @@ sec("The title page, and the colours that were hiding in the data");
   ok(rb.length === 0, rb.length ? rb.join("; ") : "…and so does every race");
 }
 
+sec("An item sheet is a list of facts");
+{
+  // THE SHEET EVERY ITEM OPENS INTO. Sixteen <div>s of one line each, with six
+  // different font sizes between 9.5 and 12.5 for what is a single voice, and a
+  // colour picked per line. A fact is a line; what KIND of fact it is chooses
+  // the ink, and nothing chooses the size.
+  const tip = (() => {
+    const i = app.indexOf("function ItemTooltip(");
+    return i < 0 ? "" : app.slice(i, app.indexOf("\nfunction ", i + 10));
+  })();
+  ok(tip.length > 500, "the item sheet is findable");
+  ok(sheets.includes(".fact {") && sheets.includes(".facts.is-ruled"),
+     "sheets.css owns the fact list");
+  ok(!/fontSize: 1[012]\.?5?/.test(tip) && !/fontSize: 9\.5/.test(tip),
+     "no line in the sheet picks its own size");
+  ok((tip.match(/className="fact/g) || []).length >= 8, "…they are all facts");
+
+  // A SOCKET IS ROUND because a socket is a hole — the only round thing in the
+  // game, and it earns it. It used to read the gem's rarity hex straight out of
+  // the data for its rim, which is the palette that fails on parchment.
+  ok(sheets.includes(".socket {") && sheets.includes(".socket.is-set"),
+     "a socket is furniture, not an inline circle");
+  ok(!/rarityById\(g\.rarity\)\.color/.test(tip),
+     "…and its rim takes the themed rarity, not the raw hex");
+
+  // A RELIC is legendary, so its text is the legendary hue. relicColor carried
+  // one raw hex and one token for the game's two relics — two answers to a
+  // question the rarity had already settled.
+  ok(!/item\.relicColor|relicColor:/.test(app), "a relic does not carry a colour of its own");
+  ok(sheets.includes(".fact.is-relic"), "…it is written in the legendary hand");
+
+  // An action's label can contain an emoji ("🔒 Lock") and was rendered as bare
+  // text, so the one glyph on the sheet the drawn set already had came out as a
+  // system emoji next to five drawings.
+  ok(/\{withIcons\(a\.label, 13\)\}/.test(tip), "an action's label goes through the drawn set");
+}
+
 sec("The shell is bound in the same hand");
 {
   // Converting the shell is what decides whether the game reads as one object or

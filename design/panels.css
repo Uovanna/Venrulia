@@ -72,6 +72,10 @@
   padding: var(--s-3) 0; border-bottom: 1px solid var(--hairline);
 }
 .item:last-child { border-bottom: 0; }
+/* A row whose business is finished — a bounty ready to turn in, a skill already
+   learned. Same rule down the left that a completed building carries, so "done"
+   is one mark everywhere rather than a different colour per screen. */
+.item.is-done { border-left: 3px solid var(--verdigris); padding-left: var(--s-3); }
 .item-tap {
   display: flex; align-items: flex-start; gap: var(--s-3); flex: 1; min-width: 0;
   cursor: pointer; background: none; border: 0; padding: 0; text-align: left; font: inherit; color: inherit;
@@ -529,6 +533,30 @@ select.field { cursor: pointer; }
 }
 .bulk-n::-webkit-outer-spin-button, .bulk-n::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .bulk-n:focus { border-bottom-color: var(--rubric); }
+
+/* ---- a standing order ---------------------------------------------------- */
+/* A gambit: IF this, THEN that, at a numbered priority. Written twice — once
+   per skill, once for consumables — as a rounded box with the clause labels in
+   two different hand-picked colours. The clauses are the only thing on the
+   screen a player is reading, so IF takes the rubric (the condition is the
+   part you decide) and THEN takes the ordinary margin hand. */
+.rule { border-bottom: 1px solid var(--rule); padding: var(--s-4) 0; }
+.rule:last-of-type { border-bottom: 0; }
+.rule-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--s-3); margin-bottom: var(--s-3);
+}
+.rule-n {
+  font-family: var(--mono); font-size: 9px; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--ink-faint); font-variant-numeric: tabular-nums;
+}
+.rule-move { display: flex; gap: var(--s-1); }
+.rule-clause {
+  font-family: var(--mono); font-size: 9px; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--ink-faint); margin-bottom: var(--s-2);
+}
+.rule-clause.is-if { color: var(--rubric); }
+.rule + .rule { margin-top: 0; }
 
 /* ---- a state ------------------------------------------------------------- */
 /* Whether a thing is open to you right now. The margin hand, so a lockout timer

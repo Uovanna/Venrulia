@@ -7479,32 +7479,38 @@ function GameScreen({ character: initChar, onSave, onBack }) {
 
         {tab === "questboard" && (
           <div>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-              <button onClick={() => setTab("tavern")} style={{ background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 8, color: "var(--ink)", fontSize: 12, padding: "6px 12px", cursor: "pointer" }}>← Tavern</button>
-              <span style={{ color: "var(--verdigris)", fontFamily: "Georgia, serif", fontSize: 15 }}><Icon name="scroll" /> Quest Board</span>
-              <span style={{ color: "var(--ink-faint)", fontSize: 11 }}>repeatable</span>
+            <div className="head">
+              <button onClick={() => setTab("tavern")} className="head-back">&#8592; Tavern</button>
+              <span className="head-title"><Icon name="scroll" /> Quest Board</span>
+              <span className="head-note">repeatable</span>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--sunk)", border: "1px solid var(--hairline)", borderRadius: 10, padding: "9px 12px", marginBottom: 12 }}>
-              <span style={{ color: "var(--ink-soft)", fontSize: 12, whiteSpace: "nowrap" }}>Quests for:</span>
-              <select value={boardZone} onChange={(e) => changeBoardZone(e.target.value)} style={{ flex: 1, minWidth: 0, background: "var(--sunk)", border: "1px solid var(--rule)", borderRadius: 6, color: "var(--ink)", fontSize: 12.5, padding: "6px 8px", cursor: "pointer" }}>
-                <option value="any">Any — foes I've encountered</option>
-                {ZONES.map((z) => <option key={z.id} value={z.id}>{z.name} (Lv {z.minLevel}–{z.maxLevel})</option>)}
-              </select>
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <label className="eyebrow" style={{ marginBottom: 2 }}>Bounties posted for</label>
+            <select value={boardZone} onChange={(e) => changeBoardZone(e.target.value)} className="field" style={{ marginBottom: 14 }}>
+              <option value="any">Any — foes I&apos;ve encountered</option>
+              {ZONES.map((z) => <option key={z.id} value={z.id}>{z.name} (Lv {z.minLevel}–{z.maxLevel})</option>)}
+            </select>
+            <div>
               {(char.quests?.board || []).map((q) => {
-                const prog = questProgress(char, q); const done = prog >= q.count; const col = q.kind === "kill" ? "#e0556a" : "#8fd0e0";
+                const prog = questProgress(char, q); const done = prog >= q.count;
                 return (
-                  <div key={q.id} style={{ background: "var(--sunk)", border: `1px solid ${done ? "var(--verdigris)" : "var(--hairline)"}`, borderRadius: 10, padding: "11px 13px" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                      <span style={{ color: "var(--ink)", fontSize: 13, fontWeight: 700 }}>{q.kind === "kill" ? "⚔️" : "🎒"} {questLabel(q)}</span>
-                      <span style={{ color: "var(--gilt)", fontSize: 10.5 }}>+{q.reward.xp} XP · +{q.reward.gold}g</span>
-                    </div>
-                    <div style={{ marginBottom: 8 }}><Bar current={prog} max={q.count} color={done ? "#5fd35f" : col} height={6} /><div style={{ color: "var(--ink-soft)", fontSize: 10, marginTop: 2 }}>{prog}/{q.count}</div></div>
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <button onClick={() => claimQuest(q)} disabled={!done} style={{ flex: 1, background: done ? "var(--raised)" : "var(--verdigris)", border: `1.5px solid ${done ? "var(--verdigris)" : "var(--ink)"}`, borderRadius: 8, color: done ? "var(--verdigris)" : "var(--ink-faint)", fontSize: 12, fontWeight: 700, padding: 8, cursor: done ? "pointer" : "default" }}>{done ? "✓ Claim" : "In progress"}</button>
-                      <button onClick={() => rerollQuest(q.id)} style={{ background: "var(--raised)", border: "1px solid var(--rule)", borderRadius: 8, color: "var(--ink-soft)", fontSize: 12, fontWeight: 700, padding: "8px 12px", cursor: "pointer" }}>↻</button>
-                    </div>
+                  <div key={q.id} className={`item${done ? " is-done" : ""}`}>
+                    {/* A bounty says what it is by its mark, the way every other
+                        listed thing in the game does — a blade for a killing, a
+                        pack for a fetching. */}
+                    <span className="mark"><Icon name={q.kind === "kill" ? "sword" : "pack"} size={17} /></span>
+                    <span className="item-body">
+                      <span className="item-name">{questLabel(q)}</span>
+                      <span className="item-meta">{prog}/{q.count} · pays {q.reward.gold}g and {q.reward.xp} xp</span>
+                      <span className="meter" style={{ marginTop: 5 }}>
+                        <i style={{ width: `${Math.min(100, Math.round((prog / q.count) * 100))}%` }} />
+                      </span>
+                    </span>
+                    <span className="item-acts">
+                      <button onClick={() => claimQuest(q)} disabled={!done} className="mini is-gain">Claim</button>
+                      {/* Said in a word. The bare turn-arrow read as a keyboard
+                          return key, which is not a thing this button does. */}
+                      <button onClick={() => rerollQuest(q.id)} className="mini" title="Post a different bounty">Redraw</button>
+                    </span>
                   </div>
                 );
               })}
@@ -7514,10 +7520,9 @@ function GameScreen({ character: initChar, onSave, onBack }) {
 
         {tab === "tavernhall" && (
           <div>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-              <button onClick={() => setTab("tavern")} style={{ background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 8, color: "var(--ink)", fontSize: 12, padding: "6px 12px", cursor: "pointer" }}>← Tavern</button>
-              <span style={{ color: "var(--gilt)", fontFamily: "Georgia, serif", fontSize: 15 }}><Icon name="tavern" /> Tavern Hall</span>
-              <span />
+            <div className="head">
+              <button onClick={() => setTab("tavern")} className="head-back">&#8592; Tavern</button>
+              <span className="head-title"><Icon name="tavern" /> Tavern Hall</span>
             </div>
             <div style={{ color: "var(--ink-soft)", fontSize: 12, fontStyle: "italic", marginBottom: 14, lineHeight: 1.5 }}>The keeper leans in with tales of a grander purpose. These story quests will reward great experience and rare items — the tale is still being written.</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -7544,36 +7549,40 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           const remain = build ? (build.endsAt - now) / 1000 : 0;
           return (
             <div>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                <button onClick={() => setTab("tavern")} style={{ background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 8, color: "var(--ink)", fontSize: 12, padding: "6px 12px", cursor: "pointer" }}>← Tavern</button>
-                <span style={{ color: "var(--verdigris)", fontFamily: "Georgia, serif", fontSize: 15 }}><Icon name="vault" /> City Management</span>
-                <span style={{ color: "var(--ink-soft)", fontSize: 11 }}>Town Hall Lv{townLvl(char, "townhall")}</span>
+              <div className="head">
+                <button onClick={() => setTab("tavern")} className="head-back">&#8592; Tavern</button>
+                <span className="head-title"><Icon name="vault" /> City Management</span>
+                <span className="head-note">Town Hall Lv{townLvl(char, "townhall")}</span>
               </div>
-              <div style={{ color: "var(--ink-soft)", fontSize: 11, lineHeight: 1.5, marginBottom: 10 }}>Raise your town for permanent, account-wide bonuses. Costs and build times climb steeply — one project at a time.</div>
-              <div style={{ display: "flex", gap: 8, marginBottom: 12, fontSize: 11 }}>
+              <div className="ledger-note" style={{ marginBottom: 12 }}>Raise your town for permanent, account-wide bonuses. Costs and build times climb steeply — one project at a time.</div>
+              <div className="statline">
                 <span style={{ color: "var(--gilt)" }}><Icon name="coin" /> {char.gold.toLocaleString()}</span>
                 <span style={{ color: "var(--ink-soft)" }}><Icon name="pick" /> {Object.values(char.materials || {}).reduce((a, b) => a + b, 0)} mats</span>
                 <span style={{ color: "var(--rar-epic)" }}><Icon name="pack" /> {Object.values(char.drops || {}).reduce((a, b) => a + b, 0)} drops</span>
               </div>
 
               {build && activeBld && (
-                <div style={{ background: "var(--raised)", border: "1.5px solid var(--bole)", borderRadius: 12, padding: "12px 14px", marginBottom: 12 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                    <span style={{ color: "var(--gilt)", fontWeight: 700, fontSize: 13 }}><Icon name="keep" /> <EmojiIcon emoji={activeBld.icon} /> {activeBld.name} → Lv{build.level}</span>
-                    <span style={{ color: remain <= 0 ? "var(--verdigris)" : "var(--gilt)", fontSize: 11, fontFamily: "ui-monospace, monospace" }}>{remain <= 0 ? "Complete!" : fmtDur(remain)}</span>
+                <div className="bench is-ready">
+                  <div className="ledger-line">
+                    <span className="ledger-label"><EmojiIcon emoji={activeBld.icon} size={14} /> {activeBld.name} &#8594; Lv{build.level}</span>
+                    <span className="ledger-val" style={{ color: remain <= 0 ? "var(--verdigris)" : undefined }}>
+                      {remain <= 0 ? "complete" : fmtDur(remain)}
+                    </span>
                   </div>
-                  <Bar current={Math.max(0, townTimeAt(activeBld, build.level - 1) - Math.max(0, remain))} max={townTimeAt(activeBld, build.level - 1)} color="#f0b429" height={6} />
-                  <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                    {remain <= 0
-                      ? <button onClick={collectBuild} style={{ flex: 1, background: "var(--raised)", border: "1.5px solid var(--verdigris)", borderRadius: 8, color: "var(--ink-soft)", fontSize: 12.5, fontWeight: 700, padding: 9, cursor: "pointer" }}><Icon name="check" /> Collect</button>
-                      : (() => { const rc = Math.max(1, Math.ceil(remain / 60)); const afford = (char.ven || 0) >= rc; return (
-                          <button onClick={rushBuild} disabled={!afford} style={{ flex: 1, background: afford ? "var(--raised)" : "var(--verdigris)", border: `1.5px solid ${afford ? "var(--verdigris)" : "var(--ink)"}`, borderRadius: 8, color: afford ? "var(--ink-soft)" : "var(--ink-faint)", fontSize: 12, fontWeight: 700, padding: 9, cursor: afford ? "pointer" : "default" }}><Icon name="haste" /> Rush · 💎 {rc.toLocaleString()}</button>
-                        ); })()}
+                  <div style={{ marginTop: 8 }}>
+                    <Bar current={Math.max(0, townTimeAt(activeBld, build.level - 1) - Math.max(0, remain))} max={townTimeAt(activeBld, build.level - 1)} height={6} />
                   </div>
+                  {remain <= 0
+                    ? <button onClick={collectBuild} className="go">Collect</button>
+                    : (() => { const rc = Math.max(1, Math.ceil(remain / 60)); const afford = (char.ven || 0) >= rc; return (
+                        <button onClick={rushBuild} disabled={!afford} className="go is-quiet">
+                          Finish now · <Icon name="gem" size={11} /> {rc}
+                        </button>
+                      ); })()}
                 </div>
               )}
 
-              <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+              <div>
                 {TOWN_BUILDINGS.map((bld) => {
                   const cur = townLvl(char, bld.id);
                   const maxB = townMaxBuildable(char, bld);
@@ -7584,30 +7593,44 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                   const building = build?.id === bld.id;
                   const canStart = !build && chk.ok;
                   return (
-                    <div key={bld.id} style={{ background: "var(--sunk)", border: `1.5px solid ${building ? "var(--gilt)" : cur > 0 ? "var(--rule)" : "var(--hairline)"}`, borderRadius: 11, padding: "11px 13px" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-                        <div style={{ fontSize: 24 }}><EmojiIcon emoji={bld.icon} /></div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ color: "var(--ink)", fontSize: 13.5, fontWeight: 700, fontFamily: "Georgia, serif" }}>{bld.name} <span style={{ color: "var(--ink-soft)", fontSize: 11 }}>Lv{cur}/{bld.max}</span></div>
-                          <div style={{ color: cur > 0 ? "var(--verdigris)" : "var(--ink-faint)", fontSize: 10.5 }}>{cur > 0 ? `Active: ${bld.bonus(cur)}` : "Not yet built"}</div>
+                    <div key={bld.id} className={`dest${building ? " is-here" : atCap ? " is-done" : ""}`}>
+                      <div className="dest-head">
+                        <span className="mark"><EmojiIcon emoji={bld.icon} size={20} /></span>
+                        <div className="dest-body">
+                          <div className="dest-name">
+                            {bld.name}
+                            <span className="state">Lv {cur}/{bld.max}</span>
+                          </div>
+                          <div className={cur > 0 ? "state is-open" : "item-meta"}>
+                            {cur > 0 ? bld.bonus(cur) : "not yet built"}
+                          </div>
                         </div>
                       </div>
-                      <div style={{ color: "var(--ink-soft)", fontSize: 10.5, lineHeight: 1.5, marginBottom: 8 }}>{bld.desc}</div>
+                      <div className="dest-desc">{bld.desc}</div>
                       {atCap ? (
-                        <div style={{ color: "var(--gilt)", fontSize: 11.5, fontWeight: 700, textAlign: "center", padding: 6 }}>★ Fully upgraded</div>
+                        <div className="ledger-note" style={{ textAlign: "center", marginTop: 8 }}>Fully upgraded.</div>
                       ) : (
                         <>
-                          <div style={{ background: "var(--sunk)", borderRadius: 8, padding: "8px 10px", marginBottom: 8 }}>
-                            <div style={{ color: "var(--ink-soft)", fontSize: 9.5, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>Upgrade to Lv{cur + 1} → <span style={{ color: "var(--verdigris)" }}>{bld.bonus(cur + 1)}</span></div>
-                            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, fontSize: 11 }}>
-                              <span style={{ color: char.gold >= cost.gold ? "var(--gilt)" : "var(--rubric)" }}><Icon name="coin" /> {cost.gold.toLocaleString()}</span>
-                              {cost.mats.map((m) => <span key={m.id} style={{ color: (char.materials?.[m.id] || 0) >= m.qty ? "var(--ink-soft)" : "var(--rubric)" }}>{MAT_BY_ID[m.id]?.icon || "⛏️"} {m.qty} {MAT_BY_ID[m.id]?.name || m.id}</span>)}
-                              {cost.drops.map((d) => <span key={d.id} style={{ color: (char.drops?.[d.id] || 0) >= d.qty ? "var(--rar-epic)" : "var(--rubric)" }}>{DROP_BY_ID[d.id]?.icon || "🎒"} {d.qty} {DROP_BY_ID[d.id]?.name || d.id}</span>)}
-                              <span style={{ color: "var(--bole)" }}><Icon name="hourglass" /> {fmtDur(townTimeAt(bld, cur))}</span>
-                            </div>
+                          <div className="eyebrow" style={{ marginTop: 10 }}>
+                            <span>Upgrade to Lv {cur + 1}</span>
+                            <span>{bld.bonus(cur + 1)}</span>
                           </div>
-                          <button onClick={() => startBuild(bld.id)} disabled={!canStart} style={{ width: "100%", background: canStart ? "var(--raised)" : "var(--verdigris)", border: `1.5px solid ${canStart ? "var(--verdigris)" : "var(--ink)"}`, borderRadius: 8, color: canStart ? "var(--verdigris)" : "var(--ink-faint)", fontSize: 12, fontWeight: 700, padding: 9, cursor: canStart ? "pointer" : "default" }}>
-                            {building ? "🏗️ Under construction" : build ? "Another build in progress" : gated ? (chk.reason || "Locked") : chk.ok ? (cur === 0 ? "🔨 Build" : "⬆️ Upgrade") : chk.reason}
+                          <div className="bench-cost" style={{ marginTop: 0 }}>
+                            <span className={char.gold >= cost.gold ? "is-held" : "is-short"}>{cost.gold.toLocaleString()}g</span>
+                            {cost.mats.map((m) => (
+                              <span key={m.id} className={(char.materials?.[m.id] || 0) >= m.qty ? "is-held" : "is-short"}>
+                                {m.qty} {MAT_BY_ID[m.id]?.name || m.id}
+                              </span>
+                            ))}
+                            {cost.drops.map((d) => (
+                              <span key={d.id} className={(char.drops?.[d.id] || 0) >= d.qty ? "is-held" : "is-short"}>
+                                {d.qty} {DROP_BY_ID[d.id]?.name || d.id}
+                              </span>
+                            ))}
+                            <span>{fmtDur(townTimeAt(bld, cur))}</span>
+                          </div>
+                          <button onClick={() => startBuild(bld.id)} disabled={!canStart} className="go">
+                            {building ? "Under construction" : build ? "Another build in progress" : gated ? (chk.reason || "Locked") : chk.ok ? (cur === 0 ? "Build" : "Upgrade") : chk.reason}
                           </button>
                         </>
                       )}
@@ -7730,10 +7753,9 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           const list = classSkills(cid);
           return (
             <div>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                <button onClick={() => setTab("classhall")} style={{ background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 8, color: "var(--ink)", fontSize: 12, padding: "6px 12px", cursor: "pointer" }}>← Class Hall</button>
-                <span style={{ color: cl.color, fontFamily: "Georgia, serif", fontSize: 15 }}><EmojiIcon emoji={cl.icon} /> {cl.name} Skills</span>
-                <span />
+              <div className="head">
+                <button onClick={() => setTab("classhall")} className="head-back">&#8592; Class Hall</button>
+                <span className="head-title"><EmojiIcon emoji={cl.icon} /> {cl.name} Skills</span>
               </div>
               <div style={{ background: "var(--sunk)", border: `1px solid ${cl.color}55`, borderRadius: 10, padding: "10px 12px", marginBottom: 12 }}>
                 <div style={{ color: cl.color, fontSize: 12.5, fontWeight: 700, fontFamily: "Georgia, serif", marginBottom: 3 }}><Icon name="target" /> Previewing {cl.name}</div>
@@ -7762,27 +7784,32 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           const next = list.find((s) => char.level < s.unlockLevel);
           return (
             <div>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                <button onClick={() => setTab("classhall")} style={{ background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 8, color: "var(--ink)", fontSize: 12, padding: "6px 12px", cursor: "pointer" }}>← Class Hall</button>
-                <span style={{ color: cl.color, fontFamily: "Georgia, serif", fontSize: 15 }}><EmojiIcon emoji={cl.icon} /> Skill Progression</span>
-                <span style={{ color: "var(--ink-soft)", fontSize: 12, fontWeight: 700 }}>Lv {char.level}</span>
+              <div className="head">
+                <button onClick={() => setTab("classhall")} className="head-back">&#8592; Class Hall</button>
+                <span className="head-title"><EmojiIcon emoji={cl.icon} /> Skill Progression</span>
+                <span className="head-note">Lv {char.level}</span>
               </div>
-              <div style={{ background: "var(--raised)", border: "1px solid var(--verdigris)", borderRadius: 10, padding: "10px 12px", marginBottom: 12 }}>
-                <div style={{ color: "var(--ink-soft)", fontSize: 12.5, fontWeight: 700, fontFamily: "Georgia, serif", marginBottom: 3 }}><Icon name="tome" /> Every skill unlocks by level</div>
-                <div style={{ color: "var(--ink-soft)", fontSize: 11, lineHeight: 1.5 }}>Reach the level and the art is yours — nothing to buy or farm. The choice is <b>which {MAX_SKILL_SLOTS} you carry</b> into battle.{next ? <> Next: <b style={{ color: cl.color }}><EmojiIcon emoji={next.icon} /> {next.name}</b> at level {next.unlockLevel}.</> : <> You have learned every art of your class.</>}</div>
+              <div className="aside-note">
+                <b><Icon name="tome" size={13} /> Every skill unlocks by level</b>
+                <span>
+                  Reach the level and the art is yours — nothing to buy or farm. The choice is <b>which {MAX_SKILL_SLOTS} you carry</b> into battle.
+                  {next ? <> Next: <b>{next.name}</b> at level {next.unlockLevel}.</> : <> You know them all.</>}
+                </span>
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+              <div>
                 {list.map((s) => {
                   const has = char.level >= s.unlockLevel;
                   return (
-                    <div key={s.name} style={{ display: "flex", alignItems: "center", gap: 10, background: has ? "var(--verdigris)" : "var(--sunk)", border: `1px solid ${has ? "var(--verdigris)" : "var(--hairline)"}`, borderLeft: `3px solid ${has ? "var(--verdigris)" : cl.color}`, borderRadius: 8, padding: "9px 11px", opacity: has ? 1 : 0.55 }}>
-                      <span style={{ fontSize: 19 }}><EmojiIcon emoji={s.icon} /></span>
-                      <span style={{ flex: 1, minWidth: 0 }}>
-                        <span style={{ display: "block", color: has ? "var(--verdigris)" : "var(--verdigris)", fontSize: 12.5, fontWeight: 700 }}>{s.name} {s.spec && <span style={{ color: "var(--ink-soft)", fontSize: 9.5 }}>· signature</span>}</span>
-                        <span style={{ display: "block", color: "var(--ink-soft)", fontSize: 10.5 }}>{s.desc}</span>
-                        <span style={{ display: "block", color: "var(--ink-soft)", fontSize: 9.5 }}>Level {s.unlockLevel}{s.cd ? ` · ${s.cd}s cooldown` : ""}</span>
+                    <div key={s.name} className={`item${has ? " is-done" : ""}`} style={has ? undefined : { opacity: 0.6 }}>
+                      <span className="mark"><EmojiIcon emoji={s.icon} size={17} /></span>
+                      <span className="item-body">
+                        <span className="item-name">
+                          {s.name}{s.spec && <small className="item-meta" style={{ marginLeft: 6 }}>signature</small>}
+                        </span>
+                        <span className="item-stats">{s.desc}</span>
+                        <span className="item-meta">Level {s.unlockLevel}{s.cd ? ` · ${s.cd}s cooldown` : ""}</span>
                       </span>
-                      <span style={{ color: has ? "var(--verdigris)" : "var(--ink-faint)", fontSize: 10.5, fontWeight: 700, whiteSpace: "nowrap" }}>{has ? "✓ Unlocked" : `🔒 Lv ${s.unlockLevel}`}</span>
+                      <span className={has ? "state is-open" : "state is-shut"}>{has ? "known" : `Lv ${s.unlockLevel}`}</span>
                     </div>
                   );
                 })}
@@ -7842,12 +7869,11 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           };
           return (
             <div>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                <button onClick={() => setTab("classhall")} style={{ background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 8, color: "var(--ink)", fontSize: 12, padding: "6px 12px", cursor: "pointer" }}>← Class Hall</button>
-                <span style={{ color: "var(--rar-epic)", fontFamily: "Georgia, serif", fontSize: 15 }}><Icon name="spark" /> Skill Mods</span>
-                <span />
+              <div className="head">
+                <button onClick={() => setTab("classhall")} className="head-back">&#8592; Class Hall</button>
+                <span className="head-title"><Icon name="spark" /> Skill Mods</span>
               </div>
-              <div style={{ color: "var(--ink-soft)", fontSize: 11, lineHeight: 1.5, marginBottom: 10 }}>Earn a point every level (except milestone levels 10/20/30/40/50/60), starting at level 5. Invest up to {SKILL_MOD_CAP} into a skill for scaling potency, and add an effect at {SKILL_MOD_BREAKS.join(" & ")} points. Refunds cost {TALENT_RESPEC_COST}g × times refunded.</div>
+              <div className="ledger-note" style={{ marginBottom: 12 }}>Earn a point every level (except milestone levels 10/20/30/40/50/60), starting at level 5. Invest up to {SKILL_MOD_CAP} into a skill for scaling potency, and add an effect at {SKILL_MOD_BREAKS.join(" & ")} points. Refunds cost {TALENT_RESPEC_COST}g × times refunded.</div>
               <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
                 <div style={{ flex: 1, background: "var(--sunk)", border: "1px solid var(--verdigris)", borderRadius: 10, padding: "8px 10px", textAlign: "center" }}>
                   <div style={{ color: "var(--rar-epic)", fontSize: 16, fontWeight: 700 }}>{pAvail}</div>
@@ -8085,12 +8111,12 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           const activeSpec = specById(char.spec);
           return (
             <div>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                <button onClick={() => setTab("classhall")} style={{ background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 8, color: "var(--ink)", fontSize: 12, padding: "6px 12px", cursor: "pointer" }}>← Class Hall</button>
-                <span style={{ color: "var(--gilt)", fontFamily: "Georgia, serif", fontSize: 15 }}><Icon name="star" /> Talents</span>
-                <span style={{ color: activeSpec ? cls?.color : "var(--ink-faint)", fontSize: 11, fontWeight: 700 }}>{activeSpec ? activeSpec.name : "No spec"}</span>
+              <div className="head">
+                <button onClick={() => setTab("classhall")} className="head-back">&#8592; Class Hall</button>
+                <span className="head-title"><Icon name="star" /> Talents</span>
+                <span className="head-note">{activeSpec ? activeSpec.name : "No spec"}</span>
               </div>
-              <div style={{ color: "var(--ink-soft)", fontSize: 11.5, lineHeight: 1.5, marginBottom: 12 }}>Choose one talent per tier to shape how your {activeSpec ? activeSpec.name : cls?.name} plays. {activeSpec ? "These options are tuned to this specialization's staples." : "Pick a Specialization in the Class Hall to unlock its bespoke tree."} Rows unlock at levels 10–60. Your first pick per row is free; changing a talent costs <span style={{ color: "var(--gilt)" }}>{TALENT_RESPEC_COST}g × your changes</span> — next change: <span style={{ color: "var(--gilt)", fontWeight: 700 }}>{talentChangeCost(char).toLocaleString()}g</span>.</div>
+              <div className="ledger-note" style={{ marginBottom: 12 }}>Choose one talent per tier to shape how your {activeSpec ? activeSpec.name : cls?.name} plays. {activeSpec ? "These options are tuned to this specialization's staples." : "Pick a Specialization in the Class Hall to unlock its bespoke tree."} Rows unlock at levels 10–60. Your first pick per row is free; changing a talent costs <span style={{ color: "var(--gilt)" }}>{TALENT_RESPEC_COST}g × your changes</span> — next change: <span style={{ color: "var(--gilt)", fontWeight: 700 }}>{talentChangeCost(char).toLocaleString()}g</span>.</div>
               {char.level < 10 && <div style={{ background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 10, padding: "14px 12px", textAlign: "center", color: "var(--ink-soft)", fontSize: 12, marginBottom: 12 }}><Icon name="lock" /> Your talents awaken at <b>level 10</b>. Keep adventuring!</div>}
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 {talentRows(char).map((row) => {
@@ -8434,7 +8460,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
             <div onClick={() => setBmPick(null)} className="veil">
               <div onClick={(e) => e.stopPropagation()} className="sheet is-warn">
                 <div className="sheet-title"><EmojiIcon emoji={bmPick.icon} /> {bmPick.name}</div>
-                <div style={{ color: "var(--ink-soft)", fontSize: 11, lineHeight: 1.5, marginBottom: 12 }}>
+                <div className="ledger-note" style={{ marginBottom: 12 }}>
                   Choose its main stat. This is permanent — a set piece is fixed at item level {BM_PIECE_ILVL} and never re-forges.
                 </div>
                 {opts.map((o) => (
@@ -8583,23 +8609,25 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           const slots = gambitSlotsFor(char, slotNo);
           if ((char.level || 1) < GAMBIT_UNLOCK_LEVEL) return (
             <div>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                <button onClick={() => setTab("gear")} style={{ background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 8, color: "var(--ink)", fontSize: 12, padding: "6px 12px", cursor: "pointer" }}>← Armory</button>
-                <span style={{ color: "var(--rar-epic)", fontFamily: "Georgia, serif", fontSize: 15 }}><Icon name="target" /> Equip Gambits</span>
-                <span />
+              <div className="head">
+                <button onClick={() => setTab("gear")} className="head-back">&#8592; Armory</button>
+                <span className="head-title"><Icon name="target" size={15} /> Equip Gambits</span>
               </div>
-              <div style={{ background: "var(--raised)", border: "1px solid var(--rar-epic)", borderRadius: 12, padding: "22px 16px", textAlign: "center" }}>
-                <div style={{ fontSize: 34, marginBottom: 6 }}>🔒</div>
-                <div style={{ color: "var(--rar-epic)", fontFamily: "Georgia, serif", fontSize: 15 }}>Gambits unlock at level {GAMBIT_UNLOCK_LEVEL}</div>
+              <div className="bench">
+                <div className="sheet-mark"><Icon name="lock" size={22} /></div>
+                <div className="bench-name" style={{ textAlign: "center" }}>Gambits unlock at level {GAMBIT_UNLOCK_LEVEL}</div>
               </div>
             </div>
           );
           const partBtn = (part, slotIdx, list, onPick, curVal) => (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
-              {list.length === 0 && <span style={{ color: "var(--ink-faint)", fontSize: 10 }}>None owned — roll in the Gambit Shop.</span>}
-              {list.map((x) => { const sel = curVal === x.id; return (
-                <button key={x.id} onClick={() => onPick(x.id)} style={{ background: sel ? "var(--rar-epic)" : "var(--raised)", border: `1px solid ${sel ? "var(--rar-epic)" : rarityById(x.rarity).color + "44"}`, borderRadius: 6, color: sel ? "var(--rar-epic)" : "var(--verdigris)", fontSize: 10, fontWeight: 600, padding: "4px 7px", cursor: "pointer" }}><EmojiIcon emoji={x.icon} /> {x.label}</button>
-              ); })}
+            <div className="picks" style={{ marginTop: 4, marginBottom: 0 }}>
+              {list.length === 0 && <span className="pick is-shut">None owned — roll in the Gambit Shop</span>}
+              {list.map((x) => (
+                <button key={x.id} onClick={() => onPick(x.id)}
+                  className={`pick${curVal === x.id ? " is-on" : ""} ${rarClass(x.rarity)}`}>
+                  <EmojiIcon emoji={x.icon} size={12} /> {x.label}
+                </button>
+              ))}
             </div>
           );
           const genRules = g.general || [];
@@ -8607,84 +8635,90 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           const conThens = GAMBIT_THENS.filter((x) => g.owned?.[x.id] && x.kind === "consumable"); // General is for consumables
           return (
             <div>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                <button onClick={() => setTab("gear")} style={{ background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 8, color: "var(--ink)", fontSize: 12, padding: "6px 12px", cursor: "pointer" }}>← Armory</button>
-                <span style={{ color: "var(--rar-epic)", fontFamily: "Georgia, serif", fontSize: 15 }}><Icon name="target" /> Equip Gambits</span>
-                <span />
+              <div className="head">
+                <button onClick={() => setTab("gear")} className="head-back">&#8592; Armory</button>
+                <span className="head-title"><Icon name="target" size={15} /> Equip Gambits</span>
               </div>
-              <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
-                {[["skill", "🎯 By Skill"], ["general", "⚙️ General"]].map(([id, label]) => (
-                  <button key={id} onClick={() => setGambitMode(id)} style={{ flex: 1, background: gambitMode === id ? "var(--verdigris)" : "var(--sunk)", border: `1px solid ${gambitMode === id ? "var(--rar-epic)" : "var(--hairline)"}`, borderRadius: 8, color: gambitMode === id ? "var(--rar-epic)" : "var(--ink-faint)", padding: "8px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{label}</button>
+              <div className="leaves">
+                {[["skill", "By skill"], ["general", "General"]].map(([id, label]) => (
+                  <button key={id} onClick={() => setGambitMode(id)} className={`leaf${gambitMode === id ? " is-open" : ""}`}>{label}</button>
                 ))}
               </div>
 
               {gambitMode === "skill" && (<>
-                <div style={{ color: "var(--ink-soft)", fontSize: 11, marginBottom: 8 }}>Pick a skill, then set its <b>IF</b> condition and <b>THEN</b> action. It fires automatically in combat.</div>
+                <div className="ledger-note" style={{ marginBottom: 8 }}>
+                  Pick a skill, then set its <b>IF</b> condition and <b>THEN</b> action. It fires automatically in combat.
+                </div>
                 {/* The system asks a lot before it gives anything back. This lays down a working
                     default from the gambits already owned, so a player who does not want to learn
                     priority order still gets a bar that fires. */}
-                <button onClick={applyAutoGambit}
-                  style={{ width: "100%", background: "var(--raised)", border: "1.5px solid var(--rar-epic)", borderRadius: 10, color: "var(--rar-epic)", fontSize: 12.5, fontWeight: 700, padding: "10px 8px", marginBottom: 10, cursor: "pointer" }}>
-                  <Icon name="gear" /> Auto Gambit — set them up for me
-                  <span style={{ display: "block", fontSize: 10, color: "var(--ink-soft)", fontWeight: 500, marginTop: 2 }}>
-                    Writes a sensible rule for every skill on your bar, using only gambits you own. Overwrites those slots.
+                <button onClick={applyAutoGambit} className="go">
+                  <Icon name="gear" size={14} /> Auto Gambit — set them up for me
+                  <span className="sheet-note" style={{ marginBottom: 0, marginTop: 3 }}>
+                    Writes a sensible rule for every skill on your bar, from gambits you own. Overwrites those slots.
                   </span>
                 </button>
-                <select value={skName} onChange={(e) => setGambitSkill(e.target.value)} style={{ width: "100%", background: "var(--sunk)", border: "1px solid var(--rule)", borderRadius: 8, color: "var(--ink)", fontSize: 13, padding: "8px 10px", marginBottom: 12, cursor: "pointer" }}>
+                <select value={skName} onChange={(e) => setGambitSkill(e.target.value)} className="field" style={{ marginTop: 12, marginBottom: 4 }}>
                   {pool.map((s) => {
                     // Slots are addressed by number now — the same numbers the "Skill N on
                     // cooldown" conditions refer to, and the order gambits are evaluated in.
                     const n = (char.selectedSkills || []).indexOf(s.name) + 1;
                     const configured = g.rules?.[n]?.some((r) => r?.if && r?.then);
-                    return <option key={s.name} value={s.name}>{`Skill ${n}`} · <EmojiIcon emoji={s.icon} /> {s.name}{configured ? " ✓" : ""}</option>;
+                    return <option key={s.name} value={s.name}>{`Skill ${n} · ${s.name}${configured ? " ✓" : ""}`}</option>;
                   })}
                 </select>
-                {sk && <div style={{ color: "var(--ink-soft)", fontSize: 10.5, marginBottom: 8 }}>
-                  <Icon name="gear" /> <b style={{ color: "var(--rar-epic)" }}>Skill {slotNo}</b> — gambits fire in slot order, so Skill 1 has the highest priority.
+                {sk && <div className="ledger-note" style={{ marginBottom: 8 }}>
+                  <b>Skill {slotNo}</b> — gambits fire in slot order, so Skill 1 has the highest priority.
                 </div>}
                 {sk && Array.from({ length: slots }).map((_, i) => (
-                  <div key={i} style={{ background: "var(--sunk)", border: "1px solid var(--hairline)", borderRadius: 10, padding: "10px 12px", marginBottom: 8 }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-                      <div style={{ color: "var(--rar-epic)", fontSize: 11, fontWeight: 700 }}>Priority {i + 1}</div>
+                  <div key={i} className="rule">
+                    <div className="rule-head">
+                      <span className="rule-n">Priority {i + 1}</span>
                       {slots > 1 && (
-                        <div style={{ display: "flex", gap: 4 }}>
-                          <button onClick={() => moveGambitRule(slotNo, i, -1)} disabled={i === 0} style={{ background: "var(--raised)", border: "1px solid var(--rule)", borderRadius: 5, color: i === 0 ? "var(--ink-faint)" : "var(--rar-epic)", fontSize: 11, padding: "2px 7px", cursor: i === 0 ? "default" : "pointer" }}>▲</button>
-                          <button onClick={() => moveGambitRule(slotNo, i, 1)} disabled={i === slots - 1} style={{ background: "var(--raised)", border: "1px solid var(--rule)", borderRadius: 5, color: i === slots - 1 ? "var(--ink-faint)" : "var(--rar-epic)", fontSize: 11, padding: "2px 7px", cursor: i === slots - 1 ? "default" : "pointer" }}>▼</button>
-                        </div>
+                        <span className="rule-move">
+                          <button onClick={() => moveGambitRule(slotNo, i, -1)} disabled={i === 0} className="mini" aria-label="Move up">&#9650;</button>
+                          <button onClick={() => moveGambitRule(slotNo, i, 1)} disabled={i === slots - 1} className="mini" aria-label="Move down">&#9660;</button>
+                        </span>
                       )}
                     </div>
-                    <div style={{ color: "var(--rubric)", fontSize: 10.5, fontWeight: 700 }}>IF</div>
+                    <div className="rule-clause is-if">If</div>
                     {partBtn("if", i, skillIfs, (id) => setGambitPart(slotNo, i, "if", id), rules[i]?.if)}
-                    <div style={{ color: "var(--ink-soft)", fontSize: 10.5, fontWeight: 700, marginTop: 8 }}>THEN</div>
+                    <div className="rule-clause" style={{ marginTop: 10 }}>Then</div>
                     {partBtn("then", i, ownedThens, (id) => setGambitPart(slotNo, i, "then", id), rules[i]?.then)}
                   </div>
                 ))}
                 {slots < 2 && (
-                  <button onClick={() => buyGambitSlot(slotNo)} style={{ width: "100%", background: (char.ven || 0) >= GAMBIT_SLOT_VEN ? "var(--raised)" : "var(--verdigris)", border: `1.5px solid ${(char.ven || 0) >= GAMBIT_SLOT_VEN ? "var(--verdigris)" : "var(--ink)"}`, borderRadius: 8, color: (char.ven || 0) >= GAMBIT_SLOT_VEN ? "var(--ink-soft)" : "var(--ink-faint)", fontSize: 12, fontWeight: 700, padding: 10, cursor: "pointer" }}>➕ Second gambit for this skill · 💎 {GAMBIT_SLOT_VEN}</button>
+                  <button onClick={() => buyGambitSlot(slotNo)} className="go is-quiet">
+                    <Icon name="plus" size={13} /> A second gambit for this skill · <Icon name="gem" size={11} /> {GAMBIT_SLOT_VEN}
+                  </button>
                 )}
               </>)}
 
               {gambitMode === "general" && (<>
-                <div style={{ color: "var(--ink-soft)", fontSize: 11, marginBottom: 10 }}>General gambits automate your <b>consumables</b> — e.g. <i>if your HP ≤ 20%, use a Healing Potion</i>, or <i>if a Strength scroll is inactive, use one</i>. You have {genSlots} slots (2 free).</div>
+                <div className="ledger-note" style={{ marginBottom: 10 }}>
+                  General gambits automate your <b>consumables</b> — for instance, if your health drops to 20%, drink a Healing Potion. They are checked before your skills are.
+                </div>
                 {Array.from({ length: genSlots }).map((_, i) => (
-                  <div key={i} style={{ background: "var(--sunk)", border: "1px solid var(--hairline)", borderRadius: 10, padding: "10px 12px", marginBottom: 8 }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-                      <div style={{ color: "var(--rar-epic)", fontSize: 11, fontWeight: 700 }}>Priority {i + 1}</div>
+                  <div key={i} className="rule">
+                    <div className="rule-head">
+                      <span className="rule-n">Priority {i + 1}</span>
                       {genSlots > 1 && (
-                        <div style={{ display: "flex", gap: 4 }}>
-                          <button onClick={() => moveGeneralRule(i, -1)} disabled={i === 0} style={{ background: "var(--raised)", border: "1px solid var(--rule)", borderRadius: 5, color: i === 0 ? "var(--ink-faint)" : "var(--rar-epic)", fontSize: 11, padding: "2px 7px", cursor: i === 0 ? "default" : "pointer" }}>▲</button>
-                          <button onClick={() => moveGeneralRule(i, 1)} disabled={i === genSlots - 1} style={{ background: "var(--raised)", border: "1px solid var(--rule)", borderRadius: 5, color: i === genSlots - 1 ? "var(--ink-faint)" : "var(--rar-epic)", fontSize: 11, padding: "2px 7px", cursor: i === genSlots - 1 ? "default" : "pointer" }}>▼</button>
-                        </div>
+                        <span className="rule-move">
+                          <button onClick={() => moveGeneralRule(i, -1)} disabled={i === 0} className="mini" aria-label="Move up">&#9650;</button>
+                          <button onClick={() => moveGeneralRule(i, 1)} disabled={i === genSlots - 1} className="mini" aria-label="Move down">&#9660;</button>
+                        </span>
                       )}
                     </div>
-                    <div style={{ color: "var(--rubric)", fontSize: 10.5, fontWeight: 700 }}>IF</div>
+                    <div className="rule-clause is-if">If</div>
                     {partBtn("if", i, ownedIfs, (id) => setGeneralPart(i, "if", id), genRules[i]?.if)}
-                    <div style={{ color: "var(--ink-soft)", fontSize: 10.5, fontWeight: 700, marginTop: 8 }}>THEN</div>
+                    <div className="rule-clause" style={{ marginTop: 10 }}>Then</div>
                     {partBtn("then", i, conThens, (id) => setGeneralPart(i, "then", id), genRules[i]?.then)}
                   </div>
                 ))}
                 {genSlots < 5 && (
-                  <button onClick={buyGeneralSlot} style={{ width: "100%", background: (char.ven || 0) >= GENERAL_SLOT_COSTS[genSlots - 2] ? "var(--raised)" : "var(--verdigris)", border: `1.5px solid ${(char.ven || 0) >= GENERAL_SLOT_COSTS[genSlots - 2] ? "var(--verdigris)" : "var(--ink)"}`, borderRadius: 8, color: (char.ven || 0) >= GENERAL_SLOT_COSTS[genSlots - 2] ? "var(--ink-soft)" : "var(--ink-faint)", fontSize: 12, fontWeight: 700, padding: 10, cursor: "pointer" }}>➕ General gambit {genSlots + 1} · 💎 {GENERAL_SLOT_COSTS[genSlots - 2]}</button>
+                  <button onClick={buyGeneralSlot} className="go is-quiet">
+                    <Icon name="plus" size={13} /> Another general gambit · <Icon name="gem" size={11} /> {GENERAL_SLOT_COSTS[genSlots - 2]}
+                  </button>
                 )}
               </>)}
             </div>
@@ -11171,7 +11205,7 @@ function MultiplayerHub({ char, commitChar, showNotif, onExit, onStartRated, onS
 
       {sub === "finder" && phase === "browse" && (
         <div>
-          <div style={{ color: "var(--ink-soft)", fontSize: 11.5, lineHeight: 1.5, marginBottom: 10 }}>Queue for group content. Empty slots fill after {MP_QUEUE_WAIT}s. No auto-combat or gambits here — you play your skills by hand. Bosses drop loot you <b>bid gold</b> on against the party.</div>
+          <div className="ledger-note" style={{ marginBottom: 12 }}>Queue for group content. Empty slots fill after {MP_QUEUE_WAIT}s. No auto-combat or gambits here — you play your skills by hand. Bosses drop loot you <b>bid gold</b> on against the party.</div>
           {["dungeon", "raid"].map((kind) => (
             <div key={kind}>
               <div className="eyebrow"><span>{kind === "dungeon" ? "Dungeons · 4 players" : "Raids · 6 players"}</span></div>
@@ -11269,7 +11303,7 @@ function MultiplayerHub({ char, commitChar, showNotif, onExit, onStartRated, onS
 
       {sub === "ladder" && (
         <div>
-          <div style={{ color: "var(--ink-soft)", fontSize: 11.5, lineHeight: 1.5, marginBottom: 10 }}>The Conquest Ladder ranks champions by <b>Rating</b> — win rate amplified by how many matches you've played, so consistency over time beats a small hot streak. {mp.ladderBest ? <>Best rank: <b>#{mp.ladderBest}</b>.</> : null}</div>
+          <div className="ledger-note" style={{ marginBottom: 12 }}>The Conquest Ladder ranks champions by <b>Rating</b> — win rate amplified by how many matches you've played, so consistency over time beats a small hot streak. {mp.ladderBest ? <>Best rank: <b>#{mp.ladderBest}</b>.</> : null}</div>
           {ladder && (<>
             <div style={{ textAlign: "center", background: "var(--verdigris)", border: "1px solid var(--verdigris)", borderRadius: 10, padding: "10px", marginBottom: 10 }}>
               <span style={{ color: "var(--ink-soft)", fontSize: 12 }}>Rank</span> <span style={{ color: "var(--ink)", fontSize: 20, fontWeight: 800 }}>#{ladder.rank}</span> <span style={{ color: "var(--ink-soft)", fontSize: 11 }}>· Rating </span><span style={{ color: "var(--gilt)", fontSize: 15, fontWeight: 800 }}>{myRating}</span>
@@ -11291,7 +11325,7 @@ function MultiplayerHub({ char, commitChar, showNotif, onExit, onStartRated, onS
 
       {sub === "rated" && (
         <div>
-          <div style={{ color: "var(--ink-soft)", fontSize: 11.5, lineHeight: 1.5, marginBottom: 10 }}>Rated Arena — live 1v1 matchmaking. Every <b>win</b> grants a 🎟️ Arena Token and raises your Rating; wins over 24h pay prizes (losses subtract).</div>
+          <div className="ledger-note" style={{ marginBottom: 12 }}>Rated Arena — live 1v1 matchmaking. Every <b>win</b> grants a 🎟️ Arena Token and raises your Rating; wins over 24h pay prizes (losses subtract).</div>
           <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
             <div style={{ flex: 1, background: "var(--raised)", border: "1px solid var(--rule)", borderRadius: 10, padding: "10px", textAlign: "center" }}><div style={{ color: "var(--gilt)", fontSize: 22, fontWeight: 800 }}>{myRating}</div><div style={{ color: "var(--ink-soft)", fontSize: 9.5 }}>Rating</div></div>
             <div style={{ flex: 1, background: "var(--raised)", border: "1px solid var(--bole)", borderRadius: 10, padding: "10px", textAlign: "center" }}><div style={{ color: "var(--bole)", fontSize: 22, fontWeight: 800 }}><Icon name="ticket" /> {char.arenaTokens || 0}</div><div style={{ color: "var(--ink-soft)", fontSize: 9.5 }}>Arena Tokens</div></div>

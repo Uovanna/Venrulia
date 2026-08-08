@@ -677,6 +677,64 @@ sec("The Bestiary knows what a creature looks like");
     : "…and every one of them resolves to a silhouette of its own");
 }
 
+sec("Standing orders, and the last seven heads");
+{
+  // A GAMBIT IS A STANDING ORDER: if this, then that, at a numbered priority.
+  // Written twice — once per skill, once for consumables — as a rounded box with
+  // the two clause labels in different hand-picked colours. IF takes the rubric,
+  // because the condition is the part the player decides; THEN takes the margin.
+  ok(panels.includes(".rule {"), "panels.css defines a standing order");
+  ok(app.split('className="rule"').length - 1 >= 2, "…and both gambit modes use it");
+  ok(app.includes('className="rule-clause is-if"'), "the condition is written in the rubric");
+  ok(!/color: "var\(--rar-epic\)", fontSize: 11, fontWeight: 700 \}\}>Priority/.test(app),
+     "…and the priority is not a colour of its own");
+
+  // THE SCREEN HEAD, SEVEN MORE TIMES. .head has existed since the Class Hall;
+  // seven screens were still hand-writing back / title / note as a flex row,
+  // each with its own margin and its own title colour. Converted by script
+  // rather than by hand, which is what a pattern used seven times deserves.
+  const handWritten = [];
+  const lines = app.split("\n");
+  lines.forEach((l, i) => {
+    if (!/justifyContent: "space-between"/.test(l) || !/display: "flex"/.test(l)) return;
+    if (/<button onClick=\{\(\) => setTab\(/.test(lines[i + 1] || "")) handWritten.push(i + 1);
+  });
+  ok(handWritten.length === 0, handWritten.length
+    ? `${handWritten.length} screens still hand-write their head: lines ${handWritten.join(", ")}`
+    : "no screen hand-writes its head any more");
+
+  // City Management's buildings are destinations you are working towards, which
+  // is the same shape the Adventure Gate uses for a place you can go.
+  ok(/TOWN_BUILDINGS\.map[\s\S]{0,700}className=\{`dest\$\{building \? " is-here"/.test(app),
+     "a town building under construction is marked the way the current zone is");
+  ok(!/border: `1\.5px solid \$\{building \? "var\(--gilt\)"/.test(app),
+     "…rather than by re-tinting its whole border");
+
+  // THE QUEST BOARD. A bounty is a listed thing with a mark, a progress and a
+  // payoff — the same object the inventory row already is, so it is written the
+  // same way. Two specific faults it carried:
+  //
+  //   · the kind was said with a raw hex (#e0556a for a killing, #8fd0e0 for a
+  //     fetching) tinting the progress bar, and with a literal ⚔️ / 🎒 in the
+  //     title. Both are the same statement, and neither survives the theme;
+  //   · the claim button inverted while UNAVAILABLE — verdigris fill under faint
+  //     ink — so "In progress" was the loudest thing on the screen and failed
+  //     contrast, while the button you could actually press was the quiet one.
+  const board = (() => {
+    const i = app.indexOf('{tab === "questboard" && (');
+    return i < 0 ? "" : app.slice(i, app.indexOf('{tab === "tavernhall"', i));
+  })();
+  ok(board.length > 200, "the quest board is findable");
+  ok(!/#[0-9a-fA-F]{6}/.test(board), "a bounty's kind is not said with a hex");
+  ok(!/⚔|🎒/.test(board), "…nor with a literal emoji in its title");
+  ok(/className="mark"[\s\S]{0,120}q\.kind === "kill" \? "sword" : "pack"/.test(board),
+     "…it is said with the drawn mark every listed thing carries");
+  ok(/className="mini is-gain">Claim/.test(board) && !/In progress/.test(board),
+     "the claim is a quiet action that is simply disabled until it is earned");
+  ok(panels.includes(".item.is-done {"),
+     "…and a finished row is ruled off the way a finished building is");
+}
+
 sec("The shell is bound in the same hand");
 {
   // Converting the shell is what decides whether the game reads as one object or

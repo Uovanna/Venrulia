@@ -269,3 +269,54 @@
   border: 1px solid var(--hairline); border-radius: var(--r-sm); padding: 2px 5px;
   color: var(--ink-soft); font-variant-numeric: tabular-nums;
 }
+
+/* ---- the party ----------------------------------------------------------- */
+/* Five allies, and every one of them written in verdigris because a ternary
+   picked "var(--verdigris)" on both branches — a whole roster in the accent
+   colour, with nothing distinguishing you from the bots. You are the one with
+   the rule down your left, which is the mark the game already uses for "here". */
+.ally {
+  display: flex; align-items: center; gap: var(--s-3);
+  padding: var(--s-2) 0; border-bottom: 1px solid var(--hairline);
+}
+.ally:last-child { border-bottom: 0; }
+.ally.is-me { border-left: 3px solid var(--rubric); padding-left: var(--s-3); }
+.ally.is-down { opacity: .5; }
+.ally-body { flex: 1; min-width: 0; }
+.ally-line { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s-2); }
+.ally-name {
+  font-size: var(--step--1); color: var(--ink);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ally-hp {
+  font-family: var(--mono); font-size: 9px; color: var(--ink-soft);
+  font-variant-numeric: tabular-nums; flex: none;
+}
+.ally.is-down .ally-hp { color: var(--rubric); }
+/* A wounded ally is not a different colour of bar, it is a bar with less in it.
+   The three-way hex ternary (#2ecc71 / #e0a955 / #e07a7a) said the same thing a
+   second time, in a palette drawn for a black ground. */
+.ally .meter { margin-top: 3px; }
+
+/* ---- what you are here to do --------------------------------------------- */
+/* The quest tracker, which sat under the fight. Each row was tinted by quest
+   KIND — the same fact the Quest Board used to say twice and now says with a
+   mark. Mid-fight there is no room for a mark, so it says it once, in words. */
+.track { padding: var(--s-2) 0; border-bottom: 1px solid var(--hairline); }
+.track:last-of-type { border-bottom: 0; }
+.track-line {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: var(--s-3); margin-bottom: 3px;
+}
+.track-name {
+  font-size: var(--step--1); color: var(--ink-soft); min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.track-n {
+  font-family: var(--mono); font-size: 9px; color: var(--ink-faint);
+  font-variant-numeric: tabular-nums; flex: none;
+}
+.track.is-done .track-n { color: var(--verdigris); }
+
+/* The foot of the fight: leave, re-enter, and the light. */
+.cfoot { display: flex; gap: var(--s-2); padding: 0 var(--s-4) var(--s-4); background: var(--sunk); }

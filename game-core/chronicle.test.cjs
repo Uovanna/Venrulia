@@ -863,6 +863,70 @@ sec("An item sheet is a list of facts");
   ok(/\{withIcons\(a\.label, 13\)\}/.test(tip), "an action's label goes through the drawn set");
 }
 
+sec("Ten more screens, and the colours that were arguments");
+{
+  // A SCREEN-LOCAL ACCENT. Two screens opened with `const acc = "#ffd479"` /
+  // "#f0913e" and then painted their title, every item name and every price with
+  // it. Measured on parchment the Battlemaster's gold is 1.35:1 — an entire shop
+  // written in an ink you cannot read. A screen does not get a colour of its own.
+  const accents = [...app.matchAll(/const acc = "(#[0-9a-fA-F]{3,8})"/g)].map((m) => m[1]);
+  ok(accents.length === 0, accents.length
+    ? `${accents.length} screens still define a private accent: ${accents.join(", ")}`
+    : "no screen defines an accent colour of its own");
+
+  // A COLOUR PASSED AS AN ARGUMENT is the version of the same mistake that
+  // survives a rewrite: `hub()` stopped reading its fifth parameter when it
+  // became a .gateway, and four call sites kept passing a hex anyway. A dead
+  // colour left in a call site is how the next person concludes it still matters.
+  ok(!/hub\("[^"]+", "[^"]+", [\s\S]{0,200}?, "#[0-9a-fA-F]{6}"\)/.test(app),
+     "no destination is passed a colour its component does not read");
+  ok(!/col: "#[0-9a-fA-F]{6}", go:/.test(app),
+     "…and the Tavern's four rooms are not four hues");
+  ok(!/border: `1px solid \$\{cl\.color\}55`/.test(app),
+     "no border is written as a class hex with an alpha suffix");
+
+  // THE PARTY, five allies deep, every one of them in verdigris because the
+  // ternary picked the same value on both branches. You are the one with the
+  // rule down your left — the mark the game already uses for "here".
+  ok(combat.includes(".ally {") && combat.includes(".ally.is-me"),
+     "the party is furniture");
+  ok(!/color: m\.me \? "var\(--verdigris\)" : "var\(--verdigris\)"/.test(app),
+     "…and you are not the same colour as the bots");
+  ok(/className=\{`ally\$\{m\.me \? " is-me" : ""\}/.test(app), "…nor a differently-bordered box");
+
+  // THE QUEST TRACKER under the fight tinted each row by quest KIND, with the
+  // same two hexes the Quest Board used before it learned to draw a mark.
+  ok(combat.includes(".track {"), "a tracked quest is furniture");
+  // Scoped to what is RENDERED. The same four hexes also name a dust, a scroll
+  // and an empty bottle in the data tables, which is identity and is meant to
+  // stay — the ratio check below draws the same line, and getting it wrong once
+  // already made a passing guard look like a regression.
+  const tinted = [...app.matchAll(/<Bar\b[^>]{0,300}?color=(?:"|\{")(#[0-9a-fA-F]{3,8})/g)].map((m) => m[1]);
+  ok(tinted.length === 0, tinted.length
+    ? `${tinted.length} bars are still tinted by hand: ${[...new Set(tinted)].join(", ")}`
+    : "…and no bar in the game is tinted with a hand-picked hex");
+
+  // Six screens' worth of one-off rows, all onto vocabulary that already existed.
+  for (const [what, needle] of [
+
+    ["a story chapter is an item", '{soon ? "coming soon" : <><Icon name="lock" size={10} /> locked</>}'],
+    ["a talent is a card", 'className={`card${sel ? " is-on" : ""}`}'],
+    ["a skill mod is a standing order", 'className="rule">\n                <div className="rule-head">'],
+    ["a letter is a marginal note", 'className="aside-note">\n                    <b><Icon name={tone.icon}'],
+    ["gathering counts what you hold in the ledger", 'className="ledger-label"><EmojiIcon emoji={MATERIALS[mk].icon}'],
+  ]) ok(app.includes(needle), what);
+
+  // Scoped to the Tavern's own block. .gateway is used on four other screens, so
+  // a bare includes() passed even with the Tavern reverted — a guard that cannot
+  // fail is worse than no guard, because it reads as coverage.
+  const tavern = (() => {
+    const i = app.indexOf('{tab === "tavern" && (');
+    return i < 0 ? "" : app.slice(i, app.indexOf('{tab === "bestiary"', i));
+  })();
+  ok(tavern.includes('className="gateway"'), "the Tavern's rooms are gateways");
+  ok(!/col:/.test(tavern), "…and its table carries no colours");
+}
+
 sec("The shell is bound in the same hand");
 {
   // Converting the shell is what decides whether the game reads as one object or

@@ -191,7 +191,10 @@
 .aside-note.is-warn { border-left-color: var(--rubric); }
 .aside-note.is-gain { border-left-color: var(--verdigris); }
 .aside-note b { display: block; font-weight: 600; margin-bottom: 1px; }
-.aside-note span { font-size: var(--step--1); color: var(--ink-soft); line-height: 1.45; }
+/* Block, because a note can carry more than one line — a mailbox letter is a
+   tag, a subject and a settlement, and inline they ran together into one
+   paragraph. */
+.aside-note span { display: block; font-size: var(--step--1); color: var(--ink-soft); line-height: 1.45; }
 
 /* ---- an empty shelf ------------------------------------------------------ */
 .empty {
@@ -587,3 +590,17 @@ select.field { cursor: pointer; }
 .cls-paladin { color: var(--cls-paladin); }
 .cls-hunter  { color: var(--cls-hunter); }
 .cls-warlock { color: var(--cls-warlock); }
+
+/* A whole row that IS the button — a shop entry, where tapping anywhere buys.
+   Written as `item item-tap` it lost its own rule and padding, because
+   .item-tap is the inner tappable region of a row that also has other controls
+   and zeroes both. This keeps the row and adds only the affordances. */
+.item.is-tap {
+  width: 100%; box-sizing: border-box; text-align: left;
+  background: none; border-top: 0; border-left: 0; border-right: 0;
+  font: inherit; color: inherit; cursor: pointer; align-items: center;
+}
+.item.is-tap:hover .item-name { color: var(--rubric); }
+.item.is-tap:focus-visible { outline: 2px solid var(--rubric); outline-offset: 2px; }
+.item.is-tap[disabled] { opacity: .5; cursor: default; }
+.item.is-tap[disabled]:hover .item-name { color: inherit; }

@@ -89,9 +89,74 @@
 .sheet-lede b { color: var(--ink); font-weight: 600; }
 /* A fact the sheet is reporting rather than prose — a cost, a count, a timer. */
 .sheet-note {
+  /* Block, because it is often a <span> inside a <button> — a <div> there is
+     invalid HTML — and inline it runs straight on from the button's own label. */
+  display: block;
   font-family: var(--mono); font-size: 9px; letter-spacing: .1em; text-transform: uppercase;
   color: var(--ink-faint); text-align: center; margin-bottom: var(--s-4);
 }
+
+/* ---- a month of days ----------------------------------------------------- */
+/* The sign-in calendar. Its cells were eight hardcoded near-blacks assigned
+   through a ternary chain — the shape the colour sweep could not see, so the
+   grid stayed a dark rectangle on parchment long after everything around it
+   had moved. A day is a ruled box, and what happened to it is said in the same
+   vocabulary the rest of the game uses for state. */
+.cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+.cal-head {
+  font-family: var(--mono); font-size: 8.5px; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--ink-faint); text-align: center; padding-bottom: 2px;
+}
+.cal-head.is-wknd { color: var(--gilt); }
+.cal-day {
+  aspect-ratio: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  border: 1px solid var(--hairline); border-radius: var(--r-sm); background: var(--raised);
+  font-family: var(--mono); font-size: 10px; font-variant-numeric: tabular-nums; color: var(--ink-faint);
+}
+.cal-day.is-wknd  { color: var(--gilt); }
+.cal-day.is-past  { background: var(--sunk); }
+.cal-day.is-got   { border-color: var(--verdigris); color: var(--verdigris); background: var(--raised); }
+.cal-day.is-today { border-color: var(--rubric); color: var(--rubric); font-weight: 600; }
+.cal-day > i { font-style: normal; font-size: 7.5px; line-height: 1; }
+
+/* ---- the pass track ------------------------------------------------------ */
+/* Two columns of rewards with the rank rail running between them. The layout
+   was already the good idea here; what it carried was four glows, two ternaries
+   the colour sweep had collapsed to the same value on both branches (so an
+   unclaimable reward looked exactly like a claimable one), and circular nodes.
+   A rank is a numbered box on a ruled line. */
+.pass-row { display: flex; align-items: stretch; gap: var(--s-2); }
+.pass-cell {
+  flex: 1; min-width: 0; text-align: left; padding: 7px 8px; cursor: default;
+  background: var(--raised); border: 1px solid var(--hairline); border-radius: var(--r-sm);
+  font-family: var(--serif); color: var(--ink-soft);
+}
+.pass-cell.is-earned  { border-color: var(--rule); color: var(--ink); }
+/* The only cell you can act on is the only cell in the rubric. */
+.pass-cell.is-ready   { border-color: var(--rubric); color: var(--ink); cursor: pointer; }
+.pass-cell.is-claimed { opacity: .5; }
+.pass-cell.is-shut    { opacity: .4; }
+.pass-cell b { display: block; font-size: var(--step--1); font-weight: 600; color: inherit; line-height: 1.4; }
+.pass-state {
+  display: block; margin-top: 3px;
+  font-family: var(--mono); font-size: 8px; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.pass-cell.is-ready .pass-state { color: var(--rubric); }
+.pass-rail { width: 30px; position: relative; display: flex; flex-direction: column; align-items: center; }
+.pass-rail::before {
+  content: ""; position: absolute; top: 0; bottom: 0; width: 1px; background: var(--hairline);
+}
+.pass-rail.is-earned::before { background: var(--rule); }
+.pass-node {
+  position: relative; margin: auto 0; width: 22px; height: 22px;
+  display: grid; place-items: center;
+  background: var(--raised); border: 1px solid var(--rule); border-radius: var(--r-sm);
+  font-family: var(--mono); font-size: 10px; color: var(--ink-faint);
+}
+.pass-node.is-earned { color: var(--ink); }
+.pass-node.is-next   { border-color: var(--rubric); color: var(--rubric); }
+.pass-node.is-crown  { width: 26px; height: 26px; }
 
 /* One or two ways out, side by side and equal — the destructive one is not
    bigger, it is just written in the rubric. */

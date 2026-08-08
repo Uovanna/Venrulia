@@ -50,7 +50,14 @@ export const Icon = ({ name, size = 16, title, style }) => {
    to rendering the emoji itself so an unmapped table entry still shows something. */
 export const EmojiIcon = ({ emoji, size = 16, style }) => {
   const id = EMOJI_ICON[stripVS(emoji || "")];
-  return id && HAS.has(id) ? <Icon name={id} size={size} style={style} /> : <>{emoji}</>;
+  if (id && HAS.has(id)) return <Icon name={id} size={size} style={style} />;
+  // The fallback has to honour `size` too. It used to render the bare glyph at
+  // whatever the surrounding text was, so an unmapped 46px enemy portrait came
+  // out at 15px — the drawn ones grew and the leftovers quietly shrank, which
+  // made the gaps look like layout bugs rather than missing art.
+  return (
+    <span style={{ fontSize: Math.round(size * 0.92), lineHeight: 1, display: "inline-block", ...style }}>{emoji}</span>
+  );
 };
 
 const PICTO = /(\p{Extended_Pictographic}️?)/gu;

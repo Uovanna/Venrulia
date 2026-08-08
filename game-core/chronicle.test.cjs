@@ -478,6 +478,53 @@ sec("What is laid on top of the page");
      "…and the tooltip reads a tone rather than a hex");
 }
 
+sec("Portraits are drawn, and the sheets are furnished");
+{
+  // THE PORTRAIT SWAP. GameIcon rendered its emoji raw for the whole redesign —
+  // every item row in the Bank, the Armory and the Auction House showed the
+  // operating system's colour emoji next to a page of ink. It needed no work
+  // per call site: the mapping already existed, GameIcon simply was not asking.
+  ok(/function GameIcon[\s\S]{0,900}return <EmojiIcon emoji=\{icon\} size=\{size\}/.test(app),
+     "an item's portrait goes through the drawn set");
+  ok(!/function GameIcon[\s\S]{0,900}<span style=\{\{ fontSize: Math\.round\(size \* 0\.92\)/.test(app),
+     "…rather than straight to the emoji");
+
+  // AND THE COVERAGE MEASUREMENT ITSELF WAS WRONG. Counting `icon:` fields in
+  // App.jsx alone reported 99%; most of the data tables live in the core, and
+  // counting both files reported 81%. The Armory's own slot grid — seven raw
+  // emoji in a row — was the most visible thing that miscount hid, so the guard
+  // reads BOTH files or it is measuring nothing.
+  const map = fs.readFileSync(path.join(root, "design/emoji-map.mjs"), "utf8");
+  const mapped = new Set([...map.matchAll(/"([^"]{1,5})":\s*"[a-z-]+"/g)].map((m) => m[1].replace(/️/g, "")));
+  const core = fs.readFileSync(path.join(root, "game-core/combat.mjs"), "utf8");
+  const fields = [app, core].flatMap((f) => [...f.matchAll(/icon: "([^"]{1,5})"/g)].map((m) => m[1]))
+    .filter((e) => /\p{Extended_Pictographic}/u.test(e));
+  const bare = [...new Set(fields.filter((e) => !mapped.has(e.replace(/️/g, ""))))];
+  ok(fields.length > 500, `${fields.length} icon fields across App.jsx AND game-core/combat.mjs`);
+  ok(bare.length === 0, bare.length ? `…${bare.length} still render as emoji: ${bare.join(" ")}`
+                                    : "…and every one of them lands on a drawing");
+
+  // The fallback has to honour `size` or the leftovers shrink while the drawn
+  // ones grow, which reads as a layout bug rather than as missing art.
+  ok(/\.rar-poor, \.rar-common,/.test(panels), "rarity publishes its hue as a variable");
+
+  // THE SHEET INTERIORS. The frames converted first; these are the bodies.
+  ok(sheets.includes(".cal-day"), "the sign-in calendar is ruled boxes");
+  ok(!/const bg = got \? "#/.test(app), "…not eight hardcoded near-blacks in a ternary chain");
+  ok(sheets.includes(".pass-cell"), "the pass track is ruled cells on a rail");
+  ok(!/boxShadow: canClaim \? \(paid \? "0 0 10px/.test(app), "…with no glow on a claimable reward");
+  ok(!/canClaim \? \(paid \? "var\(--raised\)" : "var\(--raised\)"\)/.test(app),
+     "…and a claimable reward no longer looks identical to an unclaimable one");
+
+  // The last three shared style objects. Between them they carried a near-black
+  // input border and near-white input text on parchment — hexes the colour
+  // sweep could not see, because they lived in a plain object.
+  for (const o of ["btnPrimary", "btnGhost", "inpStyle"])
+    ok(!new RegExp("const " + o + " = \\{").test(app), `${o} is retired`);
+  ok(app.includes("const btnGoogle = {"),
+     "…and btnGoogle stays, because Google's sign-in branding specifies those exact colours");
+}
+
 sec("The shell is bound in the same hand");
 {
   // Converting the shell is what decides whether the game reads as one object or

@@ -398,10 +398,20 @@ const openSockets = (item) => socketsOf(item).filter((g) => !g).length;
 const ICON_OVERRIDES = {
   // (empty — add entries as custom images/models become available)
 };
+// The portrait of a THING — an item, a gem, an enemy, a class. Three fallbacks,
+// in order: a supplied bitmap, the drawn glyph for that emoji, and finally the
+// emoji itself.
+//
+// The middle step is the one that matters. GameIcon rendered its emoji raw for
+// the whole of the redesign, which meant every item row in the Bank, the Armory
+// and the Auction House — the screens a player spends the most time reading —
+// still showed the operating system's colour emoji next to a page of ink. It is
+// the largest single source of emoji left in the game and it needed no work per
+// call site: the mapping already existed, GameIcon simply was not asking.
 function GameIcon({ icon, imgKey, size = 28, rounded = true, style }) {
   const src = (imgKey && ICON_OVERRIDES[imgKey]) || (icon && ICON_OVERRIDES[icon]);
   if (src) return <img src={src} alt="" draggable={false} style={{ width: size, height: size, objectFit: "contain", borderRadius: rounded ? Math.round(size * 0.16) : 0, display: "inline-block", verticalAlign: "middle", imageRendering: "auto", ...style }} />;
-  return <span style={{ fontSize: Math.round(size * 0.92), lineHeight: 1, display: "inline-block", ...style }}>{icon}</span>;
+  return <EmojiIcon emoji={icon} size={size} style={style} />;
 }
 
 // ---------- GEAR SLOTS ----------
@@ -2958,7 +2968,7 @@ function ItemTooltip({ item, onClose, actions, onSocket }) {
         {item.ilvl ? <div style={{ color: "var(--gilt)", fontSize: 11.5, marginBottom: 5 }}>Item Level {item.ilvl}{item.artifact ? <span style={{ color: "var(--rubric)", marginLeft: 6 }}>· re-forges with your level</span> : null}{item.abyss ? <span style={{ color: "var(--rar-epic)", marginLeft: 6 }}>· secondaries roll {Math.round((abyssMult(item.abyss) - 1) * 100)}% higher</span> : null}</div> : null}
         {item.temper > 0 ? <div style={{ color: "var(--bole)", fontSize: 11, marginBottom: 5, fontWeight: 700 }}><Icon name="anvil" /> Tempered +{item.temper} <span style={{ color: "var(--bole)", fontWeight: 400 }}>· +{temperBonus} to each of its {item.lines?.length || 0} secondary line{(item.lines?.length || 0) === 1 ? "" : "s"}</span></div> : null}
         {(() => { const suf = suffixByMains(item.mains && item.mains.length ? item.mains : mainStatsOf(item)); return suf
-          ? <div style={{ color: "var(--verdigris)", fontSize: 10.5, marginBottom: 5 }}>{suf.name} <span style={{ color: "var(--ink-faint)" }}>— always {suf.desc}</span></div> : null; })()}
+          ? <div style={{ color: "var(--ink-soft)", fontSize: 10.5, marginBottom: 5 }}>{suf.name} <span style={{ color: "var(--ink-faint)" }}>— always {suf.desc}</span></div> : null; })()}
         {itemHasPower(item) && !itemPowerActive(item) && (
           <div style={{ color: "var(--bole)", fontSize: 10.5, marginBottom: 5 }}><Icon name="warn" /> {item.stats.sp > 0 ? "Spell" : "Attack"} Power inactive — two main stats</div>
         )}
@@ -2974,10 +2984,10 @@ function ItemTooltip({ item, onClose, actions, onSocket }) {
           </div>
         )}
         {item.wdmg && <div style={{ color: "var(--bole)", fontSize: 12.5, fontWeight: 600, marginBottom: 2 }}><Icon name="sword" /> {item.wdmg.min} – {item.wdmg.max} Damage</div>}
-        {merged.armor > 0 && <div style={{ color: "var(--verdigris)", fontSize: 12.5, marginBottom: 2 }}><Icon name="shield" /> {merged.armor} Armor</div>}
+        {merged.armor > 0 && <div style={{ color: "var(--ink-soft)", fontSize: 12.5, marginBottom: 2 }}><Icon name="shield" /> {merged.armor} Armor</div>}
         <div style={{ borderTop: "1px solid var(--hairline)", margin: "7px 0", paddingTop: 6 }}>
           {mainKeys.filter((k) => merged[k] > 0).map((k) => <div key={k} style={{ color: "var(--ink)", fontSize: 12 }}>+{merged[k]} {STAT_LABEL[k]}{temperNote(k)}</div>)}
-          {secKeys.filter((k) => merged[k] > 0).map((k) => <div key={k} style={{ color: "var(--verdigris)", fontSize: 12 }}>+{merged[k]} {STAT_LABEL[k]}{temperNote(k)}</div>)}
+          {secKeys.filter((k) => merged[k] > 0).map((k) => <div key={k} style={{ color: "var(--ink-soft)", fontSize: 12 }}>+{merged[k]} {STAT_LABEL[k]}{temperNote(k)}</div>)}
           {mainKeys.concat(secKeys).every((k) => !(merged[k] > 0)) && !item.wdmg && merged.armor <= 0 && !item.relicDesc && <div style={{ color: "var(--ink-faint)", fontSize: 12 }}>No bonuses</div>}
           {item.relicDesc && <div style={{ color: item.relicColor || "var(--gilt)", fontSize: 12, lineHeight: 1.35 }}><Icon name="sword" /> {item.relicDesc}</div>}
           {item.enchant && <div style={{ color: "var(--rar-epic)", fontSize: 12, marginTop: 3 }}><Icon name="spark" /> Enchant: {Object.entries(item.enchant).map(([k, v]) => `+${v} ${STAT_LABEL[k]}`).join(", ")}</div>}
@@ -3047,7 +3057,7 @@ function CharacterSelectScreen({ saves, onSelect, onNew, onDelete, exportData, i
             <div onClick={(e) => e.stopPropagation()} className="sheet is-warn">
               <div className="sheet-mark"><EmojiIcon emoji="⚠️" size={22} /></div>
               <div className="sheet-title">Delete Character?</div>
-              <div style={{ color: "var(--ink)", fontSize: 13, lineHeight: 1.55, textAlign: "center", marginBottom: 16 }}>You are about to permanently delete <b style={{ color: "var(--ink)" }}>{saves[confirmDel].name}</b> (Level {saves[confirmDel].level} {CLASSES.find((c) => c.id === saves[confirmDel].cls)?.name}). This <b style={{ color: "var(--rubric)" }}>cannot be undone</b> — all progress will be lost forever.</div>
+              <div style={{ color: "var(--ink)", fontSize: 13, lineHeight: 1.55, textAlign: "center", marginBottom: 16 }}>You are about to permanently delete <b>{saves[confirmDel].name}</b> (Level {saves[confirmDel].level} {CLASSES.find((c) => c.id === saves[confirmDel].cls)?.name}). This <b>cannot be undone</b> — all progress will be lost forever.</div>
               <div className="sheet-acts">
                 <button onClick={() => setConfirmDel(null)} className="go is-quiet">Cancel</button>
                 <button onClick={() => { const idx = confirmDel; setConfirmDel(null); onDelete(idx); }} className="go">Delete Forever</button>
@@ -3059,19 +3069,19 @@ function CharacterSelectScreen({ saves, onSelect, onNew, onDelete, exportData, i
 
         {/* ---------------- Save data ---------------- */}
         <div style={{ marginTop: 26, background: "var(--sunk)", border: "1px solid var(--verdigris)", borderRadius: 12, padding: 16 }}>
-          <div style={{ color: "var(--verdigris)", fontSize: 12, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Save Data</div>
+          <div style={{ color: "var(--ink-soft)", fontSize: 12, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Save Data</div>
           <div style={{ color: "var(--ink-faint)", fontSize: 11, marginBottom: 12 }}>Your characters are saved on this device. Export a backup code to keep a copy or move your progress to another device.</div>
 
           {/* Backup & restore — local export/import */}
           <div>
             <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-              <button onClick={doExport} style={{ flex: 1, background: "var(--raised)", border: "1px solid var(--verdigris)", borderRadius: 7, color: "var(--verdigris)", fontSize: 12, fontWeight: 600, padding: "9px 8px", cursor: "pointer" }}>⬆ Export backup</button>
+              <button onClick={doExport} style={{ flex: 1, background: "var(--raised)", border: "1px solid var(--verdigris)", borderRadius: 7, color: "var(--ink-soft)", fontSize: 12, fontWeight: 600, padding: "9px 8px", cursor: "pointer" }}>⬆ Export backup</button>
               <button onClick={() => setShowBackup((v) => !v)} style={{ flex: 1, background: "var(--raised)", border: "1px solid var(--rule)", borderRadius: 7, color: "var(--ink-soft)", fontSize: 12, fontWeight: 600, padding: "9px 8px", cursor: "pointer" }}>⬇ Restore</button>
             </div>
             {showBackup && (
               <div>
                 {exportCode && (
-                  <textarea readOnly value={exportCode} onFocus={(e) => e.target.select()} style={{ width: "100%", height: 54, background: "var(--sunk)", border: "1px solid var(--verdigris)", borderRadius: 6, color: "var(--verdigris)", fontSize: 10, padding: 8, marginBottom: 8, boxSizing: "border-box", resize: "none", fontFamily: "ui-monospace, monospace" }} />
+                  <textarea readOnly value={exportCode} onFocus={(e) => e.target.select()} style={{ width: "100%", height: 54, background: "var(--sunk)", border: "1px solid var(--verdigris)", borderRadius: 6, color: "var(--ink-soft)", fontSize: 10, padding: 8, marginBottom: 8, boxSizing: "border-box", resize: "none", fontFamily: "ui-monospace, monospace" }} />
                 )}
                 <textarea value={importText} onChange={(e) => setImportText(e.target.value)} placeholder="Paste a backup code here, then tap Restore…" style={{ width: "100%", height: 54, background: "var(--sunk)", border: "1px solid var(--ink-faint)", borderRadius: 6, color: "var(--ink)", fontSize: 10, padding: 8, boxSizing: "border-box", resize: "none", fontFamily: "ui-monospace, monospace" }} />
                 <button onClick={doImport} className="go is-quiet">Restore from code</button>
@@ -6334,7 +6344,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           <div onClick={(e) => e.stopPropagation()} className={`sheet ${offlineReport.died ? "is-warn" : "is-prize"}`}>
             <div className="sheet-mark">{offlineReport.died ? <EmojiIcon emoji="💀" size={22} /> : <EmojiIcon emoji="🌙" size={22} />}</div>
             <h3 className="sheet-title">{offlineReport.died ? "Defeated While Away" : "Welcome Back!"}</h3>
-            <div style={{ color: "var(--verdigris)", fontSize: 12, textAlign: "center", marginBottom: 14 }}>
+            <div style={{ color: "var(--ink-soft)", fontSize: 12, textAlign: "center", marginBottom: 14 }}>
               {Math.floor(offlineReport.secondsSimulated / 3600)}h {Math.floor((offlineReport.secondsSimulated % 3600) / 60)}m of auto-combat{offlineReport.zoneName ? ` in ${offlineReport.zoneName}` : ""}
             </div>
             {[["⚔️ Enemies defeated", offlineReport.kills.toLocaleString()], ["✨ XP gained", offlineReport.xpGained.toLocaleString()], ["💰 Gold gained", offlineReport.goldGained.toLocaleString()], ...(offlineReport.levelsGained > 0 ? [["🎉 Levels gained", `+${offlineReport.levelsGained}`]] : [])].map(([k, v]) => (
@@ -6360,14 +6370,14 @@ function GameScreen({ character: initChar, onSave, onBack }) {
               <div className="sheet-mark"><EmojiIcon emoji="🔥" size={22} /></div>
               <div className="sheet-title">Reforge Socket?</div>
               <div style={{ color: "var(--ink)", fontSize: 12.5, lineHeight: 1.55, textAlign: "center", marginBottom: 14 }}>
-                This burns <b style={{ color: g ? rarityById(g.rarity).color : "var(--ink)" }}>{g?.icon} {g?.name || "the gem"}</b> out of <b style={{ color: "var(--ink)" }}>{reforgeConfirm.item.name}</b>, freeing the socket.
+                This burns <b className={g ? rarClass(g.rarity) : undefined}><EmojiIcon emoji={g?.icon} size={13} /> {g?.name || "the gem"}</b> out of <b>{reforgeConfirm.item.name}</b>, freeing the socket.
                 <br /><span style={{ color: "var(--rubric)" }}>The gem is destroyed — it does not return to your bag.</span>
               </div>
               <div className="sheet-acts">
                 <button onClick={() => setReforgeConfirm(null)} className="go is-quiet">Cancel</button>
                 <button onClick={() => reforgeSocket(reforgeConfirm.item, reforgeConfirm.idx)} disabled={!afford} className="go"><Icon name="flame" size={14} /> Reforge · <Icon name="gem" size={12} /> {REFORGE_SOCKET_VEN}</button>
               </div>
-              {!afford && <div style={{ color: "var(--rubric)", fontSize: 10.5, textAlign: "center", marginTop: 7 }}>You hold 💎 {(char.ven || 0).toLocaleString()}</div>}
+              {!afford && <div className="sheet-note" style={{ marginTop: 7, marginBottom: 0, color: "var(--rubric)" }}>You hold <Icon name="gem" size={10} /> {(char.ven || 0).toLocaleString()}</div>}
             </div>
           </div>
         );
@@ -6380,20 +6390,22 @@ function GameScreen({ character: initChar, onSave, onBack }) {
         return (
           <div onClick={() => setSocketPick(null)} className="veil">
             <div onClick={(e) => e.stopPropagation()} className="sheet is-gain is-wide">
-              <div className="sheet-title"><Icon name="gem" /> Socket a Gem</div>
-              <div style={{ color: "var(--ink-soft)", fontSize: 11, textAlign: "center", marginBottom: 4 }}>{socketPick.item.name} · socket {socketPick.idx + 1}</div>
-              <div style={{ color: "var(--rubric)", fontSize: 10.5, textAlign: "center", marginBottom: 12 }}><Icon name="warn" /> Bonding is permanent. A socket can only be cleared by reforging (💎 {REFORGE_SOCKET_VEN}), which destroys the gem.</div>
-              {owned.length === 0 && <div style={{ color: "var(--ink-faint)", fontSize: 12, textAlign: "center", padding: "18px 0" }}>No gems yet — they drop from enemies alongside gear.</div>}
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {owned.map(({ g, n }) => { const r = rarityById(g.rarity); return (
-                  <button key={g.id} onClick={() => socketGem(socketPick.item, socketPick.idx, g.id)} style={{ display: "flex", alignItems: "center", gap: 9, background: "var(--sunk)", border: `1px solid ${r.color}55`, borderLeft: `3px solid ${r.color}`, borderRadius: 8, padding: "8px 10px", cursor: "pointer", textAlign: "left" }}>
-                    <span style={{ fontSize: 18 }}><EmojiIcon emoji={g.icon} /></span>
-                    <span style={{ flex: 1, minWidth: 0 }}>
-                      <span style={{ display: "block", color: r.color, fontSize: 12, fontWeight: 700 }}>{g.name} <span style={{ color: "var(--ink-faint)", fontWeight: 400 }}>×{n}</span></span>
-                      <span style={{ display: "block", color: "var(--ink-soft)", fontSize: 10.5 }}>{g.desc}</span>
+              <div className="sheet-title"><Icon name="gem" size={15} /> Socket a Gem</div>
+              <div className="sheet-note">{socketPick.item.name} · socket {socketPick.idx + 1}</div>
+              <div className="aside-note is-warn"><span><Icon name="warn" size={12} /> Bonding is permanent. A socket can only be cleared by reforging (💎 {REFORGE_SOCKET_VEN}), which destroys the gem.</span></div>
+              {owned.length === 0 && <div className="empty">No gems yet — they drop from enemies alongside gear.</div>}
+              <div>
+                {owned.map(({ g, n }) => (
+                  <button key={g.id} onClick={() => socketGem(socketPick.item, socketPick.idx, g.id)} className="choice">
+                    <span className="choice-head">
+                      <span className="mark"><EmojiIcon emoji={g.icon} size={18} /></span>
+                      <span className={`choice-name ${rarClass(g.rarity)}`}>
+                        {g.name} <small>×{n}</small>
+                      </span>
                     </span>
+                    <span className="choice-body">{g.desc}</span>
                   </button>
-                ); })}
+                ))}
               </div>
               <button onClick={() => setSocketPick(null)} className="go is-quiet">Cancel</button>
             </div>
@@ -6413,17 +6425,20 @@ function GameScreen({ character: initChar, onSave, onBack }) {
         const wDelta = Math.round(wAvg(bag) - wAvg(equipped));
         const statLines = (it) => { const m = merged(it); return keys.filter((k) => (m[k] || 0) > 0).map((k) => `+${m[k]} ${STAT_LABEL[k]}`); };
         const scoreDelta = itemScore(bag, char.cls) - itemScore(equipped, char.cls);
+        // Two panels side by side. They used to be bordered in each item's rarity,
+        // which made the comparison read as "green thing versus purple thing"
+        // rather than as two columns of the same numbers.
         const Panel = ({ item, title }) => (
-          <div style={{ flex: 1, minWidth: 0, background: "var(--raised)", border: `1.5px solid ${item ? rarityById(item.rarity).color : "var(--ink)"}`, borderRadius: 10, padding: 10 }}>
-            <div style={{ color: "var(--ink-soft)", fontSize: 9.5, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>{title}</div>
+          <div className="set" style={{ cursor: "default" }}>
+            <div className="eyebrow">{title}</div>
             {item ? (
               <>
-                <div style={{ color: rarityById(item.rarity).color, fontSize: 12.5, fontWeight: 700, lineHeight: 1.2 }}><EmojiIcon emoji={item.icon} /> {item.name}</div>
-                <div style={{ color: "var(--ink-faint)", fontSize: 10, margin: "2px 0 7px" }}>{item.ilvl ? `ilvl ${item.ilvl} · ` : ""}{rarityById(item.rarity).name}</div>
-                {item.wdmg && <div style={{ color: "var(--bole)", fontSize: 11.5, fontWeight: 600 }}><Icon name="sword" /> {item.wdmg.min}–{item.wdmg.max} Dmg</div>}
-                {statLines(item).map((l, i) => <div key={i} style={{ color: "var(--ink-soft)", fontSize: 11.5 }}>{l}</div>)}
+                <div className={`set-name ${rarClass(item.rarity)}`}><EmojiIcon emoji={item.icon} size={15} /> {item.name}</div>
+                <div className="set-meta">{item.ilvl ? `ilvl ${item.ilvl} · ` : ""}{rarityById(item.rarity).name}</div>
+                {item.wdmg && <div className="item-stats"><Icon name="sword" size={12} /> {item.wdmg.min}–{item.wdmg.max} Dmg</div>}
+                {statLines(item).map((l, i) => <div key={i} className="item-stats">{l}</div>)}
               </>
-            ) : <div style={{ color: "var(--ink-faint)", fontSize: 12, padding: "10px 0" }}>Empty slot</div>}
+            ) : <div className="empty" style={{ padding: "10px 0" }}>Empty slot</div>}
           </div>
         );
         return (
@@ -6437,7 +6452,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                   ))}
                 </div>
               )}
-              <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
+              <div className="sets" style={{ alignItems: "stretch" }}>
                 <Panel item={equipped} title={offhandable ? (slot === "offhand" ? "Off-hand" : "Main-hand") : "Equipped"} />
                 <Panel item={bag} title="In your bag" />
               </div>
@@ -6618,12 +6633,10 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           return (
             <div onClick={() => setOfferOpen(false)} className="veil">
               <div onClick={(e) => e.stopPropagation()} className="sheet is-warn">
-                <div style={{ textAlign: "center", marginBottom: 10 }}>
-                  <div style={{ fontSize: 30 }}>⚔️</div>
-                  <div className="sheet-title">{OFFER.name}</div>
-                  <div style={{ color: "var(--rubric)", fontSize: 11.5, marginTop: 3 }}>
-                    {expired ? "Available in the Ven shop's Offers tab" : `Ends in ${hrs}h ${mins}m`}
-                  </div>
+                <div className="sheet-mark"><Icon name="sword" size={22} /></div>
+                <div className="sheet-title">{OFFER.name}</div>
+                <div className="sheet-note">
+                  {expired ? "Available in the Ven shop's Offers tab" : `Ends in ${hrs}h ${mins}m`}
                 </div>
                 <div style={{ background: "var(--raised)", border: "1px solid var(--rubric)", borderRadius: 10, padding: "10px 12px", marginBottom: 10 }}>
                   <div style={{ color: "var(--ink)", fontSize: 12.5, fontWeight: 700, marginBottom: 3 }}><Icon name="sword" /> Artifact Weapon</div>
@@ -6661,22 +6674,15 @@ function GameScreen({ character: initChar, onSave, onBack }) {
             const earned = rank >= r, claimed = passClaimed(char, r, paid);
             const canClaim = passCanClaim(char, r, paid);
             const locked = paid && !owned;
+            const cls = ["pass-cell", canClaim && "is-ready", claimed && "is-claimed",
+                         locked && "is-shut", earned && !claimed && "is-earned"].filter(Boolean).join(" ");
             return (
-              <button onClick={() => canClaim && claimPassRank(r, paid)} disabled={!canClaim}
-                aria-label={`Rank ${r} ${paid ? "Champion" : "Free"}${canClaim ? " — claim" : ""}`}
-                style={{ flex: 1, minWidth: 0, textAlign: "left", padding: "7px 8px", borderRadius: 9,
-                  cursor: canClaim ? "pointer" : "default",
-                  background: claimed ? "var(--verdigris)" : canClaim ? (paid ? "var(--raised)" : "var(--raised)") : "var(--verdigris)",
-                  border: `1.5px solid ${claimed ? "var(--verdigris)" : canClaim ? (paid ? "var(--gilt)" : "var(--verdigris)") : earned ? "var(--verdigris)" : "var(--verdigris)"}`,
-                  opacity: locked ? 0.45 : claimed ? 0.55 : earned ? 1 : 0.62,
-                  boxShadow: canClaim ? (paid ? "0 0 10px var(--bole)" : "0 0 10px var(--verdigris)") : "none" }}>
-                <div style={{ fontSize: 10.5, color: claimed ? "var(--ink-faint)" : paid ? "var(--gilt)" : "var(--verdigris)", fontWeight: 700, lineHeight: 1.45 }}>
-                  {passRewardLines(r, paid).map((l, i) => <div key={i}>{l}</div>)}
-                </div>
-                <div style={{ marginTop: 4, fontSize: 9, fontWeight: 800,
-                              color: claimed ? "var(--ink-faint)" : canClaim ? (paid ? "var(--gilt)" : "var(--verdigris)") : locked ? "var(--ink-soft)" : "var(--ink-faint)" }}>
-                  {claimed ? "✓ Claimed" : canClaim ? "TAP TO CLAIM" : locked ? "🔒 Champion" : earned ? "—" : "Locked"}
-                </div>
+              <button onClick={() => canClaim && claimPassRank(r, paid)} disabled={!canClaim} className={cls}
+                aria-label={`Rank ${r} ${paid ? "Champion" : "Free"}${canClaim ? " — claim" : ""}`}>
+                {passRewardLines(r, paid).map((l, i) => <b key={i}>{withIcons(l, 12)}</b>)}
+                <span className="pass-state">
+                  {claimed ? "claimed" : canClaim ? "tap to claim" : locked ? "champion only" : earned ? "—" : "locked"}
+                </span>
               </button>
             );
           };
@@ -6686,18 +6692,17 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                    style={{ display: "flex", flexDirection: "column", padding: 0, overflow: "hidden" }}>
 
                 {/* Header: what the pass is, and where the player is on it. */}
-                <div style={{ padding: "14px 14px 10px", borderBottom: "1px solid var(--verdigris)" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <div className="sheet-title"><Icon name="trophy" /> Champion's Pass</div>
-                    <button onClick={() => setPassOpen(false)} style={{ background: "none", border: "none", color: "var(--ink-soft)", fontSize: 20, cursor: "pointer", lineHeight: 1 }}>×</button>
+                <div style={{ padding: "14px 14px 10px", borderBottom: "1px solid var(--rule)" }}>
+                  <div className="head" style={{ marginBottom: 6, paddingBottom: 6 }}>
+                    <span className="head-title" style={{ textAlign: "left" }}><Icon name="trophy" size={15} /> Champion's Pass</span>
+                    <button onClick={() => setPassOpen(false)} className="head-back">Close</button>
                   </div>
-                  <div style={{ color: "var(--ink-soft)", fontSize: 11, marginTop: 3 }}>
-                    Rank {rank} of {PASS.ranks} · {kills.toLocaleString()} kills
-                    {!done && <> · {(PASS.killsPerRank - into).toLocaleString()} to rank {rank + 1}</>}
+                  <div className="meter-row">
+                    <span>Rank {rank} of {PASS.ranks} · {kills.toLocaleString()} kills</span>
+                    {!done && <span>{(PASS.killsPerRank - into).toLocaleString()} to rank {rank + 1}</span>}
                   </div>
-                  <div style={{ height: 5, background: "var(--verdigris)", borderRadius: 3, overflow: "hidden", marginTop: 7 }}>
-                    <div style={{ width: `${Math.round((rank + (done ? 0 : into / PASS.killsPerRank)) / PASS.ranks * 100)}%`,
-                                  height: "100%", background: "var(--ground)" }} />
+                  <div className="meter">
+                    <i style={{ width: `${Math.round((rank + (done ? 0 : into / PASS.killsPerRank)) / PASS.ranks * 100)}%` }} />
                   </div>
                   {!owned && (
                     <button onClick={buyPass} className="go">
@@ -6713,12 +6718,12 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                 </div>
 
                 {/* Column headings, aligned to the two tracks and the rail between them. */}
-                <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px 4px" }}>
-                  <div style={{ flex: 1, color: "var(--verdigris)", fontSize: 10, fontWeight: 800, letterSpacing: 0.6 }}>FREE</div>
-                  <div style={{ width: 30 }} />
-                  <div style={{ flex: 1, color: owned ? "var(--gilt)" : "var(--ink-soft)", fontSize: 10, fontWeight: 800, letterSpacing: 0.6, textAlign: "right" }}>
-                    CHAMPION {owned ? "" : "🔒"}
-                  </div>
+                <div className="pass-row" style={{ padding: "8px 14px 4px" }}>
+                  <span className="eyebrow" style={{ flex: 1, marginBottom: 0 }}>Free</span>
+                  <span style={{ width: 30 }} />
+                  <span className="eyebrow" style={{ flex: 1, marginBottom: 0, justifyContent: "flex-end" }}>
+                    Champion {owned ? "" : <Icon name="lock" size={10} />}
+                  </span>
                 </div>
 
                 {/* The track. */}
@@ -6726,29 +6731,21 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                   {Array.from({ length: PASS.ranks }, (_, i) => i + 1).map((r) => {
                     const earned = rank >= r, isNext = !earned && rank + 1 === r;
                     return (
-                      <div key={r} style={{ display: "flex", alignItems: "stretch", gap: 6, position: "relative" }}>
+                      <div key={r} className="pass-row">
                         {cell(r, false)}
                         {/* The rail: a continuous line with this rank's node on it. */}
-                        <div style={{ width: 30, position: "relative", display: "flex", flexDirection: "column", alignItems: "center" }}>
-                          <div style={{ position: "absolute", top: 0, bottom: 0, width: 3, borderRadius: 2,
-                                        background: earned ? "var(--ground)" : "var(--verdigris)" }} />
+                        <div className={`pass-rail${earned ? " is-earned" : ""}`}>
                           {/* The final rank is the only one that is worth marking out. */}
-                          <div style={{ position: "relative", marginTop: "auto", marginBottom: "auto",
-                            width: r === PASS.ranks ? 26 : 22, height: r === PASS.ranks ? 26 : 22, borderRadius: "50%",
-                            display: "flex", alignItems: "center", justifyContent: "center",
-                            fontSize: r === PASS.ranks ? 10 : 10.5, fontWeight: 800,
-                            background: earned ? "var(--ground)" : "var(--verdigris)",
-                            color: earned ? "var(--bole)" : isNext ? "var(--gilt)" : "var(--ink-faint)",
-                            border: `2px solid ${earned ? "var(--gilt)" : isNext ? "var(--gilt)" : "var(--verdigris)"}`,
-                            boxShadow: isNext ? "0 0 10px var(--bole)" : "none" }}>
-                            {r === PASS.ranks ? "👑" : r}
+                          <div className={["pass-node", earned && "is-earned", isNext && "is-next",
+                                           r === PASS.ranks && "is-crown"].filter(Boolean).join(" ")}>
+                            {r === PASS.ranks ? <Icon name="crown" size={13} /> : r}
                           </div>
                         </div>
                         {cell(r, true)}
                       </div>
                     );
                   })}
-                  <div style={{ color: "var(--ink-faint)", fontSize: 10, lineHeight: 1.5, marginTop: 10, textAlign: "center" }}>
+                  <div className="ledger-note" style={{ marginTop: 10, textAlign: "center" }}>
                     {PASS.killsPerRank} kills per rank · {(PASS.killsPerRank * PASS.ranks).toLocaleString()} for the crown,
                     about what a run from 1 to 60 takes.
                   </div>
@@ -6773,67 +6770,71 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           return (
             <div onClick={() => setDailyOpen(false)} className="veil">
               <div onClick={(e) => e.stopPropagation()} className="sheet is-gain">
-                <div style={{ textAlign: "center", marginBottom: 10 }}>
-                  <div style={{ fontSize: 28 }}>📅</div>
-                  <div className="sheet-title">Daily Sign-In</div>
-                  <div style={{ color: "var(--ink-soft)", fontSize: 11.5, marginTop: 3 }}>
-                    {streak > 0 ? `${streak} day${streak === 1 ? "" : "s"} running · ` : ""}
-                    {streak > 0 ? `${nextBonus} more to the next bonus` : "Sign in to start a streak"}
-                  </div>
+                <div className="sheet-mark"><Icon name="scroll" size={22} /></div>
+                <div className="sheet-title">Daily Sign-In</div>
+                <div className="sheet-lede">
+                  {streak > 0 ? `${streak} day${streak === 1 ? "" : "s"} running · ${nextBonus} more to the next bonus`
+                              : "Sign in to start a streak"}
                 </div>
 
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 3, marginBottom: 4 }}>
+                <div className="cal" style={{ marginBottom: 4 }}>
                   {["M","T","W","T","F","S","S"].map((d, i) => (
-                    <div key={i} style={{ textAlign: "center", color: i >= 5 ? "var(--gilt)" : "var(--ink-soft)", fontSize: 9.5, fontWeight: 700 }}>{d}</div>
+                    <div key={i} className={`cal-head${i >= 5 ? " is-wknd" : ""}`}>{d}</div>
                   ))}
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 3, marginBottom: 12 }}>
+                <div className="cal" style={{ marginBottom: 12 }}>
                   {Array.from({ length: lead }).map((_, i) => <div key={"p" + i} />)}
                   {Array.from({ length: days }, (_, i) => {
                     const dayStr = `${y}-${String(m + 1).padStart(2, "0")}-${String(i + 1).padStart(2, "0")}`;
                     const isToday = dayStr === today, past = dayStr < today;
                     const got = hist[dayStr], wknd = utcIsWeekend(dayStr);
-                    const bg = got ? "#12301e" : isToday ? "#2a2410" : past ? "#1a1220" : "#10121e";
-                    const bd = got ? "#3e8a5a" : isToday ? "#f0b429" : past ? "#3a2434" : "#232840";
+                    const cls = ["cal-day", wknd && "is-wknd", past && !got && "is-past", got && "is-got", isToday && "is-today"]
+                      .filter(Boolean).join(" ");
                     return (
-                      <div key={dayStr} title={got ? `claimed · day ${got.streak}` : past ? "missed" : wknd ? "weekend" : ""}
-                        style={{ aspectRatio: "1", background: bg, border: `1px solid ${bd}`, borderRadius: 6,
-                          display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-                          color: got ? "var(--verdigris)" : isToday ? "var(--gilt)" : past ? "var(--ink-faint)" : wknd ? "var(--bole)" : "var(--ink-soft)",
-                          fontSize: 10.5, fontWeight: isToday ? 800 : 600 }}>
+                      <div key={dayStr} className={cls}
+                        title={got ? `claimed · day ${got.streak}` : past ? "missed" : wknd ? "weekend" : ""}>
                         {i + 1}
-                        <span style={{ fontSize: 7.5, lineHeight: 1 }}>{got ? "✓" : past ? "·" : wknd ? "★" : ""}</span>
+                        <i>{got ? "\u2713" : past ? "\u00b7" : wknd ? "\u2605" : ""}</i>
                       </div>
                     );
                   })}
                 </div>
 
                 {dailyResult ? (
-                  <div style={{ background: "var(--raised)", border: "1px solid var(--verdigris)", borderRadius: 10, padding: "10px 12px", marginBottom: 10 }}>
-                    <div style={{ color: "var(--verdigris)", fontSize: 12.5, fontWeight: 700, marginBottom: 4 }}>Day {dailyResult.streak} claimed</div>
-                    {dailyResult.lines.map((l, i) => <div key={i} style={{ color: "var(--ink-soft)", fontSize: 11.5 }}>· {l}</div>)}
+                  <div className="aside-note is-gain">
+                    <b>Day {dailyResult.streak} claimed</b>
+                    {dailyResult.lines.map((l, i) => <span key={i} style={{ display: "block" }}>· {l}</span>)}
                     {dailyResult.items.map((it) => (
-                      <div key={it.id} style={{ color: rarityById(it.rarity).color, fontSize: 11.5, marginTop: 2 }}><Icon name="spark" /> {it.name} (ilvl {it.ilvl})</div>
+                      <span key={it.id} className={rarClass(it.rarity)} style={{ display: "block", marginTop: 2 }}>
+                        <Icon name="spark" size={12} /> {it.name} (ilvl {it.ilvl})
+                      </span>
                     ))}
                   </div>
                 ) : (
-                  <div style={{ background: "var(--raised)", border: "1px solid var(--verdigris)", borderRadius: 10, padding: "10px 12px", marginBottom: 10, fontSize: 11.5, color: "var(--ink-soft)", lineHeight: 1.6 }}>
-                    <div>Weekdays · <b style={{ color: "var(--verdigris)" }}>{DAILY.weekdayVen} Ven</b></div>
-                    <div>Weekends · <b style={{ color: "var(--verdigris)" }}>{DAILY.weekendVen} Ven</b> + an {DAILY.weekendRarity} at your item level</div>
-                    <div>Every {DAILY.bonusEvery}th day running · <b style={{ color: "var(--verdigris)" }}>+{DAILY.bonusVen} Ven</b></div>
-                    <div>Day {DAILY.milestoneDay} · <b style={{ color: "var(--gilt)" }}>{DAILY.milestoneRarity} + {DAILY.milestoneVen} Ven</b></div>
-                    <div style={{ color: "var(--ink-soft)", fontSize: 10.5, marginTop: 5 }}>Miss a day and the streak drops by one, not to zero.</div>
+                  <div className="ledger">
+                    {/* The value column is mono and never wraps, so anything longer
+                        than a quantity belongs under the row, not in it. */}
+                    {[["Weekdays", `${DAILY.weekdayVen} Ven`, null],
+                      ["Weekends", `${DAILY.weekendVen} Ven`, `and an ${DAILY.weekendRarity} at your item level`],
+                      [`Every ${DAILY.bonusEvery}th day running`, `+${DAILY.bonusVen} Ven`, null],
+                      [`Day ${DAILY.milestoneDay}`, `${DAILY.milestoneVen} Ven`, `and a ${DAILY.milestoneRarity}`]].map(([k, v, note]) => (
+                      <div key={k} className="ledger-row">
+                        <div className="ledger-line">
+                          <span className="ledger-label">{k}</span>
+                          <span className="ledger-val">{v}</span>
+                        </div>
+                        {note && <div className="ledger-note">{note}</div>}
+                      </div>
+                    ))}
                   </div>
                 )}
+                <div className="ledger-note" style={{ textAlign: "center" }}>Miss a day and the streak drops by one, not to zero.</div>
 
                 <button onClick={claimedToday ? () => setDailyOpen(false) : claimDaily} disabled={dailyBusy}
-                  style={{ width: "100%", background: claimedToday ? "var(--raised)" : "var(--raised)",
-                    border: `1.5px solid ${claimedToday ? "var(--hairline)" : "var(--verdigris)"}`, borderRadius: 10,
-                    color: claimedToday ? "var(--ink-soft)" : "var(--verdigris)", fontSize: 13.5, fontWeight: 800, padding: 11,
-                    cursor: dailyBusy ? "default" : "pointer" }}>
-                  {dailyBusy ? "Signing in…" : claimedToday ? "Close" : "Sign in for today"}
+                  className={`go${claimedToday ? " is-quiet" : ""}`}>
+                  {dailyBusy ? "Signing in\u2026" : claimedToday ? "Close" : "Sign in for today"}
                 </button>
-                <div style={{ color: "var(--ink-soft)", fontSize: 10, textAlign: "center", marginTop: 6 }}>
+                <div className="sheet-note" style={{ marginTop: 6, marginBottom: 0 }}>
                   Days reset at midnight UTC · a connection is required to claim
                 </div>
               </div>
@@ -7081,9 +7082,11 @@ function GameScreen({ character: initChar, onSave, onBack }) {
             })()}
             <div className="eyebrow">
               <span>What you are wearing</span>
-              <label style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer", textTransform: "none", letterSpacing: 0 }}>
-                <input type="checkbox" checked={char.autoEquip} onChange={() => commitChar({ ...charRef.current, autoEquip: !char.autoEquip })} /> auto-equip
-              </label>
+              {/* The last native control in the game. A browser checkbox paints
+                  itself the operating system's accent blue, which is the one
+                  colour on the page nothing else can reach. */}
+              <button onClick={() => commitChar({ ...charRef.current, autoEquip: !char.autoEquip })}
+                aria-pressed={!!char.autoEquip} className={`toggle${char.autoEquip ? " is-on" : ""}`}>auto-equip</button>
             </div>
             {(() => {
               const slotSquare = (slotId, big) => {
@@ -7197,7 +7200,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
               return (
                 <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
                   {venItems.length > 0 && (<>
-                    <div style={{ color: "var(--verdigris)", fontSize: 10, textTransform: "uppercase", letterSpacing: 1, fontWeight: 700 }}><Icon name="gem" /> Premium</div>
+                    <div style={{ color: "var(--ink-soft)", fontSize: 10, textTransform: "uppercase", letterSpacing: 1, fontWeight: 700 }}><Icon name="gem" /> Premium</div>
                     {venItems.map((v, i) => (
                       <div key={"v" + i} style={{ background: "var(--raised)", border: `1px solid ${v.col}44`, borderLeft: `3px solid ${v.col}`, borderRadius: 8, padding: "9px 11px", display: "flex", alignItems: "center", gap: 10 }}>
                         <div style={{ fontSize: 20 }}><EmojiIcon emoji={v.icon} /></div>
@@ -7233,7 +7236,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                 .sort((a, b) => RARITIES.findIndex((r) => r.id === b.g.rarity) - RARITIES.findIndex((r) => r.id === a.g.rarity) || a.g.name.localeCompare(b.g.name));
               return (
                 <div>
-                  <div style={{ color: "var(--ink-soft)", fontSize: 11, lineHeight: 1.5, marginBottom: 10 }}>Gems socket into Epic, Legendary &amp; Artifact gear. Open an item and tap an empty socket to bond one — <b style={{ color: "var(--rubric)" }}>permanently</b>. <b style={{ color: "var(--bole)" }}>Legendary</b> Soul gems grant a level-60 talent from any class.</div>
+                  <div style={{ color: "var(--ink-soft)", fontSize: 11, lineHeight: 1.5, marginBottom: 10 }}>Gems socket into Epic, Legendary &amp; Artifact gear. Open an item and tap an empty socket to bond one — <b>permanently</b>. <b style={{ color: "var(--bole)" }}>Legendary</b> Soul gems grant a level-60 talent from any class.</div>
                   {owned.length === 0 && <div style={{ color: "var(--ink-faint)", fontSize: 12, textAlign: "center", padding: "24px 0" }}>No gems yet — they drop from enemies alongside gear.</div>}
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                     {owned.map(({ g, n }) => { const r = rarityById(g.rarity); return (
@@ -7476,7 +7479,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                   <Bar current={Math.max(0, townTimeAt(activeBld, build.level - 1) - Math.max(0, remain))} max={townTimeAt(activeBld, build.level - 1)} color="#f0b429" height={6} />
                   <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
                     {remain <= 0
-                      ? <button onClick={collectBuild} style={{ flex: 1, background: "var(--raised)", border: "1.5px solid var(--verdigris)", borderRadius: 8, color: "var(--verdigris)", fontSize: 12.5, fontWeight: 700, padding: 9, cursor: "pointer" }}><Icon name="check" /> Collect</button>
+                      ? <button onClick={collectBuild} style={{ flex: 1, background: "var(--raised)", border: "1.5px solid var(--verdigris)", borderRadius: 8, color: "var(--ink-soft)", fontSize: 12.5, fontWeight: 700, padding: 9, cursor: "pointer" }}><Icon name="check" /> Collect</button>
                       : (() => { const rc = Math.max(1, Math.ceil(remain / 60)); const afford = (char.ven || 0) >= rc; return (
                           <button onClick={rushBuild} disabled={!afford} style={{ flex: 1, background: afford ? "var(--raised)" : "var(--verdigris)", border: `1.5px solid ${afford ? "var(--verdigris)" : "var(--ink)"}`, borderRadius: 8, color: afford ? "var(--ink-soft)" : "var(--ink-faint)", fontSize: 12, fontWeight: 700, padding: 9, cursor: afford ? "pointer" : "default" }}><Icon name="haste" /> Rush · 💎 {rc.toLocaleString()}</button>
                         ); })()}
@@ -7538,15 +7541,15 @@ function GameScreen({ character: initChar, onSave, onBack }) {
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
                 <button className="head-back" onClick={() => setTab("town")}>&larr; Town</button>
                 <span style={{ color: "var(--verdigris)", fontFamily: "Georgia, serif", fontSize: 15 }}><Icon name="gem" /> Premium Shop</span>
-                <span style={{ color: "var(--verdigris)", fontSize: 12, fontWeight: 700 }}><Icon name="gem" /> {(char.ven || 0).toLocaleString()}</span>
+                <span style={{ color: "var(--ink-soft)", fontSize: 12, fontWeight: 700 }}><Icon name="gem" /> {(char.ven || 0).toLocaleString()}</span>
               </div>
 
               {(auraLabel("xp") || auraLabel("gold") || (char.tickets?.dungeonReset || 0) > 0 || (char.tickets?.arenaChallenge || 0) > 0) && (
                 <div style={{ background: "var(--raised)", border: "1px solid var(--verdigris)", borderRadius: 10, padding: "9px 12px", marginBottom: 12, fontSize: 11, color: "var(--ink-soft)", display: "flex", flexWrap: "wrap", gap: 10 }}>
-                  {auraLabel("xp") && <span><Icon name="spark" /> XP Aura: <b style={{ color: "var(--ink)" }}>{auraLabel("xp")}</b></span>}
-                  {auraLabel("gold") && <span><Icon name="coin" /> Gold Aura: <b style={{ color: "var(--ink)" }}>{auraLabel("gold")}</b></span>}
-                  {(char.tickets?.dungeonReset || 0) > 0 && <span><Icon name="ticket" /> Dungeon: <b style={{ color: "var(--ink)" }}>{char.tickets.dungeonReset}</b></span>}
-                  {(char.tickets?.arenaChallenge || 0) > 0 && <span><Icon name="arena" /> Arena: <b style={{ color: "var(--ink)" }}>{char.tickets.arenaChallenge}</b></span>}
+                  {auraLabel("xp") && <span><Icon name="spark" /> XP Aura: <b>{auraLabel("xp")}</b></span>}
+                  {auraLabel("gold") && <span><Icon name="coin" /> Gold Aura: <b>{auraLabel("gold")}</b></span>}
+                  {(char.tickets?.dungeonReset || 0) > 0 && <span><Icon name="ticket" /> Dungeon: <b>{char.tickets.dungeonReset}</b></span>}
+                  {(char.tickets?.arenaChallenge || 0) > 0 && <span><Icon name="arena" /> Arena: <b>{char.tickets.arenaChallenge}</b></span>}
                 </div>
               )}
 
@@ -7605,8 +7608,8 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 9 }}>
                       <span style={{ color: "var(--ink-soft)", fontSize: 12 }}>💎</span>
                       <input type="number" min={1} value={venExchange} onChange={(e) => setVenExchange(e.target.value)} placeholder="Enter Ven…" style={{ flex: 1, minWidth: 0, background: "var(--sunk)", border: "1px solid var(--rule)", borderRadius: 7, color: "var(--ink)", fontSize: 14, padding: "8px 10px" }} />
-                      {[100, 500, 1000].map((q) => <button key={q} onClick={() => setVenExchange(String(q))} style={{ background: String(q) === venExchange ? "var(--hairline)" : "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 6, color: "var(--verdigris)", fontSize: 10.5, padding: "6px 8px", cursor: "pointer" }}>{q}</button>)}
-                      <button onClick={() => setVenExchange(String(char.ven || 0))} style={{ background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 6, color: "var(--verdigris)", fontSize: 10.5, padding: "6px 8px", cursor: "pointer" }}>Max</button>
+                      {[100, 500, 1000].map((q) => <button key={q} onClick={() => setVenExchange(String(q))} style={{ background: String(q) === venExchange ? "var(--hairline)" : "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 6, color: "var(--ink-soft)", fontSize: 10.5, padding: "6px 8px", cursor: "pointer" }}>{q}</button>)}
+                      <button onClick={() => setVenExchange(String(char.ven || 0))} style={{ background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 6, color: "var(--ink-soft)", fontSize: 10.5, padding: "6px 8px", cursor: "pointer" }}>Max</button>
                     </div>
                     <div style={{ background: "var(--raised)", border: `1px solid ${n > 0 ? "var(--gilt)" : "var(--hairline)"}`, borderRadius: 8, padding: "9px 11px", textAlign: "center", marginBottom: 9 }}>
                       <span style={{ color: "var(--ink-soft)", fontSize: 10.5 }}>You will receive</span>
@@ -7623,7 +7626,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                 {VEN_PACKS.map((p) => (
                   <div key={p.ven} style={{ flex: "1 1 30%", minWidth: 96, background: "var(--sunk)", border: "1px solid var(--hairline)", borderRadius: 10, padding: "10px 8px", textAlign: "center" }}>
                     <div style={{ color: "var(--verdigris)", fontSize: 15, fontWeight: 700 }}><Icon name="gem" /> {p.ven.toLocaleString()}</div>
-                    <button onClick={buyVenStub} style={{ marginTop: 6, width: "100%", background: "var(--raised)", border: "1.5px solid var(--verdigris)", borderRadius: 8, color: "var(--verdigris)", fontSize: 12, fontWeight: 700, padding: "6px 4px", cursor: "pointer" }}>${p.usd}</button>
+                    <button onClick={buyVenStub} style={{ marginTop: 6, width: "100%", background: "var(--raised)", border: "1.5px solid var(--verdigris)", borderRadius: 8, color: "var(--ink-soft)", fontSize: 12, fontWeight: 700, padding: "6px 4px", cursor: "pointer" }}>${p.usd}</button>
                   </div>
                 ))}
               </div>
@@ -7652,7 +7655,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                   <div key={s.name} style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--sunk)", border: "1px solid var(--hairline)", borderLeft: `3px solid ${cl.color}`, borderRadius: 8, padding: "9px 11px" }}>
                     <span style={{ fontSize: 19 }}><EmojiIcon emoji={s.icon} /></span>
                     <span style={{ flex: 1, minWidth: 0 }}>
-                      <span style={{ display: "block", color: "var(--verdigris)", fontSize: 12.5, fontWeight: 700 }}>{s.name} <span style={{ color: "var(--ink-soft)", fontSize: 9.5 }}>Lv {s.unlockLevel}</span></span>
+                      <span style={{ display: "block", color: "var(--ink-soft)", fontSize: 12.5, fontWeight: 700 }}>{s.name} <span style={{ color: "var(--ink-soft)", fontSize: 9.5 }}>Lv {s.unlockLevel}</span></span>
                       <span style={{ display: "block", color: "var(--ink-soft)", fontSize: 10.5 }}>{s.desc}</span>
                       <span style={{ display: "block", color: "var(--ink-soft)", fontSize: 9.5 }}>Level {s.unlockLevel} · {s.cd}s cooldown · {skillTypeLabel(s.name)}</span>
                     </span>
@@ -7677,7 +7680,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
               </div>
               <div style={{ background: "var(--raised)", border: "1px solid var(--verdigris)", borderRadius: 10, padding: "10px 12px", marginBottom: 12 }}>
                 <div style={{ color: "var(--ink-soft)", fontSize: 12.5, fontWeight: 700, fontFamily: "Georgia, serif", marginBottom: 3 }}><Icon name="tome" /> Every skill unlocks by level</div>
-                <div style={{ color: "var(--ink-soft)", fontSize: 11, lineHeight: 1.5 }}>Reach the level and the art is yours — nothing to buy or farm. The choice is <b style={{ color: "var(--ink)" }}>which {MAX_SKILL_SLOTS} you carry</b> into battle.{next ? <> Next: <b style={{ color: cl.color }}><EmojiIcon emoji={next.icon} /> {next.name}</b> at level {next.unlockLevel}.</> : <> You have learned every art of your class.</>}</div>
+                <div style={{ color: "var(--ink-soft)", fontSize: 11, lineHeight: 1.5 }}>Reach the level and the art is yours — nothing to buy or farm. The choice is <b>which {MAX_SKILL_SLOTS} you carry</b> into battle.{next ? <> Next: <b style={{ color: cl.color }}><EmojiIcon emoji={next.icon} /> {next.name}</b> at level {next.unlockLevel}.</> : <> You have learned every art of your class.</>}</div>
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
                 {list.map((s) => {
@@ -7860,7 +7863,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                   <span style={{ color: "var(--ink-soft)", fontSize: 10, display: "block" }}>Lv {b.level} · 4 players · ilvl {TRIAL_ILVL[b.id] || 64} loot</span>
                   <span style={{ color: ready ? "var(--verdigris)" : "var(--bole)", fontSize: 9.5, fontWeight: 700, display: "block", marginTop: 2 }}>{ready ? "✓ Available · Epic+ (10% Legendary) · retry free on a wipe" : `⏳ ${fmtCd(left)}`}</span>
                 </span>
-                {ready ? <button onClick={() => startTrial(b.id)} style={{ ...btnPrimary, width: "auto", margin: 0, padding: "8px 14px" }}>Enter</button>
+                {ready ? <button onClick={() => startTrial(b.id)} className="go" style={{ width: "auto", margin: 0 }}>Enter</button>
                        : <span style={{ color: "var(--ink-faint)", fontSize: 10, fontWeight: 700, whiteSpace: "nowrap" }}><Icon name="hourglass" /> Locked</span>}
               </div>
             );
@@ -7873,7 +7876,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                 <span className="head-note">ilvl {avg}</span>
               </div>
               <p className="item-stats" style={{ marginBottom: 12 }}>
-                You fight your calling's role here &mdash; <b style={{ color: "var(--ink)" }}>{ROLES[roleOf(char)].name}</b> &mdash;
+                You fight your calling's role here &mdash; <b>{ROLES[roleOf(char)].name}</b> &mdash;
                 while a tank, a healer, support and damage fill the rest of the party. Threat, interrupts, tank-busters and
                 healing all count. What you spend here is kept separately from your solo runs.
               </p>
@@ -7909,7 +7912,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
               {RAIDS.map((r) => row(r, "raid", 6, avg >= r.reqIlvl, `ilvl ${r.reqIlvl}`))}
               {row(HARD_RAID, "hard-raid", 6, hardRaidUnlocked(char), "Hard cleared")}
               <div style={{ color: "var(--rar-epic)", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, margin: "10px 0 6px" }}>Trinity Trials · 4 players · 24h lockout</div>
-              <div style={{ color: "var(--ink-soft)", fontSize: 10.5, lineHeight: 1.45, marginBottom: 7 }}>Pure mechanic checks. Every clear opens a <b style={{ color: "var(--gilt)" }}>GDKP loot bid</b> — Epic floor with a 10% shot at Legendary. The lockout is spent <b style={{ color: "var(--verdigris)" }}>only when the boss dies</b>, so a wipe costs nothing but time.</div>
+              <div style={{ color: "var(--ink-soft)", fontSize: 10.5, lineHeight: 1.45, marginBottom: 7 }}>Pure mechanic checks. Every clear opens a <b>GDKP loot bid</b> — Epic floor with a 10% shot at Legendary. The lockout is spent <b>only when the boss dies</b>, so a wipe costs nothing but time.</div>
               {Object.values(BOSS_DEFS).map((b) => trialRow(b))}
             </div>
           );
@@ -7965,7 +7968,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                         ); })}
                       </div>
                       {active ? (
-                        <span style={{ color: "var(--verdigris)", fontSize: 11.5, fontWeight: 700 }}>✓ Specialized</span>
+                        <span style={{ color: "var(--ink-soft)", fontSize: 11.5, fontWeight: 700 }}>✓ Specialized</span>
                       ) : !specUnlocked ? (
                         <button disabled style={{ background: "var(--raised)", border: "1.5px solid var(--ink)", borderRadius: 8, color: "var(--ink-faint)", fontSize: 11.5, fontWeight: 700, padding: "8px 12px", cursor: "default" }}><Icon name="lock" /> Unlocks at Lv {SPEC_LEVEL}</button>
                       ) : (
@@ -7997,7 +8000,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                 <span style={{ color: activeSpec ? cls?.color : "var(--ink-faint)", fontSize: 11, fontWeight: 700 }}>{activeSpec ? activeSpec.name : "No spec"}</span>
               </div>
               <div style={{ color: "var(--ink-soft)", fontSize: 11.5, lineHeight: 1.5, marginBottom: 12 }}>Choose one talent per tier to shape how your {activeSpec ? activeSpec.name : cls?.name} plays. {activeSpec ? "These options are tuned to this specialization's staples." : "Pick a Specialization in the Class Hall to unlock its bespoke tree."} Rows unlock at levels 10–60. Your first pick per row is free; changing a talent costs <span style={{ color: "var(--gilt)" }}>{TALENT_RESPEC_COST}g × your changes</span> — next change: <span style={{ color: "var(--gilt)", fontWeight: 700 }}>{talentChangeCost(char).toLocaleString()}g</span>.</div>
-              {char.level < 10 && <div style={{ background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 10, padding: "14px 12px", textAlign: "center", color: "var(--ink-soft)", fontSize: 12, marginBottom: 12 }}><Icon name="lock" /> Your talents awaken at <b style={{ color: "var(--gilt)" }}>level 10</b>. Keep adventuring!</div>}
+              {char.level < 10 && <div style={{ background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 10, padding: "14px 12px", textAlign: "center", color: "var(--ink-soft)", fontSize: 12, marginBottom: 12 }}><Icon name="lock" /> Your talents awaken at <b>level 10</b>. Keep adventuring!</div>}
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 {talentRows(char).map((row) => {
                   const unlocked = char.level >= row.level;
@@ -8156,9 +8159,9 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                         <span style={{ color: "var(--bole)", fontSize: 13 }}>+{tRank} → <b style={{ color: acc }}>+{target}</b></span>
                         <span style={{ color: "var(--gilt)", fontSize: 12 }}>{cost.toLocaleString()}g</span>
                       </div>
-                      <div style={{ color: "var(--ink-soft)", fontSize: 11, marginBottom: 8 }}>Each secondary line: <b style={{ color: "var(--verdigris)" }}>+{tBonus}</b> → <b style={{ color: "var(--verdigris)" }}>+{tBonus + grant}</b> on success {dblPct > 0 && <span style={{ color: acc }}>({dblPct}% to double this to +{grant * 2})</span>}</div>
+                      <div style={{ color: "var(--ink-soft)", fontSize: 11, marginBottom: 8 }}>Each secondary line: <b>+{tBonus}</b> → <b>+{tBonus + grant}</b> on success {dblPct > 0 && <span style={{ color: acc }}>({dblPct}% to double this to +{grant * 2})</span>}</div>
                       {!risky ? (
-                        <div style={{ background: "var(--raised)", border: "1px solid var(--verdigris)", borderRadius: 8, padding: "8px 10px", marginBottom: 10, color: "var(--verdigris)", fontSize: 12, fontWeight: 700, textAlign: "center" }}>✓ Safe — guaranteed success (no risk until +5)</div>
+                        <div style={{ background: "var(--raised)", border: "1px solid var(--verdigris)", borderRadius: 8, padding: "8px 10px", marginBottom: 10, color: "var(--ink-soft)", fontSize: 12, fontWeight: 700, textAlign: "center" }}>✓ Safe — guaranteed success (no risk until +5)</div>
                       ) : (
                         <div style={{ background: "var(--sunk)", border: "1px solid var(--bole)", borderRadius: 8, padding: "8px 10px", marginBottom: 10 }}>
                           {pctRow("Success", odds.chance >= 1 ? "GUARANTEED" : `${eSuccess}%`, "#7CFC9E")}
@@ -8167,7 +8170,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                           {odds.chance < 1 && pctRow("On failure — destroyed", protectOn ? "0% (warded)" : `${Math.round(eDestroy * 100)}%`, protectOn ? "#7fd0ff" : "#e0455a")}
                           <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid var(--bole)" }}>
                             {odds.chance >= 1
-                              ? <div style={{ color: "var(--verdigris)", fontSize: 11.5, fontWeight: 700, textAlign: "center" }}><Icon name="flame" /> The forge is ready — this attempt cannot fail.</div>
+                              ? <div style={{ color: "var(--ink-soft)", fontSize: 11.5, fontWeight: 700, textAlign: "center" }}><Icon name="flame" /> The forge is ready — this attempt cannot fail.</div>
                               : <>
                                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--ink-soft)", marginBottom: 4 }}>
                                     <span><Icon name="flame" /> Forge heat · {odds.stacks} / {odds.cap} failures</span>
@@ -8203,11 +8206,11 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                   const canGold = char.gold >= cost;
                   return (
                     <div style={{ background: "var(--sunk)", border: "1px solid var(--bole)", borderRadius: 10, padding: 12 }}>
-                      <div style={{ color: "var(--ink-soft)", fontSize: 11, marginBottom: 10 }}>Reroll a line to a random secondary (Sta/Leech/Resil/Vers/CDR/CritDmg — dupes allowed). New value rolls <b style={{ color: "var(--bole)" }}>{rlo}–{rhi}</b>. Cost this reroll: <b style={{ color: "var(--gilt)" }}>{cost.toLocaleString()}g</b> ({rerolls} done).</div>
+                      <div style={{ color: "var(--ink-soft)", fontSize: 11, marginBottom: 10 }}>Reroll a line to a random secondary (Sta/Leech/Resil/Vers/CDR/CritDmg — dupes allowed). New value rolls <b style={{ color: "var(--bole)" }}>{rlo}–{rhi}</b>. Cost this reroll: <b>{cost.toLocaleString()}g</b> ({rerolls} done).</div>
                       <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
                         {lines.map((ln, i) => (
                           <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--sunk)", border: "1px solid var(--bole)", borderRadius: 8, padding: "8px 11px" }}>
-                            <div style={{ flex: 1 }}><span style={{ color: "var(--verdigris)", fontSize: 12.5, fontWeight: 600 }}>{STAT_LABEL[ln.stat]}</span> <span style={{ color: "var(--verdigris)", fontSize: 12 }}>+{ln.base + tBonus}</span>{tBonus > 0 && <span style={{ color: "var(--ink-faint)", fontSize: 10 }}> ({ln.base}+{tBonus})</span>}</div>
+                            <div style={{ flex: 1 }}><span style={{ color: "var(--ink-soft)", fontSize: 12.5, fontWeight: 600 }}>{STAT_LABEL[ln.stat]}</span> <span style={{ color: "var(--ink-soft)", fontSize: 12 }}>+{ln.base + tBonus}</span>{tBonus > 0 && <span style={{ color: "var(--ink-faint)", fontSize: 10 }}> ({ln.base}+{tBonus})</span>}</div>
                             <button onClick={() => rerollLine(sel, i)} disabled={!canGold} style={{ background: canGold ? "var(--bole)" : "var(--sunk)", border: `1px solid ${canGold ? acc : "var(--gilt)"}`, borderRadius: 7, color: canGold ? acc : "var(--ink-faint)", fontSize: 11.5, fontWeight: 700, padding: "6px 12px", cursor: canGold ? "pointer" : "default" }}>🎲 Reroll</button>
                           </div>
                         ))}
@@ -8359,7 +8362,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                   <div style={{ background: "var(--raised)", border: "1px solid var(--rar-epic)", borderRadius: 12, padding: "16px 14px", textAlign: "center", marginBottom: 12 }}>
                     <div style={{ fontSize: 34 }}>🎰</div>
                     <div style={{ color: "var(--rar-epic)", fontFamily: "Georgia, serif", fontSize: 15, marginBottom: 4 }}>Gambit Gacha</div>
-                    <div style={{ color: "var(--ink-soft)", fontSize: 11, lineHeight: 1.5, marginBottom: 12 }}>Roll for <b style={{ color: "var(--ink)" }}>if</b> and <b style={{ color: "var(--ink)" }}>then</b> gambits. "If" conditions are rarest. Duplicates become shards.</div>
+                    <div style={{ color: "var(--ink-soft)", fontSize: 11, lineHeight: 1.5, marginBottom: 12 }}>Roll for <b>if</b> and <b>then</b> gambits. "If" conditions are rarest. Duplicates become shards.</div>
                     <div style={{ display: "flex", gap: 8 }}>
                       <button onClick={() => gambitRoll(1)} disabled={char.gold < GAMBIT_ROLL_COST} style={{ flex: 1, background: char.gold >= GAMBIT_ROLL_COST ? "var(--raised)" : "var(--verdigris)", border: `1.5px solid ${char.gold >= GAMBIT_ROLL_COST ? "var(--rar-epic)" : "var(--ink)"}`, borderRadius: 10, color: char.gold >= GAMBIT_ROLL_COST ? "var(--rar-epic)" : "var(--ink-faint)", fontSize: 13, fontWeight: 700, padding: 12, cursor: char.gold >= GAMBIT_ROLL_COST ? "pointer" : "default" }}>Roll ×1<br /><span style={{ fontSize: 10, color: "var(--gilt)" }}>{GAMBIT_ROLL_COST.toLocaleString()}g</span></button>
                       <button onClick={() => gambitRoll(10)} disabled={char.gold < GAMBIT_ROLL10_COST} style={{ flex: 1, background: char.gold >= GAMBIT_ROLL10_COST ? "var(--raised)" : "var(--verdigris)", border: `1.5px solid ${char.gold >= GAMBIT_ROLL10_COST ? "var(--rar-epic)" : "var(--ink)"}`, borderRadius: 10, color: char.gold >= GAMBIT_ROLL10_COST ? "var(--rar-epic)" : "var(--ink-faint)", fontSize: 13, fontWeight: 700, padding: 12, cursor: char.gold >= GAMBIT_ROLL10_COST ? "pointer" : "default" }}>Roll ×10<br /><span style={{ fontSize: 10, color: "var(--gilt)" }}>{GAMBIT_ROLL10_COST.toLocaleString()}g</span></button>
@@ -8371,7 +8374,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
 
               {gambitShopTab === "shards" && (
                 <div>
-                  <div style={{ color: "var(--ink-soft)", fontSize: 11.5, lineHeight: 1.5, marginBottom: 10 }}>Duplicate pulls become shards. Spend <b style={{ color: "var(--rar-epic)" }}>{SHARD_EXCHANGE}</b> shards (any) to unlock a gambit of your choice. You have <b style={{ color: "var(--ink)" }}>{shardTotal(char)}</b> shards.</div>
+                  <div style={{ color: "var(--ink-soft)", fontSize: 11.5, lineHeight: 1.5, marginBottom: 10 }}>Duplicate pulls become shards. Spend <b style={{ color: "var(--rar-epic)" }}>{SHARD_EXCHANGE}</b> shards (any) to unlock a gambit of your choice. You have <b>{shardTotal(char)}</b> shards.</div>
                   {Object.keys(g.shards || {}).length > 0 && (
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 12 }}>
                       {Object.entries(g.shards).map(([id, n]) => (<span key={id} style={{ background: "var(--raised)", border: `1px solid ${rarCol(id)}55`, borderRadius: 6, padding: "3px 7px", fontSize: 10.5, color: "var(--ink-soft)" }}>{gambitById(id)?.icon} Shard of {gambitById(id)?.label} <b style={{ color: rarCol(id) }}>×{n}</b></span>))}
@@ -8465,7 +8468,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
               </div>
 
               {gambitMode === "skill" && (<>
-                <div style={{ color: "var(--ink-soft)", fontSize: 11, marginBottom: 8 }}>Pick a skill, then set its <b style={{ color: "var(--ink)" }}>IF</b> condition and <b style={{ color: "var(--ink)" }}>THEN</b> action. It fires automatically in combat.</div>
+                <div style={{ color: "var(--ink-soft)", fontSize: 11, marginBottom: 8 }}>Pick a skill, then set its <b>IF</b> condition and <b>THEN</b> action. It fires automatically in combat.</div>
                 {/* The system asks a lot before it gives anything back. This lays down a working
                     default from the gambits already owned, so a player who does not want to learn
                     priority order still gets a bar that fires. */}
@@ -8501,7 +8504,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                     </div>
                     <div style={{ color: "var(--rubric)", fontSize: 10.5, fontWeight: 700 }}>IF</div>
                     {partBtn("if", i, skillIfs, (id) => setGambitPart(slotNo, i, "if", id), rules[i]?.if)}
-                    <div style={{ color: "var(--verdigris)", fontSize: 10.5, fontWeight: 700, marginTop: 8 }}>THEN</div>
+                    <div style={{ color: "var(--ink-soft)", fontSize: 10.5, fontWeight: 700, marginTop: 8 }}>THEN</div>
                     {partBtn("then", i, ownedThens, (id) => setGambitPart(slotNo, i, "then", id), rules[i]?.then)}
                   </div>
                 ))}
@@ -8511,7 +8514,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
               </>)}
 
               {gambitMode === "general" && (<>
-                <div style={{ color: "var(--ink-soft)", fontSize: 11, marginBottom: 10 }}>General gambits automate your <b style={{ color: "var(--ink)" }}>consumables</b> — e.g. <i>if your HP ≤ 20%, use a Healing Potion</i>, or <i>if a Strength scroll is inactive, use one</i>. You have {genSlots} slots (2 free).</div>
+                <div style={{ color: "var(--ink-soft)", fontSize: 11, marginBottom: 10 }}>General gambits automate your <b>consumables</b> — e.g. <i>if your HP ≤ 20%, use a Healing Potion</i>, or <i>if a Strength scroll is inactive, use one</i>. You have {genSlots} slots (2 free).</div>
                 {Array.from({ length: genSlots }).map((_, i) => (
                   <div key={i} style={{ background: "var(--sunk)", border: "1px solid var(--hairline)", borderRadius: 10, padding: "10px 12px", marginBottom: 8 }}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
@@ -8525,7 +8528,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                     </div>
                     <div style={{ color: "var(--rubric)", fontSize: 10.5, fontWeight: 700 }}>IF</div>
                     {partBtn("if", i, ownedIfs, (id) => setGeneralPart(i, "if", id), genRules[i]?.if)}
-                    <div style={{ color: "var(--verdigris)", fontSize: 10.5, fontWeight: 700, marginTop: 8 }}>THEN</div>
+                    <div style={{ color: "var(--ink-soft)", fontSize: 10.5, fontWeight: 700, marginTop: 8 }}>THEN</div>
                     {partBtn("then", i, conThens, (id) => setGeneralPart(i, "then", id), genRules[i]?.then)}
                   </div>
                 ))}
@@ -8549,7 +8552,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
               <button onClick={() => setSupplyQty((q) => Math.max(1, q - 1))} style={{ width: 28, height: 28, background: "var(--raised)", border: "1px solid var(--rule)", borderRadius: 6, color: "var(--verdigris)", fontSize: 16, cursor: "pointer" }}>−</button>
               <input type="number" value={supplyQty} min={1} onChange={(e) => setSupplyQty(Math.max(1, Math.min(999, parseInt(e.target.value) || 1)))} style={{ width: 60, textAlign: "center", background: "var(--sunk)", border: "1px solid var(--rule)", borderRadius: 6, color: "var(--ink)", fontSize: 14, padding: "5px 4px" }} />
               <button onClick={() => setSupplyQty((q) => Math.min(999, q + 1))} style={{ width: 28, height: 28, background: "var(--raised)", border: "1px solid var(--rule)", borderRadius: 6, color: "var(--verdigris)", fontSize: 16, cursor: "pointer" }}>+</button>
-              {[10, 50, 100].map((n) => <button key={n} onClick={() => setSupplyQty(n)} style={{ background: supplyQty === n ? "var(--hairline)" : "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 6, color: "var(--verdigris)", fontSize: 11, padding: "5px 8px", cursor: "pointer" }}>{n}</button>)}
+              {[10, 50, 100].map((n) => <button key={n} onClick={() => setSupplyQty(n)} style={{ background: supplyQty === n ? "var(--hairline)" : "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 6, color: "var(--ink-soft)", fontSize: 11, padding: "5px 8px", cursor: "pointer" }}>{n}</button>)}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {SUPPLY_ITEMS.map((s) => {
@@ -8595,7 +8598,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                       <div style={{ color: "var(--ink-soft)", fontSize: 10.5, lineHeight: 1.4 }}>{up.desc}</div>
                     </div>
                     {owned
-                      ? <span style={{ color: "var(--verdigris)", fontSize: 11, fontWeight: 700 }}>Owned</span>
+                      ? <span style={{ color: "var(--ink-soft)", fontSize: 11, fontWeight: 700 }}>Owned</span>
                       : <MiniBtn onClick={() => buyVendorUpgrade(up)} color={canBuy ? "#FFD700" : "#666"} bg={canBuy ? "#1a1830" : "#15131f"}>{up.cost.toLocaleString()}g</MiniBtn>}
                   </div>
                 );
@@ -8609,7 +8612,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
               <button onClick={() => setVendorQty((q) => Math.max(1, q - 1))} style={{ width: 28, height: 28, background: "var(--raised)", border: "1px solid var(--rule)", borderRadius: 6, color: "var(--verdigris)", fontSize: 16, cursor: "pointer" }}>−</button>
               <input type="number" value={vendorQty} min={1} onChange={(e) => setVendorQty(Math.max(1, Math.min(999, parseInt(e.target.value) || 1)))} style={{ width: 60, textAlign: "center", background: "var(--sunk)", border: "1px solid var(--rule)", borderRadius: 6, color: "var(--ink)", fontSize: 14, padding: "5px 4px" }} />
               <button onClick={() => setVendorQty((q) => Math.min(999, q + 1))} style={{ width: 28, height: 28, background: "var(--raised)", border: "1px solid var(--rule)", borderRadius: 6, color: "var(--verdigris)", fontSize: 16, cursor: "pointer" }}>+</button>
-              {[10, 50, 100].map((n) => <button key={n} onClick={() => setVendorQty(n)} style={{ background: vendorQty === n ? "var(--hairline)" : "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 6, color: "var(--verdigris)", fontSize: 11, padding: "5px 8px", cursor: "pointer" }}>{n}</button>)}
+              {[10, 50, 100].map((n) => <button key={n} onClick={() => setVendorQty(n)} style={{ background: vendorQty === n ? "var(--hairline)" : "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 6, color: "var(--ink-soft)", fontSize: 11, padding: "5px 8px", cursor: "pointer" }}>{n}</button>)}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 7, marginBottom: 18 }}>
               {CONSUMABLE_DEFS.map((def) => {
@@ -9107,7 +9110,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                       <input value={ahPrice} onChange={(e) => setAhPrice(e.target.value.replace(/\D/g, ""))} inputMode="numeric" placeholder={String(base)} style={{ ...fi, flex: 1 }} />
                       <span style={{ color: "var(--gilt)", fontSize: 11, whiteSpace: "nowrap" }}>→ {priceNum}g</span>
                     </div>
-                    <div style={{ color: "var(--ink-soft)", fontSize: 10.5, marginBottom: 10 }}>Deposit (consumed): <b style={{ color: "var(--rubric)" }}>−{fee}g</b> · you keep on sale after 15% cut: <b style={{ color: "var(--verdigris)" }}>{ahNetAfterTax(priceNum)}g</b></div>
+                    <div style={{ color: "var(--ink-soft)", fontSize: 10.5, marginBottom: 10 }}>Deposit (consumed): <b>−{fee}g</b> · you keep on sale after 15% cut: <b>{ahNetAfterTax(priceNum)}g</b></div>
                     <button onClick={() => ahSell.kind === "gear" ? postGear(ahSell.item, priceNum) : postStack(ahSell.kind, ahSell.id, priceNum)} disabled={char.gold < fee}
                       style={{ width: "100%", background: char.gold >= fee ? "var(--raised)" : "var(--sunk)", border: `2px solid ${char.gold >= fee ? "var(--gilt)" : "var(--gilt)"}`, borderRadius: 10, color: char.gold >= fee ? "var(--gilt)" : "var(--ink-faint)", fontSize: 13, fontWeight: 700, padding: 11, cursor: char.gold >= fee ? "pointer" : "default" }}>
                       {char.gold >= fee ? `🏷️ List for 48h · −${fee}g deposit` : `Need ${fee}g deposit`}
@@ -9178,11 +9181,11 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                       <span style={{ color: "var(--ink-faint)", fontSize: 10 }}>{fmtClock(now - m.createdAt)} ago</span>
                     </div>
                     <div style={{ color: "var(--bole)", fontSize: 12, marginBottom: 3 }}>{m.subject}</div>
-                    {m.kind === "sale" && <div style={{ color: "var(--ink-soft)", fontSize: 10.5, marginBottom: 6 }}>Sold to {m.from} for {m.gross}g · −{m.tax}g AH cut (15%) · <b style={{ color: "var(--verdigris)" }}>Net {m.gold}g</b></div>}
+                    {m.kind === "sale" && <div style={{ color: "var(--ink-soft)", fontSize: 10.5, marginBottom: 6 }}>Sold to {m.from} for {m.gross}g · −{m.tax}g AH cut (15%) · <b>Net {m.gold}g</b></div>}
                     {m.kind === "gdkp" && <div style={{ color: "var(--ink-soft)", fontSize: 10.5, marginBottom: 6 }}>{m.note || "GDKP settlement"} · <b style={{ color: (m.gold || 0) < 0 ? "var(--rubric)" : "var(--verdigris)" }}>{(m.gold || 0) < 0 ? `−${mpFmt(Math.abs(m.gold))}g` : `+${mpFmt(m.gold || 0)}g`}</b>{Array.isArray(m.items) && m.items.length ? ` · ${m.items.length} item(s)` : ""}</div>}
                     {m.kind === "purchase" && <div style={{ color: "var(--ink-soft)", fontSize: 10.5, marginBottom: 6 }}>Bought from {m.from} for {m.gross}g — collect your goods below.</div>}
                     {m.kind === "expired" && <div style={{ color: "var(--ink-soft)", fontSize: 10.5, marginBottom: 6 }}>Your listing expired unsold. The deposit was not refunded.</div>}
-                    <button onClick={() => collectMail(m)} style={{ width: "100%", background: "var(--raised)", border: "1.5px solid var(--verdigris)", borderRadius: 8, color: "var(--verdigris)", fontSize: 12, fontWeight: 700, padding: 8, cursor: "pointer" }}>
+                    <button onClick={() => collectMail(m)} style={{ width: "100%", background: "var(--raised)", border: "1.5px solid var(--verdigris)", borderRadius: 8, color: "var(--ink-soft)", fontSize: 12, fontWeight: 700, padding: 8, cursor: "pointer" }}>
                       {m.kind === "gdkp" ? (Array.isArray(m.items) && m.items.length ? `Collect ${m.items.length} item(s) & settle ${m.gold >= 0 ? "+" : ""}${m.gold}g` : `Settle ${m.gold >= 0 ? "+" : ""}${m.gold}g`)
                         : m.kind === "sale" ? `Collect ${m.gold}g` : m.item ? "Collect item" : `Collect ${m.qty}× goods`}
                     </button>
@@ -9588,7 +9591,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                     <div style={{ marginTop: 10 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
                         <span style={{ color: prof.color, fontSize: 11, fontWeight: 600 }}>{profRank(data.level)} ({data.level}/{PROF_MAX})</span>
-                        {active && prof.type === "gathering" && <span style={{ color: "var(--verdigris)", fontSize: 11 }}><Icon name="gear" /> Gathering…</span>}
+                        {active && prof.type === "gathering" && <span style={{ color: "var(--ink-soft)", fontSize: 11 }}><Icon name="gear" /> Gathering…</span>}
                       </div>
                       <Bar current={data.xp || 0} max={professionXpForLevel(data.level)} color={prof.color} height={6} />
 
@@ -9803,7 +9806,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           <div className="sheet is-warn is-wide">
             <div className="sheet-mark"><EmojiIcon emoji="🌟" size={22} /></div>
             <div className="sheet-title">Your Talents Awaken!</div>
-            <div className="sheet-lede">Reaching level 10 unlocks <b style={{ color: "var(--ink)" }}>Talents</b> — one choice per tier that reshapes how your class plays. New rows open at 20, 30, 40 and 50. At level 10 you also choose a <b style={{ color: "var(--ink)" }}>Specialization</b> in the Class Hall, which grants signature skills. You can change any talent later for {TALENT_RESPEC_COST}g under the Hero's Statue.<br /><br /><b style={{ color: "var(--ink)" }}>Choose your first talent to continue:</b></div>
+            <div className="sheet-lede">Reaching level 10 unlocks <b>Talents</b> — one choice per tier that reshapes how your class plays. New rows open at 20, 30, 40 and 50. At level 10 you also choose a <b>Specialization</b> in the Class Hall, which grants signature skills. You can change any talent later for {TALENT_RESPEC_COST}g under the Hero's Statue.<br /><br /><b>Choose your first talent to continue:</b></div>
             {TALENT_TIERS[0].options.map((o) => (
               <button key={o.id} onClick={() => completeTalentTutorial(o.id)} className="choice">
                 <span className="choice-head">
@@ -9822,16 +9825,17 @@ function GameScreen({ character: initChar, onSave, onBack }) {
         <div onClick={() => setGachaResults(null)} className="veil">
           <div onClick={(e) => e.stopPropagation()} className="sheet is-prize is-wide">
             <div className="sheet-title"><Icon name="arena" /> {gachaResults.length} Gambit{gachaResults.length > 1 ? "s" : ""}!</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 12 }}>
-              {gachaResults.map((r, i) => { const x = gambitById(r.id); if (!x) return null; const col = rarityById(x.rarity).color; return (
-                <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--sunk)", border: `1px solid ${col}55`, borderLeft: `3px solid ${col}`, borderRadius: 8, padding: "7px 10px" }}>
-                  <span style={{ fontSize: 18 }}><EmojiIcon emoji={x.icon} /></span>
-                  <span style={{ flex: 1, minWidth: 0 }}>
-                    <span style={{ display: "block", color: col, fontSize: 12, fontWeight: 700 }}>{x.type === "if" ? "IF " : "THEN "}{x.label}</span>
-                    <span style={{ display: "block", color: "var(--ink-soft)", fontSize: 9.5, textTransform: "uppercase" }}>{x.rarity}</span>
+            <div>
+              {gachaResults.map((r, i) => { const x = gambitById(r.id); if (!x) return null; return (
+                <div key={i} className={`item ${rarClass(x.rarity)}`}>
+                  <span className="mark"><EmojiIcon emoji={x.icon} size={18} /></span>
+                  <div className="item-body">
+                    <span className={`item-name ${rarClass(x.rarity)}`}>{x.type === "if" ? "IF " : "THEN "}{x.label}</span>
+                    <span className="item-meta">{x.rarity}</span>
+                  </div>
+                  <span className={r.dup ? "state" : "state is-open"}>
+                    {r.dup ? <><Icon name="gem" size={10} /> shard</> : "new"}
                   </span>
-                  {r.dup && <span style={{ color: "var(--rar-epic)", fontSize: 10, fontWeight: 700 }}><Icon name="gem" /> Shard</span>}
-                  {!r.dup && <span style={{ color: "var(--verdigris)", fontSize: 10, fontWeight: 700 }}>NEW</span>}
                 </div>
               ); })}
             </div>
@@ -9851,7 +9855,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
               <div className="sheet-mark"><EmojiIcon emoji="⚠️" size={22} /></div>
               <div className="sheet-title">Trade away {kind} Power?</div>
               <div className="sheet-lede">
-                <b style={{ color: "var(--ink)" }}>{it.name}</b> is focused, so it grants <b style={{ color: "var(--gilt)" }}>+{amt} {kind} Power</b>. Adding <b style={{ color: "var(--ink)" }}>+{d.amount} {STAT_LABEL[d.stat]}</b> gives it a second main stat, which puts that Power <b style={{ color: "var(--bole)" }}>dormant</b> until the enchant is replaced.
+                <b>{it.name}</b> is focused, so it grants <b>+{amt} {kind} Power</b>. Adding <b>+{d.amount} {STAT_LABEL[d.stat]}</b> gives it a second main stat, which puts that Power <b style={{ color: "var(--bole)" }}>dormant</b> until the enchant is replaced.
               </div>
               <div className="sheet-acts">
                 <button onClick={() => setEnchantConfirm(null)} className="go is-quiet">Keep the Power</button>
@@ -9873,7 +9877,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
               <div className="sheet-mark"><EmojiIcon emoji="⚠️" size={22} /></div>
               <div className="sheet-title">Trade away {kind} Power?</div>
               <div className="sheet-lede">
-                <b style={{ color: "var(--ink)" }}>{it.name}</b> grants <b style={{ color: "var(--gilt)" }}>+{amt} {kind} Power</b> because it carries one main stat. Bonding <b style={{ color: "var(--ink)" }}>{d.gem.icon} {d.gem.name}</b> adds {STAT_LABEL[d.stat]}, putting that Power <b style={{ color: "var(--bole)" }}>dormant</b>. Socketing is <b style={{ color: "var(--rubric)" }}>permanent</b>.
+                <b>{it.name}</b> grants <b>+{amt} {kind} Power</b> because it carries one main stat. Bonding <b>{d.gem.icon} {d.gem.name}</b> adds {STAT_LABEL[d.stat]}, putting that Power <b style={{ color: "var(--bole)" }}>dormant</b>. Socketing is <b>permanent</b>.
               </div>
               <div className="sheet-acts">
                 <button onClick={() => setSocketConfirm(null)} className="go is-quiet">Keep the Power</button>
@@ -9892,8 +9896,8 @@ function GameScreen({ character: initChar, onSave, onBack }) {
             <div onClick={(e) => e.stopPropagation()} className="sheet is-gain">
               <div className="sheet-mark"><EmojiIcon emoji="🎟️" size={22} /></div>
               <div className="sheet-title">Use a Dungeon Reset Ticket?</div>
-              <div className="sheet-lede">You're out of runs for <b style={{ color: "var(--ink)" }}><EmojiIcon emoji={d.icon} /> {d.name}</b>. Spend one Dungeon Reset Ticket to run it once more now, without waiting for the timer.</div>
-              <div style={{ background: "var(--raised)", border: "1px solid var(--verdigris)", borderRadius: 10, padding: "8px 12px", marginBottom: 14, textAlign: "center", color: tix > 0 ? "var(--ink-soft)" : "var(--rubric)", fontSize: 12 }}><Icon name="ticket" /> Tickets held: <b style={{ color: "var(--ink)" }}>{tix}</b></div>
+              <div className="sheet-lede">You're out of runs for <b><EmojiIcon emoji={d.icon} /> {d.name}</b>. Spend one Dungeon Reset Ticket to run it once more now, without waiting for the timer.</div>
+              <div style={{ background: "var(--raised)", border: "1px solid var(--verdigris)", borderRadius: 10, padding: "8px 12px", marginBottom: 14, textAlign: "center", color: tix > 0 ? "var(--ink-soft)" : "var(--rubric)", fontSize: 12 }}><Icon name="ticket" /> Tickets held: <b>{tix}</b></div>
               {tix > 0 ? (
                 <div className="sheet-acts">
                   <button onClick={() => setResetPrompt(null)} className="go is-quiet">Cancel</button>
@@ -10212,17 +10216,17 @@ function LootBidModal({ items, party, char, commitChar, showNotif, onClose, net,
         {done || !item ? (
           <>
             <div className="sheet-mark"><EmojiIcon emoji="🏆" size={22} /></div>
-            <div style={{ color: "var(--ink)", fontSize: 14, fontWeight: 700, marginBottom: 14 }}>Loot distributed — run complete!</div>
-            <button onClick={onClose} style={{ ...btnPrimary, margin: 0 }}>Continue</button>
+            <div className="sheet-title">Loot distributed — run complete!</div>
+            <button onClick={onClose} className="go">Continue</button>
           </>
         ) : (<>
           <div className="sheet-title">Boss Loot · Bid Gold {queue.length > 1 ? `(${idx + 1}/${queue.length})` : ""}</div>
-          <div style={{ background: "var(--sunk)", border: `2px solid ${rc(item.rarity).color}`, borderRadius: 12, padding: 12, marginBottom: 10, textAlign: "left" }}>
+          <div className={`aside-note ${rarClass(item.rarity)}`} style={{ borderLeftColor: "var(--rar)", textAlign: "left" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-              <span style={{ fontSize: 26 }}>{item.icon || "🎁"}</span>
+              <span className="mark"><EmojiIcon emoji={item.icon || "🎁"} size={22} /></span>
               <div style={{ minWidth: 0 }}>
-                <div style={{ color: rc(item.rarity).color, fontSize: 14, fontWeight: 700, lineHeight: 1.15 }}>{item.enchant ? "✨ " : ""}{item.name}{temperSuffix(item)}</div>
-                <div style={{ color: "var(--ink-soft)", fontSize: 10 }}>ilvl {item.ilvl} · {rc(item.rarity).name}{item.slotId && slotById(item.slotId) ? ` · ${slotById(item.slotId).name}` : ""}</div>
+                <div className={rarClass(item.rarity)} style={{ fontSize: "var(--step-0)", fontWeight: 600, lineHeight: 1.15 }}>{item.enchant ? "✨ " : ""}{item.name}{temperSuffix(item)}</div>
+                <div className="item-meta">ilvl {item.ilvl} · {rc(item.rarity).name}{item.slotId && slotById(item.slotId) ? ` · ${slotById(item.slotId).name}` : ""}</div>
               </div>
             </div>
             {(() => {
@@ -10233,9 +10237,9 @@ function LootBidModal({ items, party, char, commitChar, showNotif, onClose, net,
               return (
                 <div style={{ borderTop: "1px solid var(--hairline)", paddingTop: 6, display: "flex", flexDirection: "column", gap: 1 }}>
                   {item.wdmg && <div style={{ color: "var(--bole)", fontSize: 11.5, fontWeight: 600 }}><Icon name="sword" /> {item.wdmg.min} – {item.wdmg.max} Damage</div>}
-                  {merged.armor > 0 && <div style={{ color: "var(--verdigris)", fontSize: 11.5 }}><Icon name="shield" /> {merged.armor} Armor</div>}
+                  {merged.armor > 0 && <div style={{ color: "var(--ink-soft)", fontSize: 11.5 }}><Icon name="shield" /> {merged.armor} Armor</div>}
                   {mainKeys.filter((k) => merged[k] > 0).map((k) => <div key={k} style={{ color: "var(--ink)", fontSize: 11.5 }}>+{merged[k]} {STAT_LABEL[k]}</div>)}
-                  {secKeys.filter((k) => merged[k] > 0).map((k) => <div key={k} style={{ color: "var(--verdigris)", fontSize: 11.5 }}>+{merged[k]} {STAT_LABEL[k]}</div>)}
+                  {secKeys.filter((k) => merged[k] > 0).map((k) => <div key={k} style={{ color: "var(--ink-soft)", fontSize: 11.5 }}>+{merged[k]} {STAT_LABEL[k]}</div>)}
                   {item.relicDesc && <div style={{ color: item.relicColor || "var(--gilt)", fontSize: 11, lineHeight: 1.3 }}><Icon name="sword" /> {item.relicDesc}</div>}
                   {socks.length > 0 && <div style={{ color: "var(--ink-soft)", fontSize: 10, marginTop: 2 }}><Icon name="gem" /> Sockets: {socks.map((gid) => { const g = gid && gemById(gid); return g ? g.icon : "○"; }).join(" ")}</div>}
                   {item.enchant && <div style={{ color: "var(--rar-epic)", fontSize: 10.5 }}><Icon name="spark" /> {Object.entries(item.enchant).map(([k, v]) => `+${v} ${STAT_LABEL[k]}`).join(", ")}</div>}
@@ -10246,24 +10250,24 @@ function LootBidModal({ items, party, char, commitChar, showNotif, onClose, net,
           </div>
           {!bid ? null : !bid.resolved ? (<>
             <div style={{ color: "var(--rar-epic)", fontSize: 13, marginBottom: 2 }}>High bid: <b>{bid.high ? mpFmt(bid.high) + "g" : "—"}</b>{bid.highName ? ` · ${bid.highName}` : ""}</div>
-            <div style={{ color: "var(--ink-soft)", fontSize: 11, marginBottom: 10 }}>Reserve <b style={{ color: "var(--gilt)" }}>{mpFmt(bid.min || 0)}g</b> · {bid.timeLeft}s left · your gold: {mpFmt(char.gold || 0)}</div>
+            <div style={{ color: "var(--ink-soft)", fontSize: 11, marginBottom: 10 }}>Reserve <b>{mpFmt(bid.min || 0)}g</b> · {bid.timeLeft}s left · your gold: {mpFmt(char.gold || 0)}</div>
             {bid.passed ? (
               <div style={{ background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 9, padding: "10px 12px", color: "var(--ink-soft)", fontSize: 11.5, lineHeight: 1.5 }}>
-                ✋ <b style={{ color: "var(--ink)" }}>You passed.</b> Staying until the hammer falls so your cut is a share of the final price.
+                ✋ <b>You passed.</b> Staying until the hammer falls so your cut is a share of the final price.
               </div>
             ) : (<>
-              <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>{[100, 500, 1000].map((inc) => (<button key={inc} onClick={() => placeBid((bid.high > 0 ? bid.high : (bid.min || 0)) + inc)} style={{ ...btnGhost, margin: 0, flex: 1 }}>+{mpFmt(inc)}</button>))}</div>
-              <button onClick={() => placeBid(bid.high > 0 ? bid.high + 20 : (bid.min || 0))} style={{ ...btnPrimary, margin: 0 }}>{bid.high > 0 ? `Bid ${mpFmt(bid.high + 20)}g` : `Open at ${mpFmt(bid.min || 0)}g`}</button>
-              <button onClick={passBid} style={{ ...btnGhost, marginTop: 8, marginBottom: 0 }}>Pass</button>
+              <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>{[100, 500, 1000].map((inc) => (<button key={inc} onClick={() => placeBid((bid.high > 0 ? bid.high : (bid.min || 0)) + inc)} className="go is-quiet" style={{ margin: 0, flex: 1 }}>+{mpFmt(inc)}</button>))}</div>
+              <button onClick={() => placeBid(bid.high > 0 ? bid.high + 20 : (bid.min || 0))} className="go">{bid.high > 0 ? `Bid ${mpFmt(bid.high + 20)}g` : `Open at ${mpFmt(bid.min || 0)}g`}</button>
+              <button onClick={passBid} className="go is-quiet">Pass</button>
             </>)}
           </>) : bid.iWon ? (<>
             <div style={{ color: "var(--verdigris)", fontSize: 13, fontWeight: 700, marginBottom: 12 }}><Icon name="trophy" /> You won {item.name} for {mpFmt(bid.high)}g!</div>
-            <button onClick={next} style={{ ...btnPrimary, margin: 0 }}>{idx + 1 < queue.length ? "Next item" : "Finish"}</button>
+            <button onClick={next} className="go">{idx + 1 < queue.length ? "Next item" : "Finish"}</button>
           </>) : (<>
             <div style={{ color: "var(--rubric)", fontSize: 12, marginBottom: 4 }}>{bid.autoPassed ? "Time expired — you passed. " : bid.passed ? "You passed. " : ""}{bid.high > 0 ? `${bid.highName || "A rival"} won the roll` : "No bids met the reserve — the lot went unsold"}{bid.payout ? ` — your full share: +${mpFmt(bid.payout)}g` : ""}.</div>
             <div style={{ color: "var(--ink-soft)", fontSize: 11, marginBottom: 10 }}>Buy an exact copy for {COPY_ITEM_VEN} 💎 Ven? (you have {char.ven || 0})</div>
-            <button onClick={buyCopy} style={{ ...btnPrimary, margin: 0 }}><Icon name="gem" /> Buy copy · {COPY_ITEM_VEN} Ven</button>
-            <button onClick={next} style={{ ...btnGhost, marginTop: 8, marginBottom: 0 }}>No thanks</button>
+            <button onClick={buyCopy} className="go"><Icon name="gem" /> Buy copy · {COPY_ITEM_VEN} Ven</button>
+            <button onClick={next} className="go is-quiet">No thanks</button>
           </>)}
         </>)}
       </div>
@@ -10329,7 +10333,7 @@ function ChatPanel({ chatState, myName, height = 260, transparent }) {
       </div>
       <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
         <input value={chatInput} onChange={(e) => setChatInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") sendChat(); }} placeholder="Say something…" style={{ ...inpStyle, marginBottom: 0, flex: 1 }} />
-        <button onClick={sendChat} style={{ ...btnPrimary, width: "auto", margin: 0, padding: "0 16px" }}>Send</button>
+        <button onClick={sendChat} className="go" style={{ width: "auto", margin: 0 }}>Send</button>
       </div>
     </div>
   );
@@ -10518,14 +10522,14 @@ function GroupCombat({ char, commitChar, onExit, bossId, bossDef, ilvl, party, o
   if (!enc) return (
     <div style={{ maxWidth: 520, margin: "0 auto", padding: "18px 14px", textAlign: "center" }}>
       <button onClick={onExit} style={{ float: "left", background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 8, color: "var(--ink)", fontSize: 12, padding: "6px 12px", cursor: "pointer" }}>← Leave</button>
-      <div style={{ color: "var(--verdigris)", fontSize: 11, fontWeight: 700, paddingTop: 6 }}>🌐 Online — authoritative server</div>
+      <div style={{ color: "var(--ink-soft)", fontSize: 11, fontWeight: 700, paddingTop: 6 }}>🌐 Online — authoritative server</div>
       <div style={{ color: "var(--rar-epic)", fontFamily: "Georgia, serif", fontSize: 17, marginBottom: 2 }}><Icon name="sword" /> Forming Party</div>
       <div style={{ color: "var(--ink)", fontSize: 13, marginBottom: 10 }}>{lobby?.contentName || label || "Encounter"}</div>
       {lobby?.code ? <div style={{ color: "var(--gilt)", fontSize: 11, marginBottom: 8 }}><Icon name="unlock" /> Party code <b>{lobby.code}</b> — anyone using it joins you</div> : null}
       <div style={{ color: "var(--verdigris)", fontSize: 30, fontWeight: 800, margin: "6px 0" }}>{lobby ? `${lobby.players.length}/${lobby.size}` : "…"}</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6, textAlign: "left", margin: "10px 0" }}>
         {(lobby?.players || []).map((p, i) => (
-          <div key={i} style={{ background: "var(--verdigris)", border: "1px solid var(--verdigris)", borderRadius: 8, padding: "7px 10px", color: "var(--verdigris)", fontSize: 12, fontWeight: 700 }}>
+          <div key={i} style={{ background: "var(--verdigris)", border: "1px solid var(--verdigris)", borderRadius: 8, padding: "7px 10px", color: "var(--ink-soft)", fontSize: 12, fontWeight: 700 }}>
             {ROLES[p.role]?.icon || "🧑"} {p.name}
           </div>
         ))}
@@ -10673,8 +10677,8 @@ function GroupCombat({ char, commitChar, onExit, bossId, bossDef, ilvl, party, o
           <div className={`sheet ${enc.cleared ? "is-gain" : "is-warn"}`} style={{ textAlign: "center" }}>
             <div className="sheet-mark">{enc.cleared ? <EmojiIcon emoji="🏆" size={22} /> : <EmojiIcon emoji="💀" size={22} />}</div>
             <div className="sheet-title">{enc.cleared ? "Encounter Cleared!" : "Party Wiped"}</div>
-            <div style={{ color: "var(--ink-soft)", fontSize: 12, marginBottom: 14 }}>{enc.cleared ? `Cleared in ${(enc.elapsed / 1000).toFixed(0)}s · +${400 + (char.level || 60) * 25} gold` : "Regroup and try again — mind the interrupts and keep the party healed."}</div>
-            <button onClick={onExit} style={{ ...btnPrimary, margin: 0 }}>{enc.cleared ? "Continue" : "Leave"}</button>
+            <div className="sheet-lede">{enc.cleared ? `Cleared in ${(enc.elapsed / 1000).toFixed(0)}s · +${400 + (char.level || 60) * 25} gold` : "The encounter beat you. Regroup and try again."}</div>
+            <button onClick={onExit} className="go">{enc.cleared ? "Continue" : "Leave"}</button>
           </div>
         </div>
       )}
@@ -10957,12 +10961,12 @@ function MultiplayerHub({ char, commitChar, showNotif, onExit, onStartRated, onS
         <span style={{ color: "var(--rar-epic)", fontFamily: "Georgia, serif", fontSize: 15 }}><Icon name="sword" /> Multiplayer</span>
         <span style={{ color: "var(--ink-soft)", fontSize: 10.5 }}>Power {mpFmt(myPower)}</span>
       </div>
-      <div style={{ background: "var(--raised)", border: "1px solid var(--rule)", borderRadius: 8, padding: "6px 10px", marginBottom: 10, color: "var(--verdigris)", fontSize: 10, lineHeight: 1.4, textAlign: "center" }}>Arena — Ladder & Rated PvP. You face real players' loadouts when they're online; training bots fill in the rest.</div>
+      <div style={{ background: "var(--raised)", border: "1px solid var(--rule)", borderRadius: 8, padding: "6px 10px", marginBottom: 10, color: "var(--ink-soft)", fontSize: 10, lineHeight: 1.4, textAlign: "center" }}>Arena — Ladder & Rated PvP. You face real players' loadouts when they're online; training bots fill in the rest.</div>
       <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>{tabBtn("ladder", "🏆 Ladder")}{tabBtn("rated", "⚔️ Rated PvP")}</div>
 
       {sub === "finder" && phase === "browse" && (
         <div>
-          <div style={{ color: "var(--ink-soft)", fontSize: 11.5, lineHeight: 1.5, marginBottom: 10 }}>Queue for group content. Empty slots fill after {MP_QUEUE_WAIT}s. No auto-combat or gambits here — you play your skills by hand. Bosses drop loot you <b style={{ color: "var(--ink)" }}>bid gold</b> on against the party.</div>
+          <div style={{ color: "var(--ink-soft)", fontSize: 11.5, lineHeight: 1.5, marginBottom: 10 }}>Queue for group content. Empty slots fill after {MP_QUEUE_WAIT}s. No auto-combat or gambits here — you play your skills by hand. Bosses drop loot you <b>bid gold</b> on against the party.</div>
           {["dungeon", "raid"].map((kind) => (
             <div key={kind}>
               <div style={{ color: "var(--gilt)", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, margin: "8px 0 6px" }}>{kind === "dungeon" ? "Dungeons · 4 players" : "Raids · 6 players"}</div>
@@ -10970,7 +10974,7 @@ function MultiplayerHub({ char, commitChar, showNotif, onExit, onStartRated, onS
                 <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--sunk)", border: "1px solid var(--hairline)", borderRadius: 10, padding: "9px 11px", marginBottom: 7 }}>
                   <span style={{ fontSize: 22 }}><EmojiIcon emoji={c.icon} /></span>
                   <span style={{ flex: 1, minWidth: 0 }}><span style={{ color: c.color || "var(--verdigris)", fontSize: 13, fontWeight: 700 }}>{c.name}</span><span style={{ color: "var(--ink-soft)", fontSize: 10, display: "block" }}>{c.boss} · Lv {c.level} · ilvl {c.ilvl}{c.hard ? " · Hard" : ""}</span></span>
-                  <button onClick={() => startQueue(c)} style={{ ...btnPrimary, width: "auto", margin: 0, padding: "8px 14px" }}>Queue</button>
+                  <button onClick={() => startQueue(c)} className="go" style={{ width: "auto", margin: 0 }}>Queue</button>
                 </div>
               ))}
             </div>
@@ -10988,7 +10992,7 @@ function MultiplayerHub({ char, commitChar, showNotif, onExit, onStartRated, onS
             {party.map((m) => memberRow(m))}
             {Array.from({ length: Math.max(0, content.size - party.length) }).map((_, i) => (<div key={"e" + i} style={{ border: "1px dashed var(--verdigris)", borderRadius: 8, padding: "10px 9px", color: "var(--ink-faint)", fontSize: 11, textAlign: "center" }}>searching…</div>))}
           </div>
-          <button onClick={leaveGroup} style={btnGhost}>Leave queue</button>
+          <button onClick={leaveGroup} className="go is-quiet">Leave queue</button>
         </div>
       )}
 
@@ -11006,7 +11010,7 @@ function MultiplayerHub({ char, commitChar, showNotif, onExit, onStartRated, onS
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
             {playerSkills.length ? playerSkills.map((sk) => { const cd = (w.cooldowns && w.cooldowns[sk.name]) || 0; const ready = now >= cd; return (
               <button key={sk.name} onClick={() => castSkill(sk)} disabled={!ready} style={{ flex: "1 1 44%", background: ready ? "var(--raised)" : "var(--verdigris)", border: `1px solid ${ready ? "var(--rule)" : "var(--hairline)"}`, borderRadius: 9, color: ready ? "var(--ink)" : "var(--ink-faint)", fontSize: 11.5, fontWeight: 700, padding: "10px 6px", cursor: ready ? "pointer" : "default" }}>{sk.icon || "✨"} {sk.name}{!ready ? ` (${Math.ceil((cd - now) / 1000)}s)` : ""}</button>
-            ); }) : <button onClick={() => castSkill({ name: "Strike", mult: 1.5, cd: 3, icon: "🗡️" })} style={{ ...btnPrimary, margin: 0 }}><Icon name="sword" /> Strike</button>}
+            ); }) : <button onClick={() => castSkill({ name: "Strike", mult: 1.5, cd: 3, icon: "🗡️" })} className="go"><Icon name="sword" /> Strike</button>}
           </div>
           <div style={{ background: "var(--sunk)", border: "1px solid var(--verdigris)", borderRadius: 8, padding: 8, height: 92, overflowY: "auto", fontSize: 10, color: "var(--verdigris)", lineHeight: 1.5 }}>{enc.log.map((l, i) => <div key={i}>{withIcons(l, 12)}</div>)}</div>
         </div>
@@ -11024,17 +11028,17 @@ function MultiplayerHub({ char, commitChar, showNotif, onExit, onStartRated, onS
           {!loot.resolved ? (
             <>
               <div style={{ color: "var(--rar-epic)", fontSize: 13, marginBottom: 2 }}>High bid: <b>{loot.high ? mpFmt(loot.high) + "g" : "—"}</b>{loot.highName ? ` · ${loot.highName}` : ""}</div>
-              <div style={{ color: "var(--ink-soft)", fontSize: 11, marginBottom: 10 }}>Reserve <b style={{ color: "var(--gilt)" }}>{mpFmt(loot.min || 0)}g</b> · {loot.timeLeft}s left · your gold: {mpFmt(char.gold || 0)}</div>
+              <div style={{ color: "var(--ink-soft)", fontSize: 11, marginBottom: 10 }}>Reserve <b>{mpFmt(loot.min || 0)}g</b> · {loot.timeLeft}s left · your gold: {mpFmt(char.gold || 0)}</div>
               {loot.passed ? (
                 <div style={{ background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 9, padding: "10px 12px", color: "var(--ink-soft)", fontSize: 11.5, lineHeight: 1.5 }}>
-                  ✋ <b style={{ color: "var(--ink)" }}>You passed.</b> Staying until the hammer falls so your cut is a share of the final price.
+                  ✋ <b>You passed.</b> Staying until the hammer falls so your cut is a share of the final price.
                 </div>
               ) : (<>
                 <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
-                  {[100, 500, 1000].map((inc) => (<button key={inc} onClick={() => placeBid((loot.high > 0 ? loot.high : (loot.min || 0)) + inc)} style={{ ...btnGhost, margin: 0, flex: 1 }}>+{mpFmt(inc)}</button>))}
+                  {[100, 500, 1000].map((inc) => (<button key={inc} onClick={() => placeBid((loot.high > 0 ? loot.high : (loot.min || 0)) + inc)} className="go is-quiet" style={{ margin: 0, flex: 1 }}>+{mpFmt(inc)}</button>))}
                 </div>
-                <button onClick={() => placeBid(loot.high > 0 ? loot.high + 20 : (loot.min || 0))} style={{ ...btnPrimary, margin: 0 }}>{loot.high > 0 ? `Bid ${mpFmt(loot.high + 20)}g` : `Open at ${mpFmt(loot.min || 0)}g`}</button>
-                <button onClick={passBid} style={{ ...btnGhost, marginTop: 8 }}>Pass</button>
+                <button onClick={() => placeBid(loot.high > 0 ? loot.high + 20 : (loot.min || 0))} className="go">{loot.high > 0 ? `Bid ${mpFmt(loot.high + 20)}g` : `Open at ${mpFmt(loot.min || 0)}g`}</button>
+                <button onClick={passBid} className="go is-quiet">Pass</button>
               </>)}
             </>
           ) : loot.iWon ? (
@@ -11043,8 +11047,8 @@ function MultiplayerHub({ char, commitChar, showNotif, onExit, onStartRated, onS
             <>
               <div style={{ color: "var(--rubric)", fontSize: 12, marginBottom: 4 }}>{loot.autoPassed ? "Time expired — you passed. " : loot.passed ? "You passed. " : ""}{loot.highName || "A rival"} won the roll{loot.payout ? ` — your full share: +${mpFmt(loot.payout)}g` : ""}.</div>
               <div style={{ color: "var(--ink-soft)", fontSize: 11, marginBottom: 10 }}>Buy an exact copy for {COPY_ITEM_VEN} 💎 Ven? (you have {char.ven || 0})</div>
-              <button onClick={buyCopy} style={{ ...btnPrimary, margin: 0 }}><Icon name="gem" /> Buy copy · {COPY_ITEM_VEN} Ven</button>
-              <button onClick={skipCopy} style={{ ...btnGhost, marginTop: 8 }}>No thanks</button>
+              <button onClick={buyCopy} className="go"><Icon name="gem" /> Buy copy · {COPY_ITEM_VEN} Ven</button>
+              <button onClick={skipCopy} className="go is-quiet">No thanks</button>
             </>
           )}
         </div>
@@ -11054,16 +11058,16 @@ function MultiplayerHub({ char, commitChar, showNotif, onExit, onStartRated, onS
         <div style={{ textAlign: "center", padding: "20px 0" }}>
           <div style={{ fontSize: 30, marginBottom: 8 }}>🏁</div>
           <div style={{ color: "var(--ink)", fontSize: 13, lineHeight: 1.6, marginBottom: 16 }}>{rewardMsg || "Run complete."}</div>
-          <button onClick={leaveGroup} style={{ ...btnPrimary, margin: 0 }}>Back to Group Finder</button>
+          <button onClick={leaveGroup} className="go">Back to Group Finder</button>
         </div>
       )}
 
       {sub === "ladder" && (
         <div>
-          <div style={{ color: "var(--ink-soft)", fontSize: 11.5, lineHeight: 1.5, marginBottom: 10 }}>The Conquest Ladder ranks champions by <b style={{ color: "var(--ink)" }}>Rating</b> — win rate amplified by how many matches you've played, so consistency over time beats a small hot streak. {mp.ladderBest ? <>Best rank: <b style={{ color: "var(--gilt)" }}>#{mp.ladderBest}</b>.</> : null}</div>
+          <div style={{ color: "var(--ink-soft)", fontSize: 11.5, lineHeight: 1.5, marginBottom: 10 }}>The Conquest Ladder ranks champions by <b>Rating</b> — win rate amplified by how many matches you've played, so consistency over time beats a small hot streak. {mp.ladderBest ? <>Best rank: <b>#{mp.ladderBest}</b>.</> : null}</div>
           {ladder && (<>
             <div style={{ textAlign: "center", background: "var(--verdigris)", border: "1px solid var(--verdigris)", borderRadius: 10, padding: "10px", marginBottom: 10 }}>
-              <span style={{ color: "var(--verdigris)", fontSize: 12 }}>Rank</span> <span style={{ color: "var(--ink)", fontSize: 20, fontWeight: 800 }}>#{ladder.rank}</span> <span style={{ color: "var(--ink-soft)", fontSize: 11 }}>· Rating </span><span style={{ color: "var(--gilt)", fontSize: 15, fontWeight: 800 }}>{myRating}</span>
+              <span style={{ color: "var(--ink-soft)", fontSize: 12 }}>Rank</span> <span style={{ color: "var(--ink)", fontSize: 20, fontWeight: 800 }}>#{ladder.rank}</span> <span style={{ color: "var(--ink-soft)", fontSize: 11 }}>· Rating </span><span style={{ color: "var(--gilt)", fontSize: 15, fontWeight: 800 }}>{myRating}</span>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               {ladder.field.slice(0, 20).map((m, i) => { const rec = m.rated || { wins: 0, losses: 0 }; const gp = (rec.wins || 0) + (rec.losses || 0); const wr = gp ? Math.round((rec.wins / gp) * 100) : 0; return (
@@ -11075,14 +11079,14 @@ function MultiplayerHub({ char, commitChar, showNotif, onExit, onStartRated, onS
                 </div>
               ); })}
             </div>
-            <button onClick={() => buildLadder(true)} style={{ ...btnGhost, marginTop: 10 }}>Refresh ladder</button>
+            <button onClick={() => buildLadder(true)} className="go is-quiet">Refresh ladder</button>
           </>)}
         </div>
       )}
 
       {sub === "rated" && (
         <div>
-          <div style={{ color: "var(--ink-soft)", fontSize: 11.5, lineHeight: 1.5, marginBottom: 10 }}>Rated Arena — live 1v1 matchmaking. Every <b style={{ color: "var(--ink)" }}>win</b> grants a 🎟️ Arena Token and raises your Rating; wins over 24h pay prizes (losses subtract).</div>
+          <div style={{ color: "var(--ink-soft)", fontSize: 11.5, lineHeight: 1.5, marginBottom: 10 }}>Rated Arena — live 1v1 matchmaking. Every <b>win</b> grants a 🎟️ Arena Token and raises your Rating; wins over 24h pay prizes (losses subtract).</div>
           <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
             <div style={{ flex: 1, background: "var(--raised)", border: "1px solid var(--rule)", borderRadius: 10, padding: "10px", textAlign: "center" }}><div style={{ color: "var(--gilt)", fontSize: 22, fontWeight: 800 }}>{myRating}</div><div style={{ color: "var(--ink-soft)", fontSize: 9.5 }}>Rating</div></div>
             <div style={{ flex: 1, background: "var(--raised)", border: "1px solid var(--bole)", borderRadius: 10, padding: "10px", textAlign: "center" }}><div style={{ color: "var(--bole)", fontSize: 22, fontWeight: 800 }}><Icon name="ticket" /> {char.arenaTokens || 0}</div><div style={{ color: "var(--ink-soft)", fontSize: 9.5 }}>Arena Tokens</div></div>
@@ -11097,7 +11101,7 @@ function MultiplayerHub({ char, commitChar, showNotif, onExit, onStartRated, onS
               <div style={{ display: "flex", justifyContent: "center", gap: 12, flexWrap: "wrap",
                             fontSize: 10.5, marginBottom: 10, color: "var(--ink-soft)" }}>
                 <span>Attempts today: <b style={{ color: left > 0 ? "var(--verdigris)" : "var(--rubric)" }}>{left}/{ARENA.dailyRuns}</b></span>
-                {left === 0 && tix > 0 && <span><Icon name="arena" /> Tickets: <b style={{ color: "var(--verdigris)" }}>{tix}</b></span>}
+                {left === 0 && tix > 0 && <span><Icon name="arena" /> Tickets: <b>{tix}</b></span>}
                 {st > 0 && <span><Icon name="flame" /> Streak <b style={{ color: "var(--bole)" }}>{st}</b></span>}
                 <span>Next win: <b style={{ color: "var(--bole)" }}>+{next} 🎟️</b></span>
               </div>
@@ -11110,7 +11114,7 @@ function MultiplayerHub({ char, commitChar, showNotif, onExit, onStartRated, onS
           </div>
           <div style={{ color: "var(--ink-soft)", fontSize: 10.5, textAlign: "center", marginBottom: 12 }}>{windowOver ? "Window ended — claim your prizes to start a new one." : `Window resets in ${fmtDur(windowLeft)}`}</div>
           {windowOver ? (
-            <button onClick={claimRated} style={{ ...btnPrimary, margin: 0 }}><Icon name="trophy" /> Claim prizes (net {net})</button>
+            <button onClick={claimRated} className="go"><Icon name="trophy" /> Claim prizes (net {net})</button>
           ) : match && match.state === "searching" ? (
             <div style={{ textAlign: "center", padding: "16px 0", color: "var(--rar-epic)", fontSize: 13 }}><Icon name="target" /> Finding an opponent near your power…</div>
           ) : match && match.state === "result" ? (
@@ -11118,7 +11122,7 @@ function MultiplayerHub({ char, commitChar, showNotif, onExit, onStartRated, onS
               <div style={{ fontSize: 26, marginBottom: 4 }}>{match.win ? "🏆" : "💀"}</div>
               <div style={{ color: match.win ? "var(--verdigris)" : "var(--rubric)", fontSize: 15, fontWeight: 800, marginBottom: 2 }}>{match.win ? "Victory!" : "Defeat"}</div>
               <div style={{ color: "var(--ink-soft)", fontSize: 11, marginBottom: 12 }}>vs {match.opp.name} · {mpFmt(match.opp.power)} pwr</div>
-              <button onClick={findMatch} style={{ ...btnPrimary, margin: 0 }}>Queue again</button>
+              <button onClick={findMatch} className="go">Queue again</button>
             </div>
           ) : !arenaCanEnter(char) ? (
             <div style={{ textAlign: "center", padding: "14px 10px", background: "var(--raised)", border: "1px solid var(--rubric)", borderRadius: 10, marginBottom: 8 }}>
@@ -11144,7 +11148,7 @@ function MultiplayerHub({ char, commitChar, showNotif, onExit, onStartRated, onS
                   Unranked, against a training partner. Nothing is recorded, win or lose.
                 </span>
               </button>
-              <button onClick={findMatch} style={{ ...btnPrimary, margin: 0 }}><Icon name="sword" /> Find match</button>
+              <button onClick={findMatch} className="go"><Icon name="sword" /> Find match</button>
             </>
           )}
         </div>
@@ -11393,34 +11397,34 @@ export default function App() {
         <div className="sheet-title">{linked ? "Cloud Save" : "Sync Across Devices"}</div>
         {linked ? (
           <>
-            <div style={{ color: "var(--verdigris)", fontSize: 12, lineHeight: 1.6, marginBottom: 12 }}>Signed in as <b style={{ color: "var(--ink)" }}>{session.user?.email || "your account"}</b>. Your {saves.length} character{saves.length === 1 ? "" : "s"} sync automatically across your devices.</div>
-            <button onClick={() => { if (session) pullCloud(session); }} style={btnPrimary}>Sync now</button>
-            <button onClick={signOut} style={btnGhost}>Sign out</button>
-            <button onClick={() => setShowCloud(false)} style={btnGhost}>Close</button>
+            <div style={{ color: "var(--ink-soft)", fontSize: 12, lineHeight: 1.6, marginBottom: 12 }}>Signed in as <b>{session.user?.email || "your account"}</b>. Your {saves.length} character{saves.length === 1 ? "" : "s"} sync automatically across your devices.</div>
+            <button onClick={() => { if (session) pullCloud(session); }} className="go">Sync now</button>
+            <button onClick={signOut} className="go is-quiet">Sign out</button>
+            <button onClick={() => setShowCloud(false)} className="go is-quiet">Close</button>
           </>
         ) : (
           <>
-            <div style={{ color: "var(--verdigris)", fontSize: 11.5, lineHeight: 1.55, marginBottom: 12 }}>Your progress already saves automatically on this device. Sign in to <b style={{ color: "var(--ink)" }}>sync across devices</b> and keep it safe if you reinstall — your current characters carry over.</div>
+            <div style={{ color: "var(--ink-soft)", fontSize: 11.5, lineHeight: 1.55, marginBottom: 12 }}>Your progress already saves automatically on this device. Sign in to <b>sync across devices</b> and keep it safe if you reinstall — your current characters carry over.</div>
             <button disabled={busy} onClick={signInGoogle} style={btnGoogle}><span style={{ fontWeight: 700 }}>G</span>&nbsp; Continue with Google</button>
             {!emailMode ? (
-              <button onClick={() => { setEmailMode(true); setSyncMsg(""); }} style={btnGhost}>Use an email code instead</button>
+              <button onClick={() => { setEmailMode(true); setSyncMsg(""); }} className="go is-quiet">Use an email code instead</button>
             ) : authStage === "email" ? (
               <>
-                <input value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} placeholder="you@email.com" style={inpStyle} />
-                <button disabled={busy} onClick={sendCode} style={btnGhost}>Send me a code</button>
+                <input value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} placeholder="you@email.com" className="field" />
+                <button disabled={busy} onClick={sendCode} className="go is-quiet">Send me a code</button>
               </>
             ) : (
               <>
-                <div style={{ color: "var(--verdigris)", fontSize: 11, marginBottom: 6 }}>Enter the 6-digit code sent to <b style={{ color: "var(--ink)" }}>{authEmail}</b>.</div>
-                <input value={authCode} onChange={(e) => setAuthCode(e.target.value)} placeholder="123456" inputMode="numeric" style={inpStyle} />
-                <button disabled={busy} onClick={verifyCode} style={btnGhost}>Verify &amp; sign in</button>
-                <button onClick={() => { setAuthStage("email"); setSyncMsg(""); }} style={{ ...btnGhost, border: "none", color: "var(--ink-faint)" }}>← use a different email</button>
+                <div style={{ color: "var(--ink-soft)", fontSize: 11, marginBottom: 6 }}>Enter the 6-digit code sent to <b>{authEmail}</b>.</div>
+                <input value={authCode} onChange={(e) => setAuthCode(e.target.value)} placeholder="123456" inputMode="numeric" className="field" />
+                <button disabled={busy} onClick={verifyCode} className="go is-quiet">Verify &amp; sign in</button>
+                <button onClick={() => { setAuthStage("email"); setSyncMsg(""); }} className="link" style={{ display: "block", margin: "8px auto 0" }}>← use a different email</button>
               </>
             )}
-            <button onClick={() => setShowCloud(false)} style={{ ...btnGhost, border: "none", color: "var(--ink-faint)" }}>Keep playing on this device only</button>
+            <button onClick={() => setShowCloud(false)} className="link" style={{ display: "block", margin: "8px auto 0" }}>Keep playing on this device only</button>
           </>
         )}
-        {syncMsg && <div style={{ color: "var(--verdigris)", fontSize: 10.5, textAlign: "center", marginTop: 10 }}>{syncMsg}</div>}
+        {syncMsg && <div style={{ color: "var(--ink-soft)", fontSize: 10.5, textAlign: "center", marginTop: 10 }}>{syncMsg}</div>}
       </div>
     </div>
   ) : null;
@@ -11436,17 +11440,17 @@ export default function App() {
         <div className="sheet is-prize is-wide">
           <div className="sheet-mark"><EmojiIcon emoji="⚠️" size={22} /></div>
           <div className="sheet-title">Two versions of your save</div>
-          <div style={{ color: "var(--verdigris)", fontSize: 11.5, lineHeight: 1.55, marginBottom: 12 }}>This device and the cloud have both changed since they last synced. Choose which to keep — the other is replaced.</div>
-          <div style={{ background: "var(--raised)", border: "1px solid var(--verdigris)", borderRadius: 10, padding: "9px 11px", marginBottom: 8 }}>
-            <div style={{ color: "var(--verdigris)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>☁️ Cloud · saved {when}</div>
-            <div style={{ color: "var(--verdigris)", fontSize: 12 }}>{pendingCloud.cloudSummary}</div>
+          <div style={{ color: "var(--ink-soft)", fontSize: 11.5, lineHeight: 1.55, marginBottom: 12 }}>This device and the cloud have both changed since they last synced. Choose which to keep — the other is replaced.</div>
+          <div className="aside-note">
+            <b><Icon name="cloud" size={12} /> Cloud · saved {when}</b>
+            <span>{pendingCloud.cloudSummary}</span>
           </div>
-          <div style={{ background: "var(--raised)", border: "1px solid var(--verdigris)", borderRadius: 10, padding: "9px 11px", marginBottom: 14 }}>
-            <div style={{ color: "var(--verdigris)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>📱 This device</div>
-            <div style={{ color: "var(--verdigris)", fontSize: 12 }}>{pendingCloud.localSummary}</div>
+          <div className="aside-note">
+            <b><Icon name="speak" size={12} /> This device</b>
+            <span>{pendingCloud.localSummary}</span>
           </div>
-          <button onClick={() => resolveConflict("cloud")} style={{ ...btnPrimary, background: "var(--raised)", border: "1.5px solid var(--verdigris)", color: "var(--verdigris)" }}>☁️ Use the cloud save</button>
-          <button onClick={() => resolveConflict("local")} style={{ ...btnGhost, border: "1.5px solid var(--verdigris)", color: "var(--verdigris)" }}>📱 Keep this device's save</button>
+          <button onClick={() => resolveConflict("cloud")} className="go">☁️ Use the cloud save</button>
+          <button onClick={() => resolveConflict("local")} className="go is-quiet">📱 Keep this device's save</button>
         </div>
       </div>
     );
@@ -11462,7 +11466,13 @@ export default function App() {
   return <><ChronicleStyles /><IconSprite /><GameErrorBoundary>{body}</GameErrorBoundary>{cloudButton}{cloudOverlay}{conflictModal}</>;
 }
 
-const inpStyle = { width: "100%", boxSizing: "border-box", background: "var(--sunk)", border: "1px solid #35305a", borderRadius: 9, color: "#e8e4ff", fontSize: 13, padding: "10px 12px", marginBottom: 8, outline: "none" };
-const btnPrimary = { width: "100%", background: "var(--raised)", border: "1.5px solid var(--rule)", borderRadius: 10, color: "var(--ink)", fontSize: 13, fontWeight: 700, padding: 11, cursor: "pointer", marginBottom: 8 };
-const btnGhost = { width: "100%", background: "transparent", border: "1px solid var(--hairline)", borderRadius: 10, color: "#9a93c4", fontSize: 12, fontWeight: 600, padding: 9, cursor: "pointer", marginBottom: 8 };
+// btnPrimary, btnGhost and inpStyle are gone: they were the last three shared
+// style objects, and between them they carried a near-black input border and
+// near-white input text on parchment — hexes the colour sweep could not see
+// because they lived in a plain object rather than a style prop. Their jobs are
+// .go, .go.is-quiet and .field.
+//
+// btnGoogle stays hardcoded and unthemed on purpose: Google's sign-in branding
+// specifies that white, that grey and that border, and a parchment version of
+// it would be a brand violation rather than a design decision.
 const btnGoogle = { width: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "#ffffff", border: "1.5px solid #dadce0", borderRadius: 10, color: "#3c4043", fontSize: 13.5, fontWeight: 700, padding: 11, cursor: "pointer", marginBottom: 8 };

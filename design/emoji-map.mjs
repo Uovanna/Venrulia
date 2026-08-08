@@ -61,15 +61,59 @@ export const EMOJI_ICON = {
   "🐺": "beast", "🐆": "beast", "🐸": "beast", "🦎": "beast", "🦖": "beast",
   "🦇": "beast", "🕷": "beast", "🕸": "beast", "👹": "beast", "🍖": "beast", "🦷": "beast",
   "🐉": "drake", "🌪": "drake", "🌊": "drake",
+
+  // --- the gaps the GameIcon swap exposed ---------------------------------
+  // Routing item and enemy portraits through this table covered 163 of the 190
+  // `icon:` fields in the data at a stroke. These are what was left standing as
+  // raw colour emoji next to a page of ink, so these are what got drawn.
+  "🌲": "pine", "🌳": "pine", "🎄": "pine", "🌴": "palm", "🌵": "palm",
+  "❄": "frost", "🧊": "frost", "☃": "frost",
+  "♾": "endless", "🔋": "charge", "🪫": "charge", "🔌": "charge",
+  "🌅": "dawn", "🌄": "dawn", "🌇": "dawn",
+  "⛓": "chain", "🔗": "chain", "↩": "return", "🔙": "return",
+  "➕": "plus", "🎲": "dice", "☁": "cloud", "🌐": "globe", "📡": "globe",
+  "🧑": "figure", "🧍": "figure", "👤": "figure", "🤖": "figure",
+  "💬": "speak", "🗨": "speak", "📱": "speak",
+
+  // Rarity and quality swatches. These are COLOUR, not iconography — the thing
+  // they identify is the tier, and the design already writes a tier as a colour
+  // on the ink. So they all become the one gem drawing and let .rar-* say which
+  // gem it is, rather than thirteen near-identical coloured squares.
+  "🟢": "gem", "🟠": "gem", "🟣": "gem", "🟤": "gem", "⚪": "gem", "🟡": "gem",
+  "🔴": "gem", "🟥": "gem", "🟩": "gem", "🟦": "gem", "🟧": "gem", "🟪": "gem", "🟨": "gem",
+  "🔻": "gem", "🔺": "gem", "🔶": "gem", "🔷": "gem", "💠": "gem", "♦": "gem",
+  "🖤": "gem", "🔵": "gem", "💚": "gem", "⬛": "gem", "🤍": "gem", "💧": "gem", "🧿": "gem",
+
+  // --- the armour slots ----------------------------------------------------
+  // Measuring coverage against App.jsx alone reported 99%; the data tables
+  // mostly live in game-core/combat.mjs, and counting BOTH files reported 81%.
+  // The Armory's own slot grid was the most visible thing that miscount hid.
+  "🪖": "helm", "🧣": "amulet", "📿": "amulet", "👕": "chest", "🎽": "chest",
+  "🧤": "glove", "👖": "legs", "🩳": "legs", "🥾": "boot", "💍": "ring",
+
+  // --- the recurring skill and enemy marks ---------------------------------
+  "⏩": "haste", "🔆": "spark", "💢": "spark", "😤": "spark", "🪄": "spark",
+  "☄": "spark", "🌠": "spark", "✨": "spark",
+  "📣": "speak", "📯": "speak",
+  "🪓": "axe", "✂": "sword", "🗡": "sword",
+  "😈": "undead", "😱": "skull",
+  "🐍": "beast", "🐂": "beast", "🐾": "beast", "🥷": "figure", "🤸": "figure",
+  "⚖": "scales", "🚫": "ban", "✋": "ban",
+  "🫀": "heart", "❤‍🔥": "heart", "💉": "flask", "🧉": "flask",
+  "✝": "shrine", "🙏": "shrine", "🕊": "shrine",
+  "🍃": "herb", "🪶": "herb", "🧹": "herb",
+  "🧱": "shield", "🪞": "shield", "🪤": "target", "🃏": "dice",
+  "🌫": "cloud", "🌧": "cloud", "🌩": "cloud", "🌤": "cloud",
+  "☀": "dawn", "🌒": "abyss", "🔭": "globe", "💨": "haste", "🪝": "chain",
+  // The hunter's shots and the rogue's mark. ↗ is an arrow in flight here, not
+  // a UI arrow — which is why it maps while ⬆ and ⬇ deliberately do not.
+  "↗": "bow", "🏴": "skull",
 };
 
 /* Deliberately NOT mapped, with reasons — so the gaps are a decision rather than
  * an oversight, and so nobody "finishes the job" by mapping them badly later.
  *
- *   🟢🟠🟣🟤⚪🟡🔴🟥🟩🟦🟧🟪🟨  rarity and quality swatches. These are colour, not
- *      iconography — they become a CSS token, not a drawing.
- *   ➕⬆⬇▶↩🔁♾⚖📊📡📱🌐🤖💬🧑🧍   interface furniture and multiplayer chrome that
- *      the Chronicle has not been designed for yet.
- *   🌅🌄❄🔋🔌🪫💾🏁📅   one-offs awaiting their own screens.
+ *   ⬆⬇▶🔁⚖📊💾🏁📅   interface furniture that has no Chronicle equivalent yet.
+ *      An arrow is not a drawing; when these get a home they get a decision.
  */
 export const stripVS = (s) => s.replace(/️/g, "");

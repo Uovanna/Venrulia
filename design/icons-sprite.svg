@@ -33,8 +33,15 @@
 </defs>
 
 <!-- ── vitals & combat ─────────────────────────────────────────────────────── -->
+<!-- REDRAWN. The first version was a diagonal blade closed with a right-angle
+     bracket at the tip, which is the exact shape of an arrowhead: at every size
+     it read as an arrow, and it is the most-used glyph in the game — the class
+     portrait, the weapon slot, the Strength line, the header avatar, "Travel &
+     Hunt". Upright with a real crossguard, grip and pommel, it cannot be
+     mistaken for anything else at 12px. -->
 <symbol id="i-sword" viewBox="0 0 24 24"><g filter="url(#quill)" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M20.5 3.2 10 13.9M14.6 3.4h5.9v5.9"/><path d="M4 20.2l3.4-3.4M3.2 16.4 7.8 21"/><path d="m10.4 14.3 -2.9 2.9"/></g></symbol>
+  <path d="M12 2.2 14.2 7.2v8.2H9.8V7.2L12 2.2Z"/>
+  <path d="M6.6 15.4h10.8M12 15.4v4.2M9.8 21.4h4.4"/></g></symbol>
 
 <symbol id="i-shield" viewBox="0 0 24 24"><g filter="url(#quill-b)" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
   <path d="M12 2.6 20 5.9v6.4c0 4.6-3.3 8.1-8 9.3-4.7-1.2-8-4.7-8-9.3V5.9l8-3.3Z"/><path d="M12 8v7"/></g></symbol>
@@ -190,5 +197,85 @@
 <symbol id="i-drake" viewBox="0 0 24 24"><g filter="url(#quill-b)" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
   <path d="M3 15.4c2.6-5 6.6-7.4 12-7.4l6 -3.6-1.6 5.4c1 3.2-.6 6.6-4 8.6"/>
   <path d="M3 15.4c1.4 3 4 4.6 7.6 4.6M15 8.6l-2.6 4.4"/></g></symbol>
+
+<!-- ================================================================
+     Filling the gaps the GameIcon swap exposed. Routing item and enemy
+     portraits through the drawn set covered 163 of 190 data icons at a
+     stroke; these are the ones that were left standing as raw emoji next
+     to a page of ink, so they are the ones worth drawing.
+     ================================================================ -->
+
+<symbol id="i-pine" viewBox="0 0 24 24"><g filter="url(#quill)" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M12 2.6 7.4 9h2.2L6.2 14h3L5.4 19.2h13.2L14.8 14h3L14.4 9h2.2L12 2.6Z"/><path d="M12 19.2v2.4"/></g></symbol>
+
+<symbol id="i-palm" viewBox="0 0 24 24"><g filter="url(#quill-b)" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M11.4 21.4c.4-6.4.8-10.2 1.4-11.6"/>
+  <path d="M12.8 9.4C11 7 8.4 6.4 5.4 7.8M12.8 9.4c-1.2-2.8-.4-5.2 2.4-6.8M12.8 9.4c2.4-1.6 4.8-1.4 7 .8M12.8 9.4c2 1.2 2.8 3.2 2.4 6"/></g></symbol>
+
+<symbol id="i-frost" viewBox="0 0 24 24"><g filter="url(#quill-c)" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M12 2.8v18.4M4 7.4l16 9.2M20 7.4 4 16.6"/>
+  <path d="M9.4 4.8 12 7.4l2.6-2.6M9.4 19.2 12 16.6l2.6 2.6"/></g></symbol>
+
+<symbol id="i-endless" viewBox="0 0 24 24"><g filter="url(#quill)" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M12 12c1.8-3 3.2-4.4 5.2-4.4a4.4 4.4 0 0 1 0 8.8C15.2 16.4 13.8 15 12 12Z"/>
+  <path d="M12 12c-1.8 3-3.2 4.4-5.2 4.4a4.4 4.4 0 0 1 0-8.8C8.8 7.6 10.2 9 12 12Z"/></g></symbol>
+
+<symbol id="i-charge" viewBox="0 0 24 24"><g filter="url(#quill-b)" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M2.8 8.2h14.4v7.6H2.8zM19.6 10.6v2.8"/><path d="M9.2 9.8 6.8 12.8h3l-1 2.2"/></g></symbol>
+
+<symbol id="i-dawn" viewBox="0 0 24 24"><g filter="url(#quill-c)" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M2.8 17.4h18.4"/><path d="M6.6 17.4a5.4 5.4 0 0 1 10.8 0"/>
+  <path d="M12 4.4v2.6M4.8 8.2l1.8 1.8M19.2 8.2l-1.8 1.8M2.8 20.8h18.4"/></g></symbol>
+
+<symbol id="i-chain" viewBox="0 0 24 24"><g filter="url(#quill)" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M9.6 13.4a3.4 3.4 0 0 1 0-4.8l2.6-2.6a3.4 3.4 0 0 1 4.8 4.8l-1.2 1.2"/>
+  <path d="M14.4 10.6a3.4 3.4 0 0 1 0 4.8l-2.6 2.6a3.4 3.4 0 0 1-4.8-4.8l1.2-1.2"/></g></symbol>
+
+<symbol id="i-return" viewBox="0 0 24 24"><g filter="url(#quill-b)" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M20.4 5.6v4.8a4 4 0 0 1-4 4H4.2"/><path d="M8.6 10.2 4.2 14.4l4.4 4.2"/></g></symbol>
+
+<symbol id="i-plus" viewBox="0 0 24 24"><g filter="url(#quill-c)" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+  <path d="M12 4.6v14.8M4.6 12h14.8"/></g></symbol>
+
+<symbol id="i-dice" viewBox="0 0 24 24"><g filter="url(#quill)" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M4 5.4h15.2v13.2H4z"/><path d="M8.2 9.4h.1M15 9.4h.1M11.6 12h.1M8.2 14.6h.1M15 14.6h.1"/></g></symbol>
+
+<symbol id="i-cloud" viewBox="0 0 24 24"><g filter="url(#quill-b)" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M6.8 17.6a4 4 0 0 1-.4-8 5.6 5.6 0 0 1 10.8 1.2 3.4 3.4 0 0 1-.6 6.8Z"/></g></symbol>
+
+<symbol id="i-globe" viewBox="0 0 24 24"><g filter="url(#quill-c)" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="12" cy="12" r="8.8"/><path d="M3.4 12h17.2"/>
+  <path d="M12 3.2c2.4 2.4 3.6 5.4 3.6 8.8s-1.2 6.4-3.6 8.8c-2.4-2.4-3.6-5.4-3.6-8.8S9.6 5.6 12 3.2Z"/></g></symbol>
+
+<symbol id="i-figure" viewBox="0 0 24 24"><g filter="url(#quill)" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="12" cy="6.4" r="3.2"/><path d="M5.4 20.6c0-3.8 3-6.4 6.6-6.4s6.6 2.6 6.6 6.4"/></g></symbol>
+
+<symbol id="i-speak" viewBox="0 0 24 24"><g filter="url(#quill-b)" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M4 5.4h16v11H9.6L5 20.2v-3.8H4z"/><path d="M8.2 9.4h7.6M8.2 12.4h5"/></g></symbol>
+
+<!-- The armour slots and the last recurring skill marks. Measuring coverage
+     against App.jsx alone said 99%; the data tables mostly live in the core,
+     and counting both files said 81%. These are what that miscount hid. -->
+
+<symbol id="i-axe" viewBox="0 0 24 24"><g filter="url(#quill)" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M13.6 3.4c3.4.4 6 2.6 6.6 5.8-2.8 1.4-5.4 1.2-7.6-.6"/>
+  <path d="M13.6 3.4c-1.8 2-2.2 4.4-1 6.6"/><path d="M12 9.6 4.6 19.8"/></g></symbol>
+
+<symbol id="i-amulet" viewBox="0 0 24 24"><g filter="url(#quill-b)" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M5.4 4.2c0 5.4 2.6 8.6 6.6 8.6s6.6-3.2 6.6-8.6"/>
+  <path d="m12 12.8 2.8 3.4L12 20.4l-2.8-4.2L12 12.8Z"/></g></symbol>
+
+<symbol id="i-glove" viewBox="0 0 24 24"><g filter="url(#quill-c)" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M7 20.6v-5.2l-2-2.4a1.8 1.8 0 0 1 2.6-2.4l1 1V4.6a1.5 1.5 0 0 1 3 0v4.2m0 0V3.6a1.5 1.5 0 0 1 3 0v5.2m0 0V5.4a1.5 1.5 0 0 1 3 0v8.2c0 3.6-1.6 7-4.4 7"/></g></symbol>
+
+<symbol id="i-legs" viewBox="0 0 24 24"><g filter="url(#quill)" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M6.4 3.4h11.2l.8 17.2h-4.2L12 11.4l-2.2 9.2H5.6L6.4 3.4Z"/><path d="M6.4 7h11.2"/></g></symbol>
+
+<symbol id="i-scales" viewBox="0 0 24 24"><g filter="url(#quill-b)" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M12 4v16.4M7 20.4h10M4.4 8h15.2M12 4l-7.6 4M12 4l7.6 4"/>
+  <path d="M1.6 12.6a3 3 0 0 0 5.6 0ZM16.8 12.6a3 3 0 0 0 5.6 0Z"/></g></symbol>
+
+<symbol id="i-ban" viewBox="0 0 24 24"><g filter="url(#quill-c)" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="12" cy="12" r="8.8"/><path d="m5.8 5.8 12.4 12.4"/></g></symbol>
 
 </svg>

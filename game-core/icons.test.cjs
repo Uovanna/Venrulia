@@ -88,7 +88,14 @@ sec("Nothing can silently vanish");
   // The fallback is load-bearing: an unmapped emoji must render AS ITSELF, so that
   // growing coverage is safe and an incomplete table can never blank the interface.
   const mod = fs.readFileSync(path.join(root, "src/icons.jsx"), "utf8");
-  ok(mod.includes("<>{emoji}</>"), "EmojiIcon falls back to the emoji when it has no drawing");
+  ok(/return \(\s*<span style=\{\{ fontSize: Math\.round\(size \* 0\.92\)[\s\S]{0,120}\{emoji\}<\/span>/.test(mod),
+     "EmojiIcon falls back to the emoji when it has no drawing");
+  // …and at the size it was asked for. Rendering the fallback at the inherited
+  // font size meant an unmapped 46px enemy portrait came out at 15px: the drawn
+  // ones grew and the leftovers quietly shrank, so a missing glyph looked like a
+  // layout bug rather than missing art.
+  ok(/EmojiIcon = \(\{ emoji, size = 16, style \}\)[\s\S]{0,700}fontSize: Math\.round\(size \* 0\.92\)/.test(mod),
+     "…at the size the caller asked for");
   ok(/out\.push\(p\)/.test(mod), "withIcons passes unmapped glyphs through untouched");
   ok(mod.includes("if (!HAS.has(name)) return null"), "Icon refuses to emit a broken <use> reference");
 }

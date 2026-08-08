@@ -44,7 +44,7 @@ const GEMS = [
   { id: "g_pol_onyx",    name: "Polished Onyx",    icon: "⬛", rarity: "uncommon",  desc: "−1.5% damage taken",     m: { dr: 0.015 } },
   // RARE — notable
   { id: "g_flaw_ruby",   name: "Flawless Ruby",    icon: "♦️", rarity: "rare",      desc: "+3% damage",             m: { dmgPct: 0.03 } },
-  { id: "g_flaw_emer",   name: "Flawless Emerald", icon: "🍀", rarity: "rare",      desc: "Restore 0.6% HP/sec",    regen: 0.6 },
+  { id: "g_flaw_emer",   name: "Flawless Emerald", icon: "💚", rarity: "rare",      desc: "Restore 0.6% HP/sec",    regen: 0.6 },
   { id: "g_flaw_onyx",   name: "Flawless Onyx",    icon: "🖤", rarity: "rare",      desc: "−3% damage taken",       m: { dr: 0.03 } },
   { id: "g_flaw_topaz",  name: "Flawless Topaz",   icon: "🟠", rarity: "rare",      desc: "+3% leech",              m: { leech: 3 } },
   { id: "g_flaw_opal",   name: "Flawless Opal",    icon: "🤍", rarity: "rare",      desc: "+4% max health",         m: { hpPct: 0.04 } },

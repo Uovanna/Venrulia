@@ -7213,27 +7213,27 @@ function GameScreen({ character: initChar, onSave, onBack }) {
               return (
                 <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
                   {venItems.length > 0 && (<>
-                    <div style={{ color: "var(--ink-soft)", fontSize: 10, textTransform: "uppercase", letterSpacing: 1, fontWeight: 700 }}><Icon name="gem" /> Premium</div>
+                    <div className="eyebrow"><span><Icon name="gem" size={11} /> Premium</span></div>
                     {venItems.map((v, i) => (
-                      <div key={"v" + i} style={{ background: "var(--raised)", border: `1px solid ${v.col}44`, borderLeft: `3px solid ${v.col}`, borderRadius: 8, padding: "9px 11px", display: "flex", alignItems: "center", gap: 10 }}>
-                        <div style={{ fontSize: 20 }}><EmojiIcon emoji={v.icon} /></div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ color: v.col, fontSize: 12.5, fontWeight: 700 }}>{v.name}</div>
-                          <div style={{ color: "var(--ink-soft)", fontSize: 10.5 }}>{v.sub}</div>
+                      <div key={"v" + i} className="item">
+                        <span className="mark"><EmojiIcon emoji={v.icon} size={18} /></span>
+                        <div className="item-body">
+                          <span className="item-name">{v.name}</span>
+                          <span className="item-stats">{v.sub}</span>
                         </div>
                       </div>
                     ))}
-                    {entries.length > 0 && <div style={{ color: "var(--ink-faint)", fontSize: 10, textTransform: "uppercase", letterSpacing: 1, fontWeight: 700, marginTop: 4 }}>Consumables</div>}
+                    {entries.length > 0 && <div className="eyebrow"><span>Consumables</span></div>}
                   </>)}
-                  {entries.length === 0 && venItems.length === 0 && <div style={{ color: "var(--ink-faint)", fontSize: 12, padding: "20px 0", textAlign: "center" }}>No consumables. Brew them with Alchemy or buy at the Vendor.</div>}
+                  {entries.length === 0 && venItems.length === 0 && <div className="empty">No consumables. Brew them with Alchemy or buy at the Vendor.</div>}
                   {entries.map(({ d, t, n }) => {
                     const eff = d.kind === "heal" ? `Restores ${tierHeal(t)} HP` : d.kind === "dmgbuff" ? `+${tierBuffPct(t)}% damage · 5 min` : d.kind === "reducebuff" ? `−${tierBuffPct(t)}% damage taken · 5 min` : `+${tierScrollAmount(t)} ${STAT_LABEL[d.stat]} · 1 hour`;
                     return (
-                      <div key={d.id + t} style={{ background: "var(--sunk)", border: `1px solid ${d.color}44`, borderLeft: `3px solid ${d.color}`, borderRadius: 8, padding: "9px 11px", display: "flex", alignItems: "center", gap: 10 }}>
-                        <div style={{ fontSize: 20 }}><EmojiIcon emoji={d.icon} /></div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ color: d.color, fontSize: 12.5, fontWeight: 700 }}>{d.name} {POTION_TIER_ROMAN[t]} <span style={{ color: "var(--ink-faint)", fontWeight: 400 }}>×{n}</span></div>
-                          <div style={{ color: "var(--ink-soft)", fontSize: 10.5 }}>{eff}</div>
+                      <div key={d.id + t} className="item">
+                        <span className="mark"><EmojiIcon emoji={d.icon} size={18} /></span>
+                        <div className="item-body">
+                          <span className="item-name">{d.name} {POTION_TIER_ROMAN[t]}<small className="item-meta" style={{ marginLeft: 6 }}>{n} held</small></span>
+                          <span className="item-stats">{eff}</span>
                         </div>
                         <MiniBtn onClick={() => useConsumable(d, t)} color={d.color}>Use</MiniBtn>
                         <MiniBtn onClick={() => sellConsumable(d, t)} color="#FFD700">Sell {consumableSellPrice(d, t)}g</MiniBtn>
@@ -7249,33 +7249,42 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                 .sort((a, b) => RARITIES.findIndex((r) => r.id === b.g.rarity) - RARITIES.findIndex((r) => r.id === a.g.rarity) || a.g.name.localeCompare(b.g.name));
               return (
                 <div>
-                  <div style={{ color: "var(--ink-soft)", fontSize: 11, lineHeight: 1.5, marginBottom: 10 }}>Gems socket into Epic, Legendary &amp; Artifact gear. Open an item and tap an empty socket to bond one — <b>permanently</b>. <b style={{ color: "var(--bole)" }}>Legendary</b> Soul gems grant a level-60 talent from any class.</div>
-                  {owned.length === 0 && <div style={{ color: "var(--ink-faint)", fontSize: 12, textAlign: "center", padding: "24px 0" }}>No gems yet — they drop from enemies alongside gear.</div>}
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    {owned.map(({ g, n }) => { const r = rarityById(g.rarity); return (
-                      <div key={g.id} style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--sunk)", border: `1px solid ${r.color}44`, borderLeft: `3px solid ${r.color}`, borderRadius: 8, padding: "8px 11px" }}>
-                        <span style={{ fontSize: 19 }}><EmojiIcon emoji={g.icon} /></span>
-                        <span style={{ flex: 1, minWidth: 0 }}>
-                          <span style={{ display: "block", color: r.color, fontSize: 12.5, fontWeight: 700 }}>{g.name} <span style={{ color: "var(--ink-faint)", fontWeight: 400 }}>×{n}</span></span>
-                          <span style={{ display: "block", color: "var(--ink-soft)", fontSize: 10.5 }}>{g.desc}</span>
-                        </span>
-                        <span style={{ color: "var(--ink-faint)", fontSize: 9, textTransform: "uppercase" }}>{r.name}</span>
+                  <div className="ledger-note" style={{ marginBottom: 10 }}>
+                    Gems socket into Epic, Legendary and Artifact gear. Open an item and tap an empty socket to bond one — <b>permanently</b>. A socket can only be cleared by reforging, which destroys the gem.
+                  </div>
+                  {owned.length === 0 && <div className="empty">No gems yet — they drop from enemies alongside gear.</div>}
+                  <div>
+                    {owned.map(({ g, n }) => (
+                      <div key={g.id} className="item">
+                        <span className="mark"><EmojiIcon emoji={g.icon} size={17} /></span>
+                        <div className="item-body">
+                          <span className={`item-name ${rarClass(g.rarity)}`}>{g.name}<small className="item-meta" style={{ marginLeft: 6 }}>{n} held</small></span>
+                          <span className="item-stats">{g.desc}</span>
+                        </div>
+                        <span className="state">{rarityById(g.rarity).name}</span>
                       </div>
-                    ); })}
+                    ))}
                   </div>
                 </div>
               );
             })()}
             {bagTab === "crafting" && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+              <div className="ledger">
                 {Object.entries(char.materials || {}).filter(([, v]) => v > 0).length === 0
-                  ? <div style={{ color: "var(--ink-faint)", fontSize: 12, padding: "20px 0", textAlign: "center" }}>No crafting materials yet. Gathering professions are coming in the next update.</div>
-                  : Object.entries(char.materials).filter(([, v]) => v > 0).map(([k, v]) => (
-                    <div key={k} style={{ background: "var(--sunk)", border: "1px solid var(--hairline)", borderRadius: 8, padding: "9px 11px", display: "flex", justifyContent: "space-between" }}>
-                      <span style={{ color: "var(--bole)", fontSize: 12.5, textTransform: "capitalize" }}>{k}</span>
-                      <span style={{ color: "var(--ink)", fontSize: 12.5, fontWeight: 700 }}>×{v}</span>
-                    </div>
-                  ))}
+                  ? <div className="empty">No crafting materials yet — mine, gather or salvage for them.</div>
+                  : Object.entries(char.materials).filter(([, v]) => v > 0).map(([k, v]) => {
+                    const m = MATERIALS[k];
+                    return (
+                      <div key={k} className="ledger-row">
+                        <div className="ledger-line">
+                          <span className="ledger-label">
+                            {m ? <EmojiIcon emoji={m.icon} size={14} /> : null} {m ? m.name : k}
+                          </span>
+                          <span className="ledger-val">{v.toLocaleString()}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
               </div>
             )}
 
@@ -7283,17 +7292,17 @@ function GameScreen({ character: initChar, onSave, onBack }) {
               const owned = Object.entries(char.drops || {}).filter(([, v]) => v > 0);
               return (
                 <div>
-                  <div style={{ color: "var(--ink-soft)", fontSize: 11, marginBottom: 10 }}>Enemy drops — collected for quests & the coming town-building system.</div>
-                  {owned.length === 0 ? <div style={{ color: "var(--ink-faint)", fontSize: 12, padding: "20px 0", textAlign: "center" }}>No quest items yet. Slay enemies to collect their drops.</div> : (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                  <div className="ledger-note" style={{ marginBottom: 10 }}>Enemy drops, collected for quests and the coming town-building system.</div>
+                  {owned.length === 0 ? <div className="empty">No quest items yet. Slay enemies to collect their drops.</div> : (
+                    <div>
                       {owned.map(([k, v]) => { const d = DROP_BY_ID[k]; if (!d) return null; return (
-                        <div key={k} style={{ background: "var(--sunk)", border: `1px solid ${d.color}44`, borderLeft: `3px solid ${d.color}`, borderRadius: 8, padding: "9px 11px", display: "flex", alignItems: "center", gap: 10 }}>
-                          <div style={{ fontSize: 20 }}><EmojiIcon emoji={d.icon} /></div>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ color: d.color, fontSize: 12.5, fontWeight: 700 }}>{d.name}</div>
-                            <div style={{ color: "var(--ink-soft)", fontSize: 10.5 }}>{ENEMY_DROP_KEYS.find((n) => ENEMY_DROPS[n]?.id === k) ? `Drops from ${ENEMY_DROP_KEYS.find((n) => ENEMY_DROPS[n]?.id === k)}` : "Enemy drop"}</div>
+                        <div key={k} className="item">
+                          <span className="mark"><EmojiIcon emoji={d.icon} size={18} /></span>
+                          <div className="item-body">
+                            <span className="item-name">{d.name}</span>
+                            <span className="item-meta">{ENEMY_DROP_KEYS.find((n) => ENEMY_DROPS[n]?.id === k) ? `Drops from ${ENEMY_DROP_KEYS.find((n) => ENEMY_DROPS[n]?.id === k)}` : "Enemy drop"}</span>
                           </div>
-                          <div style={{ color: d.color, fontSize: 14, fontWeight: 700 }}>×{v}</div>
+                          <span className="ledger-val">{v.toLocaleString()}</span>
                         </div>
                       ); })}
                     </div>
@@ -7813,7 +7822,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                   <span className="head-note" />
                 </div>
                 <div style={{ marginBottom: 4 }}><EmojiIcon emoji={c.content.icon} size={26} /></div>
-                <div style={{ fontSize: "var(--step-2)", fontWeight: 600 }}>{c.content.name}{c.kind.startsWith("hard") ? " \u2014 Hard" : ""}</div>
+                <div className="head-title">{c.content.name}{c.kind.startsWith("hard") ? " \u2014 Hard" : ""}</div>
                 <div style={{ fontFamily: "var(--mono)", fontSize: 30, color: "var(--rubric)", margin: "10px 0", fontVariantNumeric: "tabular-nums" }}>{c.countdown > 0 ? c.countdown : "\u2014"}</div>
                 <p className="item-stats" style={{ marginBottom: 12 }}>Filling the empty places. The fight opens on the combat page.</p>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6, textAlign: "left" }}>
@@ -7872,15 +7881,17 @@ function GameScreen({ character: initChar, onSave, onBack }) {
             const left = trialCdLeft(char, b.id);
             const ready = left <= 0;
             return (
-              <div key={b.id} style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--sunk)", border: "1px solid var(--verdigris)", borderRadius: 10, padding: "9px 11px", marginBottom: 7 }}>
-                <span style={{ fontSize: 22 }}>⚔️</span>
-                <span style={{ flex: 1, minWidth: 0 }}>
-                  <span style={{ color: "var(--rar-epic)", fontSize: 13, fontWeight: 700 }}>{b.name}</span>
-                  <span style={{ color: "var(--ink-soft)", fontSize: 10, display: "block" }}>Lv {b.level} · 4 players · ilvl {TRIAL_ILVL[b.id] || 64} loot</span>
-                  <span style={{ color: ready ? "var(--verdigris)" : "var(--bole)", fontSize: 9.5, fontWeight: 700, display: "block", marginTop: 2 }}>{ready ? "✓ Available · Epic+ (10% Legendary) · retry free on a wipe" : `⏳ ${fmtCd(left)}`}</span>
+              <div key={b.id} className="item">
+                <span className="mark"><Icon name="sword" size={18} /></span>
+                <span className="item-body">
+                  <span className="item-name">{b.name}</span>
+                  <span className="item-meta">Lv {b.level} · 4 players · ilvl {TRIAL_ILVL[b.id] || 64} loot</span>
+                  <span className={ready ? "state is-open" : "state is-shut"}>
+                    {ready ? "available · epic floor, 10% legendary · a wipe costs nothing" : fmtCd(left)}
+                  </span>
                 </span>
                 {ready ? <button onClick={() => startTrial(b.id)} className="go" style={{ width: "auto", margin: 0 }}>Enter</button>
-                       : <span style={{ color: "var(--ink-faint)", fontSize: 10, fontWeight: 700, whiteSpace: "nowrap" }}><Icon name="hourglass" /> Locked</span>}
+                       : <span className="state is-shut"><Icon name="hourglass" size={10} /> locked</span>}
               </div>
             );
           };
@@ -7921,14 +7932,14 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                   </button>
                 );
               })()}
-              <div style={{ color: "var(--gilt)", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, margin: "4px 0 6px" }}>Dungeons · 4 players · {GUILD_RUN_LIMIT} runs/hour</div>
+              <div className="eyebrow"><span>Dungeons · 4 players · {GUILD_RUN_LIMIT} runs/hour</span></div>
               {DUNGEONS.map((d) => row(d, "dungeon", 4, char.level >= d.minLevel, `Lv ${d.minLevel}`))}
               {HARD_DUNGEONS.map((d) => row(d, "hard-dungeon", 4, hardDungeonUnlocked(char, avg, d), d.reqIlvl ? `ilvl ${d.reqIlvl}` : `${HARD_BOSS_REQ}× ${d.prevBoss || "prev"}`))}
-              <div style={{ color: "var(--gilt)", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, margin: "10px 0 6px" }}>Raids · 6 players · 24h lockout</div>
+              <div className="eyebrow"><span>Raids · 6 players · 24h lockout</span></div>
               {RAIDS.map((r) => row(r, "raid", 6, avg >= r.reqIlvl, `ilvl ${r.reqIlvl}`))}
               {row(HARD_RAID, "hard-raid", 6, hardRaidUnlocked(char), "Hard cleared")}
-              <div style={{ color: "var(--rar-epic)", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, margin: "10px 0 6px" }}>Trinity Trials · 4 players · 24h lockout</div>
-              <div style={{ color: "var(--ink-soft)", fontSize: 10.5, lineHeight: 1.45, marginBottom: 7 }}>Pure mechanic checks. Every clear opens a <b>GDKP loot bid</b> — Epic floor with a 10% shot at Legendary. The lockout is spent <b>only when the boss dies</b>, so a wipe costs nothing but time.</div>
+              <div className="eyebrow"><span>Trinity Trials · 4 players · 24h lockout</span></div>
+              <div className="ledger-note" style={{ marginBottom: 7 }}>Pure mechanic checks. Every clear opens a <b>GDKP loot bid</b> — Epic floor with a 10% shot at Legendary. The lockout is spent <b>only when the boss dies</b>, so a wipe costs nothing but time.</div>
               {Object.values(BOSS_DEFS).map((b) => trialRow(b))}
             </div>
           );
@@ -9187,47 +9198,54 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                 const priceNum = ahPrice === "" ? base : clamp(Number(ahPrice) || 0, lo, hi);
                 const meta = ahSell.kind === "gear" ? null : stackMeta(ahSell.kind, ahSell.id);
                 return (
-                  <div className="aside-note" style={{ borderLeftColor: "var(--gilt)" }}>
-                    <div className="eyebrow" style={{ marginBottom: 6 }}>
-                      <span style={{ textTransform: "none", letterSpacing: 0, fontFamily: "var(--serif)", fontSize: "var(--step-0)", color: "var(--ink)", fontWeight: 600 }}>
-                        {ahSell.kind === "gear" ? ahSell.item.name : `${meta.name} \u00d7${AH_ECON.stackSize}`}
-                      </span>
+                  <div className="bench is-ready">
+                    <div className="ledger-line">
+                      <span className="ledger-label">{ahSell.kind === "gear" ? ahSell.item.name : `${meta.name} \u00d7${AH_ECON.stackSize}`}</span>
                       <button className="link" onClick={() => { setAhSell(null); setAhPrice(""); }}>put back</button>
                     </div>
-                    <div className="item-stats" style={{ marginBottom: 8 }}>Worth about <span className="price">{base.toLocaleString()}g</span>. The hall will take anything between <span className="price">{lo.toLocaleString()}</span> and <span className="price">{hi.toLocaleString()}g</span>.</div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                      <span style={{ color: "var(--ink-soft)", fontSize: 11 }}>Price</span>
-                      <input value={ahPrice} onChange={(e) => setAhPrice(e.target.value.replace(/\D/g, ""))} inputMode="numeric" placeholder={String(base)} style={{ ...fi, flex: 1 }} />
-                      <span style={{ color: "var(--gilt)", fontSize: 11, whiteSpace: "nowrap" }}>→ {priceNum}g</span>
+                    <div className="bench-what">
+                      Worth about <span className="price">{base.toLocaleString()}g</span>. The hall will take anything between{" "}
+                      <span className="price">{lo.toLocaleString()}</span> and <span className="price">{hi.toLocaleString()}</span>.
                     </div>
-                    <div style={{ color: "var(--ink-soft)", fontSize: 10.5, marginBottom: 10 }}>Deposit (consumed): <b>−{fee}g</b> · you keep on sale after 15% cut: <b>{ahNetAfterTax(priceNum)}g</b></div>
-                    <button onClick={() => ahSell.kind === "gear" ? postGear(ahSell.item, priceNum) : postStack(ahSell.kind, ahSell.id, priceNum)} disabled={char.gold < fee}
-                      style={{ width: "100%", background: char.gold >= fee ? "var(--raised)" : "var(--sunk)", border: `2px solid ${char.gold >= fee ? "var(--gilt)" : "var(--gilt)"}`, borderRadius: 10, color: char.gold >= fee ? "var(--gilt)" : "var(--ink-faint)", fontSize: 13, fontWeight: 700, padding: 11, cursor: char.gold >= fee ? "pointer" : "default" }}>
-                      {char.gold >= fee ? `🏷️ List for 48h · −${fee}g deposit` : `Need ${fee}g deposit`}
+                    <div className="bulk" style={{ borderTop: 0, paddingTop: 0, marginTop: 10 }}>
+                      <span className="bulk-label">Your price</span>
+                      <input value={ahPrice} onChange={(e) => setAhPrice(e.target.value.replace(/\D/g, ""))} inputMode="numeric"
+                        placeholder={String(base)} className="field is-num" style={{ flex: 1, minWidth: 0 }} aria-label="Asking price" />
+                      <span className="price">{priceNum.toLocaleString()}g</span>
+                    </div>
+                    <div className="bench-cost">
+                      <span className={char.gold >= fee ? "is-held" : "is-short"}>deposit −{fee.toLocaleString()}g</span>
+                      <span>you keep {ahNetAfterTax(priceNum).toLocaleString()}g after the 15% cut</span>
+                    </div>
+                    <button onClick={() => ahSell.kind === "gear" ? postGear(ahSell.item, priceNum) : postStack(ahSell.kind, ahSell.id, priceNum)}
+                      disabled={char.gold < fee} className="go">
+                      {char.gold >= fee ? `List for 48h · −${fee.toLocaleString()}g deposit` : `Need ${fee.toLocaleString()}g deposit`}
                     </button>
                   </div>
                 );
               })()}
               {ahCat === "gear" ? (
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {postableGear.length === 0 && <div style={{ color: "var(--ink-faint)", fontSize: 12, textAlign: "center", padding: 20 }}>No listable gear in your bags.<br /><span style={{ fontSize: 10.5, color: "var(--ink-faint)" }}>Artifacts & relics can't be listed.</span></div>}
+                <div>
+                  {postableGear.length === 0 && <div className="empty">No listable gear in your bags. Artifacts and relics cannot be traded.</div>}
                   {postableGear.map((it) => (
                     <ItemCard key={it.id} item={it} cls={char.cls} onClick={() => { setAhSell({ kind: "gear", item: it }); setAhPrice(String(ahBaseValue(it))); }}>
-                      <MiniBtn onClick={() => { setAhSell({ kind: "gear", item: it }); setAhPrice(String(ahBaseValue(it))); }} color="#f0b429">List · ~{ahBaseValue(it)}g</MiniBtn>
+                      <MiniBtn onClick={() => { setAhSell({ kind: "gear", item: it }); setAhPrice(String(ahBaseValue(it))); }}>List · ~{ahBaseValue(it).toLocaleString()}g</MiniBtn>
                     </ItemCard>
                   ))}
                 </div>
               ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {postableMats.length === 0 && <div style={{ color: "var(--ink-faint)", fontSize: 12, textAlign: "center", padding: 20 }}>Nothing stackable to sell.<br /><span style={{ fontSize: 10.5, color: "var(--ink-faint)" }}>Materials & drops list in stacks of {AH_ECON.stackSize}.</span></div>}
+                <div>
+                  {postableMats.length === 0 && <div className="empty">Nothing stackable to sell. Materials and drops list in stacks of {AH_ECON.stackSize}.</div>}
                   {postableMats.map((m) => { const meta = stackMeta(m.kind, m.id); const base = stackBaseValue(m.kind, m.id); return (
-                    <div key={`${m.kind}:${m.id}`} style={{ background: "var(--sunk)", border: `1px solid ${meta.color}44`, borderLeft: `3px solid ${meta.color}`, borderRadius: 8, padding: "9px 11px", display: "flex", alignItems: "center", gap: 10 }}>
-                      <GameIcon icon={meta.icon} size={22} />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ color: meta.color, fontWeight: 700, fontSize: 12.5 }}>{meta.name}</div>
-                        <div style={{ color: "var(--ink-soft)", fontSize: 10.5 }}>Have {m.q} · stack of {AH_ECON.stackSize} ≈ {base}g</div>
+                    <div key={`${m.kind}:${m.id}`} className="item">
+                      <span className="mark"><GameIcon icon={meta.icon} size={20} /></span>
+                      <div className="item-body">
+                        <span className="item-name">{meta.name}</span>
+                        <span className="item-meta">{m.q} held · a stack of {AH_ECON.stackSize} is worth about {base.toLocaleString()}g</span>
                       </div>
-                      <MiniBtn onClick={() => { setAhSell({ kind: m.kind, id: m.id }); setAhPrice(String(base)); }} color="#f0b429">List 50</MiniBtn>
+                      <div className="item-acts">
+                        <MiniBtn onClick={() => { setAhSell({ kind: m.kind, id: m.id }); setAhPrice(String(base)); }}>List {AH_ECON.stackSize}</MiniBtn>
+                      </div>
                     </div>
                   ); })}
                 </div>
@@ -9235,16 +9253,20 @@ function GameScreen({ character: initChar, onSave, onBack }) {
             </>)}
 
             {ahView === "mine" && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {mine.length === 0 && <div style={{ color: "var(--ink-faint)", fontSize: 12, textAlign: "center", padding: 20 }}>No active listings.<br /><span style={{ fontSize: 10.5, color: "var(--ink-faint)" }}>Sold auctions & unsold returns arrive in Mail 📬.</span></div>}
-                {mine.map((L) => { const meta = L.kind === "gear" ? null : stackMeta(L.kind === "drop" ? "drop" : "mat", L.matId); const col = L.kind === "gear" ? rarityById(L.item.rarity).color : meta.color; return (
-                  <div key={L.id} style={{ background: "var(--sunk)", border: `1px solid ${col}44`, borderLeft: `3px solid ${col}`, borderRadius: 8, padding: "9px 11px", display: "flex", alignItems: "center", gap: 10 }}>
-                    <GameIcon icon={L.kind === "gear" ? L.item.icon : meta.icon} size={22} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ color: col, fontWeight: 700, fontSize: 12.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{L.kind === "gear" ? L.item.name : `${meta.name} ×${L.qty}`}</div>
-                      <div style={{ color: "var(--ink-soft)", fontSize: 10.5 }}>{L.price}g · ⏳ {fmtClock(L.expiresAt - now)} left</div>
+              <div>
+                {mine.length === 0 && <div className="empty">No active listings. Sold auctions and unsold returns arrive in the Mailbox.</div>}
+                {mine.map((L) => { const meta = L.kind === "gear" ? null : stackMeta(L.kind === "drop" ? "drop" : "mat", L.matId); return (
+                  <div key={L.id} className="item">
+                    <span className="mark"><GameIcon icon={L.kind === "gear" ? L.item.icon : meta.icon} size={20} /></span>
+                    <div className="item-body">
+                      <span className={L.kind === "gear" ? `item-name ${rarClass(L.item.rarity)}` : "item-name"}>
+                        {L.kind === "gear" ? L.item.name : `${meta.name} ×${L.qty}`}
+                      </span>
+                      <span className="item-meta">{L.price.toLocaleString()}g · {fmtClock(L.expiresAt - now)} left</span>
                     </div>
-                    <MiniBtn onClick={() => cancelAh(L)} color="#e0736a" bg="#1f1216">Cancel</MiniBtn>
+                    <div className="item-acts">
+                      <MiniBtn onClick={() => cancelAh(L)} tone="warn">Cancel</MiniBtn>
+                    </div>
                   </div>
                 ); })}
               </div>
@@ -9255,12 +9277,12 @@ function GameScreen({ character: initChar, onSave, onBack }) {
 
         {tab === "mail" && (
           <div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-              <div style={{ color: "var(--gilt)", fontWeight: 700, fontSize: 15, fontFamily: "Georgia, serif" }}><Icon name="mail" /> Mailbox</div>
+            <div className="head">
+              <span className="head-title" style={{ textAlign: "left" }}><Icon name="mail" size={15} /> Mailbox</span>
               {getSbC() && srvMail.length > 0 && <MiniBtn onClick={collectAllMail} color="#7CFC9E" bg="#122015">Collect All</MiniBtn>}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {!getSbC() && <div style={{ color: "var(--gilt)", fontSize: 12, textAlign: "center", padding: 20 }}>📡 Connection required — your mail is online.</div>}
+              {!getSbC() && <div className="empty"><Icon name="globe" size={13} /> Connection required — your mail is kept elsewhere.</div>}
               {getSbC() && srvMail.length === 0 && <div style={{ color: "var(--ink-faint)", fontSize: 12, textAlign: "center", padding: 24 }}>Your mailbox is empty.</div>}
               {srvMail.map((m) => {
                 const tone = m.kind === "gdkp" ? { icon: "🔨", c: "#c8a0ff", tag: "Group loot settled" } : m.kind === "sale" ? { icon: "💰", c: "#FFD700", tag: "Auction sold" } : m.kind === "purchase" ? { icon: "📦", c: "#69CCF0", tag: "Purchase" } : { icon: "↩️", c: "#e0a955", tag: "Expired — returned" };
@@ -11088,7 +11110,7 @@ function MultiplayerHub({ char, commitChar, showNotif, onExit, onStartRated, onS
           <div style={{ color: "var(--ink-soft)", fontSize: 11.5, lineHeight: 1.5, marginBottom: 10 }}>Queue for group content. Empty slots fill after {MP_QUEUE_WAIT}s. No auto-combat or gambits here — you play your skills by hand. Bosses drop loot you <b>bid gold</b> on against the party.</div>
           {["dungeon", "raid"].map((kind) => (
             <div key={kind}>
-              <div style={{ color: "var(--gilt)", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, margin: "8px 0 6px" }}>{kind === "dungeon" ? "Dungeons · 4 players" : "Raids · 6 players"}</div>
+              <div className="eyebrow"><span>{kind === "dungeon" ? "Dungeons · 4 players" : "Raids · 6 players"}</span></div>
               {MP_CONTENT.filter((c) => c.kind === kind).map((c) => (
                 <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--sunk)", border: "1px solid var(--hairline)", borderRadius: 10, padding: "9px 11px", marginBottom: 7 }}>
                   <span style={{ fontSize: 22 }}><EmojiIcon emoji={c.icon} /></span>

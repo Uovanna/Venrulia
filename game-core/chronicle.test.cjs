@@ -608,6 +608,37 @@ sec("Four counters where money changes hands");
 
 }
 
+sec("The last of the ledger screens");
+{
+  // THE SAME ROW, EIGHT MORE TIMES. The Bank's four stores, the Auction House's
+  // sell and listings views and the Guild's trial rows all drew a card bordered
+  // in the item's own data colour with a 3px rule down its left edge — the shape
+  // the shops shed last commit. Nothing new was needed; these are the leftovers.
+  ok(!/borderLeft: `3px solid \$\{(?:d|g|r|meta|col|v)\.col(?:or)?\}`/.test(app),
+     "no store row is ruled in its item's own colour");
+  ok(!/border: `1px solid \$\{(?:d|g|r|meta|col|v)\.col(?:or)?\}44`/.test(app),
+     "…and none is boxed in it either");
+  // The Bank's crafting store was a name and a count with no icon at all; the
+  // ledger row is what a name-and-a-count is.
+  ok(/Object\.entries\(char\.materials\)[\s\S]{0,400}className="ledger-row"/.test(app),
+     "the crafting store is a ledger of quantities");
+
+  // Section headings. Four of them carried their own colour and their own
+  // margins — .eyebrow has existed since the Bank was converted.
+  ok(!/fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0\.5/.test(app),
+     "no section heading styles itself any more");
+
+  // A GEM WAS DRAWN AS A HERB. 🍀 is the icon for BOTH the Mossroot herb and the
+  // Flawless Emerald, so mapping it either way is wrong for the other — the
+  // Bank's gem store showed a sprig of leaves in a gem list. Fixed in the data,
+  // where the conflict actually is, rather than by bending the map.
+  const core = fs.readFileSync(path.join(root, "game-core/combat.mjs"), "utf8");
+  ok(/id: "g_flaw_emer",\s+name: "Flawless Emerald", icon: "💚"/.test(core),
+     "the Flawless Emerald is drawn as a gem, not as a clover");
+  const clovers = (core.match(/icon: "🍀"/g) || []).length + (app.match(/icon: "🍀"/g) || []).length;
+  ok(clovers === 1, `🍀 now belongs to one thing (${clovers}), so mapping it to a herb is unambiguous`);
+}
+
 sec("The shell is bound in the same hand");
 {
   // Converting the shell is what decides whether the game reads as one object or

@@ -568,3 +568,22 @@ select.field { cursor: pointer; }
 .state.is-open { color: var(--verdigris); }
 .state.is-soon { color: var(--gilt); }
 .state.is-shut { color: var(--bole); }
+
+/* ---- which side you are on ---------------------------------------------- */
+.faction {
+  font-family: var(--mono); font-size: 9px; letter-spacing: .1em; text-transform: uppercase;
+}
+.faction.is-concord { color: var(--verdigris); }
+.faction.is-warband { color: var(--rubric); }
+
+/* ---- which class you are ------------------------------------------------- */
+/* The hue is identity, so it survives; the VALUE is per-theme, because the six
+   hexes in the class data were picked against a black ground and none of them
+   is readable on parchment. Tagged on the element rather than written inline,
+   which is what let the originals hide from every colour sweep. */
+.cls-warrior { color: var(--cls-warrior); }
+.cls-mage    { color: var(--cls-mage); }
+.cls-rogue   { color: var(--cls-rogue); }
+.cls-paladin { color: var(--cls-paladin); }
+.cls-hunter  { color: var(--cls-hunter); }
+.cls-warlock { color: var(--cls-warlock); }

@@ -60,6 +60,21 @@
   --rar-legendary: #8E4710;
   --rar-artifact:  #AB2637;
 
+  /* THE CLASS PALETTE, RE-DERIVED THE SAME WAY. Six hexes chosen against a black
+     ground and carried in the class DATA, which the colour sweep never looked at
+     because they are identity rather than styling. On parchment they measure
+     1.08:1 (rogue) to 2.71:1 (warlock) — every one of them fails, and the rogue's
+     yellow is literally unreadable. These keep each class's hue and are the most
+     vivid value of it that still clears AA on both --ground and --raised. Night
+     keeps the originals: all six already pass there, which is what they were
+     drawn for. */
+  --cls-warrior: #7C542A;
+  --cls-mage:    #066486;
+  --cls-rogue:   #655E00;
+  --cls-paladin: #B70653;
+  --cls-hunter:  #46661A;
+  --cls-warlock: #6548B9;
+
   /* A lift, not a glow. The Chronicle has no glows: things sit ON the page or
      ABOVE it, and the only thing that says "above" is a soft shadow with a real
      offset. Heavy black drop shadows read as holes cut in parchment. */
@@ -131,6 +146,13 @@
     --rar-legendary: #CF6717;
     --rar-artifact:  #DA5869;
 
+  --cls-warrior: #C79C6E;
+  --cls-mage:    #69CCF0;
+  --cls-rogue:   #FFF569;
+  --cls-paladin: #F58CBA;
+  --cls-hunter:  #ABD473;
+  --cls-warlock: #9482C9;
+
     --lift: 0 8px 26px -12px rgba(0, 0, 0, .75);
 
     --fibre-opacity: 0.075;
@@ -164,6 +186,13 @@
   --rar-epic:      #A968CF;
   --rar-legendary: #CF6717;
   --rar-artifact:  #DA5869;
+
+  --cls-warrior: #C79C6E;
+  --cls-mage:    #69CCF0;
+  --cls-rogue:   #FFF569;
+  --cls-paladin: #F58CBA;
+  --cls-hunter:  #ABD473;
+  --cls-warlock: #9482C9;
 
     --lift: 0 8px 26px -12px rgba(0, 0, 0, .75);
 

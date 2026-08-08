@@ -690,6 +690,14 @@ const ENEMY_LORE = {
 // has to beat "Giant". Ten silhouettes cover all thirty-one without pretending
 // each is unique — what a list entry needs to say is "wolf-shaped", "undead",
 // "made of fire", and the name is right beside it.
+// A RACE'S OWN SILHOUETTE. Two of the eight races carry a skull in the core data
+// — the orc's 💀 and the undead's ☠️ — so on the second screen of the game they
+// were the same picture. ☠️ is also every rogue assassination skill, so the map
+// cannot be changed underneath it. Overridden here instead, client-side, for the
+// same reason ENEMY_MARKS exists: what a race looks like is a drawing decision,
+// and the server has no opinion about it.
+const RACE_MARKS = { orc: "ogre", undead: "undead" };
+
 const ENEMY_MARKS = {
   Skeleton: "skull", Ghoul: "undead", "Risen Warrior": "undead", Wraith: "wraith",
   "Dark Rider": "wraith", Spider: "spider", Bat: "bat", Bullywug: "toad",
@@ -2346,9 +2354,13 @@ const savesSummary = (arr) => {
 // ============================================================
 // SHARED UI COMPONENTS
 // ============================================================
+/* Which side you are on. It used to prefix the name with ⚜️ or 🔴 — the emoji
+   map had no fleur-de-lis and no red circle, so they rendered as a candle and a
+   gem, both wrong. The name is written in the faction's own colour, which is the
+   whole statement; a mark beside it would say the same thing twice. */
 const Faction = ({ faction }) => (
-  <span style={{ color: faction === "alliance" ? "var(--verdigris)" : "var(--rubric)", fontWeight: 700, fontSize: 11 }}>
-    {faction === "alliance" ? "⚜️ The Concord" : "🔴 The Warband"}
+  <span className={`faction${faction === "alliance" ? " is-concord" : " is-warband"}`}>
+    {faction === "alliance" ? "The Concord" : "The Warband"}
   </span>
 );
 
@@ -2924,6 +2936,17 @@ const predictOfflineDeath = (char) => {
    server has no opinion about what colour an epic is. */
 const rarClass = (r) => "rar-" + (typeof r === "string" ? r : (r && r.id) || "common");
 
+/* Same story for the six class colours, and worse: on parchment they measure
+   1.08:1 (rogue) to 2.71:1 (warlock) against the page, so every class name in
+   the game — character select, the party list, the ladder — was somewhere
+   between hard and impossible to read. The hue is identity and stays in the
+   data; the theme decides the value. Takes a class id, a class object, or
+   anything carrying one, so the roster rows the server sends work unchanged. */
+const clsClass = (c) => {
+  const id = typeof c === "string" ? c : (c && (c.cls || c.id)) || "";
+  return id ? "cls-" + id : "";
+};
+
 function ItemCard({ item, children, compare, cls, onClick }) {
   const r = rarityById(item.rarity);
   const merged = { ...item.stats };
@@ -3049,29 +3072,38 @@ function CharacterSelectScreen({ saves, onSelect, onNew, onDelete, exportData, i
   const doImport = () => { if (!importText.trim()) return; const ok = importData(importText); setMsg(ok ? "Save restored!" : "Invalid backup code"); if (ok) setImportText(""); };
 
   return (
-    <div style={{ minHeight: "100vh", background: "var(--sunk)", display: "flex", flexDirection: "column", alignItems: "center", padding: "40px 16px" }}>
-      <div style={{ textAlign: "center", marginBottom: 30 }}>
-        <div style={{ fontSize: 46, marginBottom: 6 }}>⚔️</div>
-        <h1 style={{ color: "var(--gilt)", fontFamily: "Georgia, serif", fontSize: 28, margin: 0, textShadow: "0 0 22px var(--bole)" }}>Realms of Eldoria</h1>
-        <p style={{ color: "var(--verdigris)", margin: "6px 0 0", fontSize: 13 }}>An Idle Fantasy Adventure</p>
+    <div className={`title-page chronicle-ground ${themeClass(loadTheme())}`}>
+      {/* The frontispiece. Read once at mount rather than held in state: there is
+          nothing on this screen that changes the light, and the player's choice
+          is on the device, not on a character that does not exist yet. */}
+      <div className="title-head">
+        <div className="title-mark"><Icon name="sword" size={34} /></div>
+        <h1 className="title-name">Realms of Eldoria</h1>
+        <p className="title-sub">An idle fantasy adventure</p>
+        <hr className="title-rule" />
       </div>
-      <div style={{ width: "100%", maxWidth: 440 }}>
+      <div>
         {saves.length > 0 && (
-          <div style={{ marginBottom: 22 }}>
-            <div style={{ color: "var(--ink-soft)", fontSize: 12, marginBottom: 10, textTransform: "uppercase", letterSpacing: 1 }}>Your Characters</div>
+          <div>
+            <div className="eyebrow"><span>Your characters</span><span>{saves.length}</span></div>
             {saves.map((save, i) => {
               const cls = CLASSES.find((c) => c.id === save.cls);
               const race = RACES.find((r) => r.id === save.race);
               return (
-                <div key={save.id || i} onClick={() => onSelect(i)} style={{ background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 10, padding: "14px 16px", marginBottom: 10, cursor: "pointer", display: "flex", alignItems: "center", gap: 12 }}
-                  onMouseEnter={(e) => (e.currentTarget.style.borderColor = "#f0b429")} onMouseLeave={(e) => (e.currentTarget.style.borderColor = "#2a2550")}>
-                  <div style={{ fontSize: 30 }}>{cls?.icon}</div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ color: "var(--ink)", fontWeight: 700, fontSize: 15 }}>{save.name}</div>
-                    <div style={{ color: cls?.color, fontSize: 12 }}>Level {save.level} {race?.name} {cls?.name}</div>
-                    <div style={{ color: "var(--ink-faint)", fontSize: 11 }}>{ZONES.find((z) => z.id === save.currentZoneId)?.name} · {save.kills || 0} kills · 💰{save.gold || 0}g</div>
-                  </div>
-                  <button onClick={(e) => { e.stopPropagation(); setConfirmDel(i); }} style={{ background: "none", border: "1px solid var(--rubric)", borderRadius: 4, color: "var(--rubric)", padding: "4px 8px", cursor: "pointer", fontSize: 11 }}>Delete</button>
+                <div key={save.id || i} onClick={() => onSelect(i)} role="button" tabIndex={0}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(i); } }}
+                  className="item save">
+                  <span className="mark" style={{ padding: 5 }}><EmojiIcon emoji={cls?.icon} size={22} /></span>
+                  <span className="item-body">
+                    <span className="item-name">{save.name}</span>
+                    <span className="item-stats">Level {save.level} {race?.name} {cls?.name}</span>
+                    <span className="item-meta">
+                      {ZONES.find((z) => z.id === save.currentZoneId)?.name} · {save.kills || 0} kills · <Icon name="coin" size={9} /> {save.gold || 0}g
+                    </span>
+                  </span>
+                  <span className="item-acts">
+                    <button onClick={(e) => { e.stopPropagation(); setConfirmDel(i); }} className="mini is-warn">Delete</button>
+                  </span>
                 </div>
               );
             })}
@@ -3082,7 +3114,7 @@ function CharacterSelectScreen({ saves, onSelect, onNew, onDelete, exportData, i
             <div onClick={(e) => e.stopPropagation()} className="sheet is-warn">
               <div className="sheet-mark"><EmojiIcon emoji="⚠️" size={22} /></div>
               <div className="sheet-title">Delete Character?</div>
-              <div style={{ color: "var(--ink)", fontSize: 13, lineHeight: 1.55, textAlign: "center", marginBottom: 16 }}>You are about to permanently delete <b>{saves[confirmDel].name}</b> (Level {saves[confirmDel].level} {CLASSES.find((c) => c.id === saves[confirmDel].cls)?.name}). This <b>cannot be undone</b> — all progress will be lost forever.</div>
+              <div className="sheet-lede">You are about to permanently delete <b>{saves[confirmDel].name}</b> (Level {saves[confirmDel].level} {CLASSES.find((c) => c.id === saves[confirmDel].cls)?.name}). This <b>cannot be undone</b> — all progress will be lost forever.</div>
               <div className="sheet-acts">
                 <button onClick={() => setConfirmDel(null)} className="go is-quiet">Cancel</button>
                 <button onClick={() => { const idx = confirmDel; setConfirmDel(null); onDelete(idx); }} className="go">Delete Forever</button>
@@ -3093,27 +3125,27 @@ function CharacterSelectScreen({ saves, onSelect, onNew, onDelete, exportData, i
         <button onClick={onNew} className="go"><Icon name="spark" /> Create New Character</button>
 
         {/* ---------------- Save data ---------------- */}
-        <div style={{ marginTop: 26, background: "var(--sunk)", border: "1px solid var(--verdigris)", borderRadius: 12, padding: 16 }}>
-          <div style={{ color: "var(--ink-soft)", fontSize: 12, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Save Data</div>
-          <div style={{ color: "var(--ink-faint)", fontSize: 11, marginBottom: 12 }}>Your characters are saved on this device. Export a backup code to keep a copy or move your progress to another device.</div>
+        <div className="leaf-block">
+          <div className="eyebrow"><span><Icon name="vault" size={11} /> Save data</span></div>
+          <div className="ledger-note" style={{ marginBottom: 10 }}>Your characters are saved on this device. Export a backup code to keep a copy or move your progress to another device.</div>
 
           {/* Backup & restore — local export/import */}
           <div>
-            <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-              <button onClick={doExport} style={{ flex: 1, background: "var(--raised)", border: "1px solid var(--verdigris)", borderRadius: 7, color: "var(--ink-soft)", fontSize: 12, fontWeight: 600, padding: "9px 8px", cursor: "pointer" }}>⬆ Export backup</button>
-              <button onClick={() => setShowBackup((v) => !v)} style={{ flex: 1, background: "var(--raised)", border: "1px solid var(--rule)", borderRadius: 7, color: "var(--ink-soft)", fontSize: 12, fontWeight: 600, padding: "9px 8px", cursor: "pointer" }}>⬇ Restore</button>
+            <div className="fields" style={{ marginBottom: 10 }}>
+              <button onClick={doExport} className="go is-quiet" style={{ marginTop: 0 }}>Export backup</button>
+              <button onClick={() => setShowBackup((v) => !v)} className="go is-quiet" style={{ marginTop: 0 }}>Restore</button>
             </div>
             {showBackup && (
               <div>
                 {exportCode && (
-                  <textarea readOnly value={exportCode} onFocus={(e) => e.target.select()} style={{ width: "100%", height: 54, background: "var(--sunk)", border: "1px solid var(--verdigris)", borderRadius: 6, color: "var(--ink-soft)", fontSize: 10, padding: 8, marginBottom: 8, boxSizing: "border-box", resize: "none", fontFamily: "ui-monospace, monospace" }} />
+                  <textarea readOnly value={exportCode} onFocus={(e) => e.target.select()} className="code-field" />
                 )}
-                <textarea value={importText} onChange={(e) => setImportText(e.target.value)} placeholder="Paste a backup code here, then tap Restore…" style={{ width: "100%", height: 54, background: "var(--sunk)", border: "1px solid var(--ink-faint)", borderRadius: 6, color: "var(--ink)", fontSize: 10, padding: 8, boxSizing: "border-box", resize: "none", fontFamily: "ui-monospace, monospace" }} />
+                <textarea value={importText} onChange={(e) => setImportText(e.target.value)} placeholder="Paste a backup code here, then tap Restore…" className="code-field" />
                 <button onClick={doImport} className="go is-quiet">Restore from code</button>
-                <div style={{ color: "var(--ink-faint)", fontSize: 10, marginTop: 6 }}><Icon name="warn" /> Restoring replaces the characters currently on this device.</div>
+                <div className="ledger-note" style={{ marginTop: 6 }}><Icon name="warn" size={10} /> Restoring replaces the characters currently on this device.</div>
               </div>
             )}
-            {msg && <div style={{ color: "var(--gilt)", fontSize: 11, marginTop: 8, textAlign: "center" }}>{msg}</div>}
+            {msg && <div className="sheet-note" style={{ marginTop: 10, marginBottom: 0 }}>{msg}</div>}
           </div>
         </div>
       </div>
@@ -3131,54 +3163,63 @@ function CreateCharacterScreen({ onCreate, onBack }) {
   const [name, setName] = useState("");
 
   return (
-    <div style={{ minHeight: "100vh", background: "var(--sunk)", padding: "24px 16px", maxWidth: 500, margin: "0 auto" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 22 }}>
-        <button onClick={step === 0 ? onBack : () => setStep((s) => s - 1)} style={{ background: "none", border: "none", color: "var(--ink-soft)", fontSize: 20, cursor: "pointer" }}>←</button>
-        <h2 style={{ color: "var(--gilt)", fontFamily: "Georgia, serif", margin: 0 }}>{step === 0 ? "Choose Your Class" : step === 1 ? "Choose Your Race" : "Name Your Hero"}</h2>
+    <div className={`title-page chronicle-ground ${themeClass(loadTheme())}`}>
+      <div className="head">
+        <button onClick={step === 0 ? onBack : () => setStep((s) => s - 1)} className="head-back">&#8592; Back</button>
+        <span className="head-title">{step === 0 ? "Choose your class" : step === 1 ? "Choose your race" : "Name your hero"}</span>
+        <span className="head-note">{step + 1} of 3</span>
       </div>
-      <div style={{ display: "flex", gap: 6, marginBottom: 22 }}>
-        {["Class", "Race", "Name"].map((s, i) => <div key={i} style={{ flex: 1, height: 4, borderRadius: 2, background: i <= step ? "var(--gilt)" : "var(--raised)" }} />)}
+      {/* Three words and a rule under the one you are on. The bar of three gold
+          segments said the same thing louder and could not say WHICH step. */}
+      <div className="steps">
+        {["Class", "Race", "Name"].map((s, i) => (
+          <span key={s} className={i === step ? "is-here" : undefined}>{s}</span>
+        ))}
       </div>
 
       {step === 0 && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <div className="picker">
           {CLASSES.map((cls) => (
-            <div key={cls.id} onClick={() => { setSelectedClass(cls.id); setStep(1); }} style={{ background: "var(--raised)", border: "2px solid var(--verdigris)", borderRadius: 10, padding: 14, cursor: "pointer", textAlign: "center" }}>
-              <div style={{ fontSize: 30, marginBottom: 4 }}><EmojiIcon emoji={cls.icon} /></div>
-              <div style={{ color: cls.color, fontWeight: 700, fontSize: 13 }}>{cls.name}</div>
-              <div style={{ color: "var(--ink-faint)", fontSize: 10, marginTop: 4, lineHeight: 1.4 }}>{cls.desc}</div>
-              <div style={{ color: "var(--gilt)", fontSize: 10, marginTop: 6, fontStyle: "italic" }}>{cls.passive}</div>
-            </div>
+            <button key={cls.id} onClick={() => { setSelectedClass(cls.id); setStep(1); }}
+              className={`card${selectedClass === cls.id ? " is-on" : ""}`}>
+              <span className="card-mark"><EmojiIcon emoji={cls.icon} size={24} /></span>
+              {/* The class colour is identity, like a rarity — it belongs on the
+                  name and nowhere else. Every card used to carry it as a 2px
+                  border, so twelve classes read as twelve alarms. */}
+              <span className={`card-name ${clsClass(cls)}`}>{cls.name}</span>
+              <span className="card-note">{cls.desc}</span>
+              <span className="card-stat">{cls.passive}</span>
+            </button>
           ))}
         </div>
       )}
 
       {step === 1 && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <div className="picker">
           {RACES.map((race) => (
-            <div key={race.id} onClick={() => { setSelectedRace(race.id); setStep(2); }} style={{ background: "var(--raised)", border: "2px solid var(--verdigris)", borderRadius: 10, padding: 14, cursor: "pointer", textAlign: "center" }}>
-              <div style={{ fontSize: 28, marginBottom: 4 }}><EmojiIcon emoji={race.icon} /></div>
-              <div style={{ color: "var(--ink)", fontWeight: 700, fontSize: 13 }}>{race.name}</div>
-              <Faction faction={race.faction} />
-              <div style={{ color: "var(--ink-faint)", fontSize: 10, marginTop: 6, lineHeight: 1.4 }}>{race.bonus}</div>
-            </div>
+            <button key={race.id} onClick={() => { setSelectedRace(race.id); setStep(2); }}
+              className={`card${selectedRace === race.id ? " is-on" : ""}`}>
+              <span className="card-mark">{RACE_MARKS[race.id] ? <Icon name={RACE_MARKS[race.id]} size={24} /> : <EmojiIcon emoji={race.icon} size={24} />}</span>
+              <span className="card-name">{race.name}</span>
+              <span className="card-stat"><Faction faction={race.faction} /></span>
+              <span className="card-note">{race.bonus}</span>
+            </button>
           ))}
         </div>
       )}
 
       {step === 2 && (
         <div>
-          <div style={{ background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 10, padding: 20, marginBottom: 18 }}>
-            <div style={{ textAlign: "center", marginBottom: 16 }}>
-              <div style={{ fontSize: 40 }}>{CLASSES.find((c) => c.id === selectedClass)?.icon}</div>
-              <div style={{ color: "var(--gilt)", fontWeight: 700 }}>{RACES.find((r) => r.id === selectedRace)?.name} {CLASSES.find((c) => c.id === selectedClass)?.name}</div>
-              <Faction faction={RACES.find((r) => r.id === selectedRace)?.faction} />
-            </div>
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Enter character name..." maxLength={20}
-              style={{ width: "100%", background: "var(--sunk)", border: "1px solid var(--ink-faint)", borderRadius: 6, color: "var(--ink)", padding: "12px 14px", fontSize: 16, outline: "none", boxSizing: "border-box" }} />
+          <div className="figure" style={{ padding: "var(--s-5)", marginBottom: "var(--s-5)" }}>
+            <EmojiIcon emoji={CLASSES.find((c) => c.id === selectedClass)?.icon} size={34} />
+            <span className="figure-cls">{RACES.find((r) => r.id === selectedRace)?.name} {CLASSES.find((c) => c.id === selectedClass)?.name}</span>
+            <span className="figure-note"><Faction faction={RACES.find((r) => r.id === selectedRace)?.faction} /></span>
           </div>
+          <label className="eyebrow">Their name</label>
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Enter character name…" maxLength={20}
+            className="field" style={{ fontSize: "var(--step-1)" }} />
           <button disabled={name.trim().length < 2} onClick={() => onCreate(name.trim(), selectedClass, selectedRace)}
-            style={{ width: "100%", background: name.trim().length >= 2 ? "var(--raised)" : "var(--raised)", border: `2px solid ${name.trim().length >= 2 ? "var(--gilt)" : "var(--ink)"}`, borderRadius: 10, color: name.trim().length >= 2 ? "var(--gilt)" : "var(--ink-faint)", fontSize: 16, fontWeight: 700, padding: 16, cursor: name.trim().length >= 2 ? "pointer" : "default", fontFamily: "Georgia, serif" }}><Icon name="sword" /> Enter Eldoria</button>
+            className="go" style={{ marginTop: "var(--s-5)" }}><Icon name="sword" /> Enter Eldoria</button>
         </div>
       )}
     </div>
@@ -6509,8 +6550,8 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                 <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--verdigris)", fontSize: 11.5, color: "var(--verdigris)" }}>Overall: <span style={{ color: scoreDelta > 0 ? "var(--verdigris)" : scoreDelta < 0 ? "var(--rubric)" : "var(--verdigris)", fontWeight: 700 }}>{scoreDelta > 0 ? "▲ Upgrade" : scoreDelta < 0 ? "▼ Downgrade" : "≈ Sidegrade"}</span></div>
               </div>
               <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-                {char.inventory.some((i) => i.id === bag.id) && <button onClick={() => { equipItem(bag, offhandable ? slot : undefined); setCompareItem(null); }} style={{ flex: 1, background: `var(--raised)`, border: `1.5px solid ${cls?.color || "var(--verdigris)"}`, borderRadius: 10, color: cls?.color || "var(--verdigris)", fontSize: 13, fontWeight: 700, padding: 10, cursor: "pointer" }}>{offhandable && slot === "offhand" ? "Equip off-hand" : "Equip this"}</button>}
-                <button onClick={() => setCompareItem(null)} style={{ flex: 1, background: "var(--raised)", border: "1px solid var(--rule)", borderRadius: 10, color: "var(--ink-soft)", fontSize: 13, fontWeight: 700, padding: 10, cursor: "pointer" }}>Close</button>
+                {char.inventory.some((i) => i.id === bag.id) && <button onClick={() => { equipItem(bag, offhandable ? slot : undefined); setCompareItem(null); }} className="go" style={{ marginTop: 0 }}>{offhandable && slot === "offhand" ? "Equip off-hand" : "Equip this"}</button>}
+                <button onClick={() => setCompareItem(null)} className="go is-quiet" style={{ marginTop: 0 }}>Close</button>
               </div>
             </div>
           </div>
@@ -8089,7 +8130,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                       ) : !specUnlocked ? (
                         <button disabled style={{ background: "var(--raised)", border: "1.5px solid var(--ink)", borderRadius: 8, color: "var(--ink-faint)", fontSize: 11.5, fontWeight: 700, padding: "8px 12px", cursor: "default" }}><Icon name="lock" /> Unlocks at Lv {SPEC_LEVEL}</button>
                       ) : (
-                        <button onClick={() => setSpec(sp.id)} style={{ background: `var(--raised)`, border: `1.5px solid ${cls.color}`, borderRadius: 8, color: cls.color, fontSize: 11.5, fontWeight: 700, padding: "8px 14px", cursor: "pointer" }}>{hasLoadout(char, sp.id) ? "📋 Restore template" : char.spec ? "Switch to this" : "Specialize"}</button>
+                        <button onClick={() => setSpec(sp.id)} className="mini">{hasLoadout(char, sp.id) ? "Restore template" : char.spec ? "Switch to this" : "Specialize"}</button>
                       )}
                     </div>
                   );
@@ -11669,7 +11710,11 @@ export default function App() {
   ) : null;
 
   const cloudButton = screen === "select" ? (
-    <button onClick={() => setShowCloud(true)} title="Cloud save" style={{ position: "fixed", top: 10, right: 10, zIndex: 350, background: linked ? "var(--raised)" : "var(--raised)", border: `1px solid ${linked ? "var(--verdigris)" : "var(--rule)"}`, borderRadius: 20, color: linked ? "var(--verdigris)" : "var(--rar-epic)", fontSize: 11, fontWeight: 700, padding: "6px 12px", cursor: "pointer" }}>☁️ {linked ? "Synced" : "Sync"}</button>
+    <button onClick={() => setShowCloud(true)} title="Cloud save"
+      className={`mini${linked ? " is-gain" : ""}`}
+      style={{ position: "fixed", top: 10, right: 10, zIndex: 350 }}>
+      <Icon name="cloud" size={11} /> {linked ? "Synced" : "Sync"}
+    </button>
   ) : null;
 
   const conflictModal = pendingCloud ? (() => {

@@ -119,3 +119,85 @@
   box-shadow: 0 6px 20px -10px rgba(0, 0, 0, .55);
   display: flex; align-items: center; gap: var(--s-2); max-width: min(90vw, 420px);
 }
+
+/* ---- the title page ------------------------------------------------------ */
+/* What a player sees before there is a character to be. It was the one part of
+   the game that had never been touched: a 46px ⚔️, a gold title with a 22px
+   glow behind it, and character cards whose hover handler set the border to
+   #f0b429 and whose leave handler set it to #2a2550 — a colour from the palette
+   this redesign replaced, so hovering a save put a dark purple line on
+   parchment. Written in JS rather than CSS, it was invisible to every sweep.
+   Hover belongs in a stylesheet, where the theme can see it. */
+.title-page {
+  min-height: 100vh; box-sizing: border-box;
+  display: flex; flex-direction: column; align-items: center;
+  padding: var(--s-7) var(--s-5) var(--s-6);
+  font-family: var(--serif); color: var(--ink);
+}
+.title-page > * { width: 100%; max-width: 440px; }
+/* The frontispiece. A book announces itself with type and a rule, not a glow. */
+.title-head { text-align: center; margin-bottom: var(--s-6); }
+.title-mark { color: var(--ink-soft); margin-bottom: var(--s-3); }
+.title-name {
+  font-family: var(--serif); font-size: var(--step-4); font-weight: 600;
+  line-height: 1.1; margin: 0; color: var(--ink);
+}
+.title-sub {
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .22em; text-transform: uppercase;
+  color: var(--ink-faint); margin: var(--s-3) 0 0;
+}
+.title-rule {
+  border: 0; border-top: 1px solid var(--rule); width: 90px; margin: var(--s-4) auto 0;
+}
+
+/* A saved character, as an entry in the front matter. */
+.save { cursor: pointer; }
+.save:hover { border-color: var(--ink-soft); }
+.save:hover .item-name { color: var(--rubric); }
+.save:focus-visible { outline: 2px solid var(--rubric); outline-offset: 2px; }
+
+/* ---- a boxed aside on the title page ------------------------------------- */
+/* Save data, and the two steps of character creation. Ruled off top and bottom
+   like the ledger, so it reads as part of the page. */
+.leaf-block {
+  border-top: 1px solid var(--rule); padding-top: var(--s-4); margin-top: var(--s-6);
+}
+/* A code you copy or paste. Mono, ruled, and it does not pretend to be prose. */
+.code-field {
+  width: 100%; box-sizing: border-box; height: 54px; resize: none;
+  background: var(--sunk); border: 1px solid var(--rule); border-radius: var(--r-sm);
+  color: var(--ink); font-family: var(--mono); font-size: 10px; line-height: 1.45;
+  padding: var(--s-3); margin-bottom: var(--s-3);
+}
+.code-field:focus { outline: none; border-color: var(--rubric); }
+
+/* ---- choosing what to be ------------------------------------------------- */
+/* Class and race were 2-across cards with a coloured border per class and a
+   glow on the chosen one. The class's colour is IDENTITY — it belongs on the
+   name, the way a rarity does — so it stays, and the frame says only whether
+   this is the one you picked. */
+.picker { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-3); margin-bottom: var(--s-4); }
+.card {
+  box-sizing: border-box; text-align: left; cursor: pointer;
+  background: var(--raised); border: 1px solid var(--hairline); border-radius: var(--r-md);
+  padding: var(--s-4); font-family: var(--serif); color: var(--ink);
+  display: flex; flex-direction: column; gap: var(--s-1);
+}
+.card:hover { border-color: var(--ink-soft); }
+.card:focus-visible { outline: 2px solid var(--rubric); outline-offset: 2px; }
+.card.is-on { border-color: var(--rubric); }
+.card-mark { color: var(--ink-soft); margin-bottom: var(--s-1); }
+.card-name { font-size: var(--step-0); font-weight: 600; line-height: 1.2; }
+.card-note { font-size: var(--step--1); color: var(--ink-soft); line-height: 1.4; }
+.card-stat {
+  font-family: var(--mono); font-size: 9px; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--ink-faint); margin-top: 2px;
+}
+
+/* The numbered steps of making a character. Two dots and a rule, not a wizard. */
+.steps {
+  display: flex; align-items: center; justify-content: center; gap: var(--s-3);
+  font-family: var(--mono); font-size: 9px; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--ink-faint); margin-bottom: var(--s-5);
+}
+.steps > span.is-here { color: var(--rubric); }

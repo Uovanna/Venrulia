@@ -15,12 +15,12 @@
  */
 export const EMOJI_ICON = {
   // --- combat -------------------------------------------------------------
-  "⚔": "sword", "🗡": "sword", "🤺": "sword",
+  "⚔": "sword", "🗡": "dagger", "🤺": "dagger",
   "🛡": "shield", "❤": "heart", "💔": "heart", "🩸": "blood",
   "💀": "skull", "☠": "skull", "🧟": "undead", "👻": "undead", "🦴": "undead",
   "⚡": "haste", "💫": "haste", "🌀": "haste", "🏃": "haste",
   "🔥": "flame", "🌋": "flame", "💥": "flame",
-  "🎯": "target", "👁": "target", "🔍": "target",
+  "🎯": "target", "👁": "eye", "🔍": "eye",
   "🏹": "bow", "💪": "sword", "🧠": "spark",
 
   // --- currency and reward ------------------------------------------------
@@ -47,7 +47,7 @@ export const EMOJI_ICON = {
   "⛪": "shrine", "🕯": "shrine", "⚜": "shrine",
   "🍺": "tavern", "🍶": "tavern", "🎶": "tavern",
   "📜": "scroll", "📋": "scroll", "📇": "scroll", "🏷": "scroll",
-  "📖": "tome", "📚": "tome", "🎓": "tome", "🔮": "tome",
+  "📖": "tome", "📚": "tome", "🎓": "tome", "🔮": "orb",
   "📬": "mail", "📦": "mail", "✉": "mail",
 
   // --- craft --------------------------------------------------------------
@@ -95,9 +95,9 @@ export const EMOJI_ICON = {
   "⏩": "haste", "🔆": "spark", "💢": "spark", "😤": "spark", "🪄": "spark",
   "☄": "spark", "🌠": "spark", "✨": "spark",
   "📣": "speak", "📯": "speak",
-  "🪓": "axe", "✂": "sword", "🗡": "sword",
+  "🪓": "axe", "✂": "dagger",
   "😈": "undead", "😱": "skull",
-  "🐍": "beast", "🐂": "beast", "🐾": "beast", "🥷": "figure", "🤸": "figure",
+  "🐍": "beast", "🐂": "horns", "🐾": "beast", "🥷": "figure", "🤸": "figure",
   "⚖": "scales", "🚫": "ban", "✋": "ban",
   "🫀": "heart", "❤‍🔥": "heart", "💉": "flask", "🧉": "flask",
   "✝": "shrine", "🙏": "shrine", "🕊": "shrine",

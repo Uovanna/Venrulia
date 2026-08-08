@@ -202,7 +202,14 @@ sec("Rarity is readable on parchment");
 
   const dayBlock = tokens.slice(tokens.indexOf(":root, .theme-day"), tokens.indexOf("@media (prefers-color-scheme"));
   const nightBlock = tokens.slice(tokens.indexOf(':root[data-theme="night"], .theme-night'));
-  const RARS = ["rar-uncommon", "rar-rare", "rar-epic", "rar-legendary", "rar-artifact"];
+  // The six class hexes live in the CORE DATA, not in a stylesheet, which is
+  // exactly why nothing ever measured them: they are identity, so no colour
+  // sweep touched them, and on parchment they run 1.08:1 (rogue) to 2.71:1
+  // (warlock). They are now tokens, and they are measured the same way as the
+  // rarities — the whole point of pulling them out of the data was so that this
+  // check could exist at all.
+  const RARS = ["rar-uncommon", "rar-rare", "rar-epic", "rar-legendary", "rar-artifact",
+                "cls-warrior", "cls-mage", "cls-rogue", "cls-paladin", "cls-hunter", "cls-warlock"];
 
   for (const [label, block, ground, raised] of [
     ["day", dayBlock, "#DCD5C4", "#E6E0D2"],
@@ -217,7 +224,7 @@ sec("Rarity is readable on parchment");
     }
     ok(bad.length === 0, bad.length
       ? `${label}: ${bad.join(", ")}`
-      : `every rarity clears AA on the page and a raised surface in ${label}`);
+      : `all ${RARS.length} rarity and class hues clear AA on the page and a raised surface in ${label}`);
   }
   // Poor and common deliberately have NO hue of their own — a common item is
   // written in the ordinary hand and a poor one is faded. A token for either
@@ -733,6 +740,90 @@ sec("Standing orders, and the last seven heads");
      "the claim is a quiet action that is simply disabled until it is earned");
   ok(panels.includes(".item.is-done {"),
      "…and a finished row is ruled off the way a finished building is");
+}
+
+sec("The title page, and the colours that were hiding in the data");
+{
+  // THE FRONT MATTER had never been touched. Two screens a player sees before
+  // there is a character to be, and both of them rendered on a flat --sunk with
+  // no parchment and no theme class — so a player who had chosen candlelight got
+  // daylight until the moment they pressed a save.
+  ok(app.includes('className={`title-page chronicle-ground ${themeClass(loadTheme())}`}'),
+     "the title page sits on the themed, textured ground");
+  ok((app.match(/className=\{`title-page chronicle-ground/g) || []).length === 2,
+     "…and so does character creation");
+  ok(shell.includes(".title-page {") && shell.includes(".title-name {"),
+     "shell.css owns the frontispiece");
+  ok(!/textShadow: "0 0 22px/.test(app), "the game's name is set in type, not in a glow");
+
+  // HOVER WRITTEN IN JAVASCRIPT. The save rows set borderColor to #f0b429 on
+  // enter and #2a2550 on leave — a colour from the palette this redesign
+  // replaced, so hovering a character put a dark purple line on parchment. A
+  // handler that assigns style is invisible to every sweep that reads style={{}}.
+  ok(!/e\.currentTarget\.style\.borderColor/.test(app),
+     "no element paints its own border from an event handler");
+  ok(shell.includes(".save:hover"), "…hover is a stylesheet's job, where the theme can see it");
+
+  // THE CLASS PALETTE. Six hexes carried in the class DATA, chosen against a
+  // black ground, never touched by the colour sweep because they are identity.
+  // Measured on parchment they run 1.08:1 (rogue) to 2.71:1 (warlock) — every
+  // one fails AA and the rogue's yellow is unreadable. Same fix the rarities
+  // got: the hue stays in the data, the theme decides the value.
+  const clsIds = ["warrior", "mage", "rogue", "paladin", "hunter", "warlock"];
+  for (const id of clsIds)
+    ok(new RegExp(`\\.cls-${id}\\s*\\{ color: var\\(--cls-${id}\\); \\}`).test(panels),
+       `.cls-${id} takes its ink from the theme`);
+  const dayBlock = tokens.slice(0, tokens.indexOf("@media"));
+  ok(clsIds.every((id) => new RegExp(`--cls-${id}:`).test(dayBlock)),
+     "…and day defines all six rather than inheriting a night value");
+  ok((tokens.match(/--cls-warrior:/g) || []).length === 3,
+     "…in all three theme states, like every other token here");
+  ok(!/style=\{\{ color: cls\.color \}\}/.test(app) && !/border: `1\.5px solid \$\{cls\.color\}`/.test(app),
+     "nothing reads the raw class hex out of the data any more");
+
+  // TWO CLASSES, ONE PICTURE. 🗡 and ⚔ both mapped to i-sword, so on the first
+  // screen of the game the Rogue was drawn with the Warrior's weapon. The mage's
+  // orb was a book and the warlock's eye was a bullseye. A class mark is the most
+  // identity-bearing glyph in the set; near enough is not enough.
+  const map = fs.readFileSync(path.join(root, 'design/emoji-map.mjs'), 'utf8');
+  const sprite = fs.readFileSync(path.join(root, 'design/icons-sprite.svg'), 'utf8');
+  for (const g of ["dagger", "orb", "eye", "horns"])
+    ok(sprite.includes(`id="i-${g}"`), `the sprite draws a ${g}`);
+  ok(/"🗡": "dagger"/.test(map), "the rogue's dagger is not the warrior's sword");
+  ok(/"🔮": "orb"/.test(map) && /"👁": "eye"/.test(map),
+     "…the mage carries an orb and the warlock an eye");
+  // Every class and race resolves to a mark of its own, read out of the core data
+  // rather than a list written here — a class added later cannot quietly collide.
+  const core = fs.readFileSync(path.join(root, 'game-core/combat.mjs'), 'utf8');
+  const emoji = (() => {
+    const t = {};
+    for (const m of map.matchAll(/"([^"]+)":\s*"([a-z]+)"/g)) t[m[1]] = m[2];
+    return t;
+  })();
+  const strip = (e) => e.replace(/️/g, "");
+  const raceMarks = (() => {
+    const m = /const RACE_MARKS = \{([^}]*)\}/.exec(app);
+    const t = {};
+    if (m) for (const p of m[1].matchAll(/(\w+):\s*"([a-z]+)"/g)) t[p[1]] = p[2];
+    return t;
+  })();
+  const grab = (re) => [...core.matchAll(re)].map((m) => ({ id: m[1], name: m[2], icon: strip(m[3]) }));
+  const classes = grab(/\{ id: "(\w+)", name: "(\w+)", icon: "([^"]+)", color:/g);
+  const races = grab(/\{ id: "(\w+)", name: "(\w+)", icon: "([^"]+)", faction:/g);
+  ok(classes.length === 6 && races.length === 8, `${classes.length} classes and ${races.length} races in the core`);
+  const clash = (list, marks) => {
+    const seen = new Map(); const bad = [];
+    for (const r of list) {
+      const g = (marks && marks[r.id]) || emoji[r.icon];
+      if (!g) { bad.push(`${r.name} has no drawing`); continue; }
+      if (seen.has(g)) bad.push(`${r.name} and ${seen.get(g)} are both a ${g}`);
+      else seen.set(g, r.name);
+    }
+    return bad;
+  };
+  const cb = clash(classes, null), rb = clash(races, raceMarks);
+  ok(cb.length === 0, cb.length ? cb.join("; ") : "…every class has a silhouette of its own");
+  ok(rb.length === 0, rb.length ? rb.join("; ") : "…and so does every race");
 }
 
 sec("The shell is bound in the same hand");

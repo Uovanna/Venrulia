@@ -1457,7 +1457,7 @@ const PROFESSIONS = [
   { id: "herbalism", name: "Herbalism", icon: "🌿", type: "gathering", color: "#4a7c3f", desc: "Gather Herbs, plus Healing Herbs." },
   { id: "salvage", name: "Salvage", icon: "♻️", type: "gathering", color: "#7d8aa0", desc: "Break down downgrade gear (green+) into Dust." },
   { id: "armorsmith", name: "Armorsmith", icon: "🔨", type: "crafting", color: "#888", desc: "Forge gear from Ore; Rich Ore raises rarity." },
-  { id: "alchemy", name: "Alchemy", icon: "⚗️", type: "crafting", color: "#9482C9", desc: "Brew tiered potions Brew Healing Potions from herbs. scrolls from herbs." },
+  { id: "alchemy", name: "Alchemy", icon: "⚗️", type: "crafting", color: "#9482C9", desc: "Brew tiered potions and scrolls from herbs." },
   { id: "enchanting", name: "Enchanting", icon: "✨", type: "crafting", color: "#69CCF0", desc: "Enchant equipped gear with an extra stat (uses Dust)." },
 ];
 const emptyProfessions = () => PROFESSIONS.reduce((m, p) => { m[p.id] = { level: 1, xp: 0, active: false }; return m; }, {});

@@ -3328,6 +3328,15 @@ function TownHub({ onEnter, highlight, charLevel = 1 }) {
     </div>
   );
 }
+// Which room a profession opens, and what the row says it will do. This lived as
+// five if/else branches inside the row and five more colour-tinted hints beside
+// the name; it is data about the UI, so it sits with the UI rather than in the
+// core's PROFESSIONS table, which knows nothing about tabs.
+const PROF_ROOM = { mining: "gather", herbalism: "gather", salvage: "salvage",
+                    armorsmith: "forge", alchemy: "brewery", enchanting: "enchanting" };
+const PROF_VERB = { mining: "mine", herbalism: "gather", salvage: "salvage",
+                    armorsmith: "forge", alchemy: "brew", enchanting: "enchant" };
+
 function GameScreen({ character: initChar, onSave, onBack }) {
   const [char, setChar] = useState(() => normalizeChar(initChar));
   const [tab, setTabRaw] = useState("town");
@@ -8077,10 +8086,6 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           const sel = temperSel ? items.find((i) => i.id === temperSel) : null;
           const fs = char.failStacks || 0;
           const dblPct = Math.round(doubleChanceFor(fs) * 100);
-          const rowBtn = (active) => ({ flex: 1, background: active ? "var(--raised)" : "var(--sunk)", border: `1px solid ${active ? acc : "var(--rule)"}`, borderRadius: 8, color: active ? acc : "var(--ink-faint)", fontSize: 12, fontWeight: 700, padding: "8px 4px", cursor: "pointer" });
-          const pctRow = (label, val, col) => (
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, padding: "2px 0" }}><span style={{ color: "var(--ink-soft)" }}>{label}</span><span style={{ color: col, fontWeight: 700 }}>{val}</span></div>
-          );
           // ----- detail computations -----
           let detail = null;
           if (sel) {
@@ -8090,40 +8095,46 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           }
           return (
           <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-              <button onClick={() => setTab("market")} style={{ background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 8, color: "var(--ink)", fontSize: 12, padding: "6px 12px", cursor: "pointer" }}>← Market</button>
-              <span style={{ color: acc, fontFamily: "Georgia, serif", fontSize: 15 }}><Icon name="anvil" /> Tempering Forge</span>
+            <div className="head">
+              <button onClick={() => setTab("market")} className="head-back">&#8592; Market</button>
+              <span className="head-title"><Icon name="anvil" size={15} /> Tempering Forge</span>
             </div>
-            <div style={{ display: "flex", gap: 8, marginBottom: 12, fontSize: 11.5 }}>
-              <span style={{ color: "var(--gilt)" }}><Icon name="coin" /> {char.gold.toLocaleString()}g</span>
-              <span style={{ color: "var(--verdigris)" }}><Icon name="gem" /> {char.ven || 0}</span>
+            <div className="statline">
+              <span><Icon name="coin" size={12} /> <b>{char.gold.toLocaleString()}</b></span>
+              <span><Icon name="gem" size={12} /> <b>{char.ven || 0}</b></span>
               {/* Distinct from a piece's forge heat: this one is character-wide and pays a DOUBLE
                   stat grant rather than a better chance, so it reads as its own counter. */}
-              <span style={{ color: fs > 0 ? "var(--verdigris)" : "var(--ink-soft)", marginLeft: "auto" }}><Icon name="spark" /> {fs} lucky stack{fs === 1 ? "" : "s"} · {dblPct}% to double a grant</span>
+              <span style={{ marginLeft: "auto" }}><Icon name="spark" size={12} /> <b>{fs}</b> lucky stack{fs === 1 ? "" : "s"} · {dblPct}% double</span>
             </div>
 
             {!sel && (
               <div>
-                <div style={{ color: "var(--ink-soft)", fontSize: 11, marginBottom: 8 }}>Select a piece to temper or reroll. Relics can't be forged.</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-                  {items.length === 0 && <div style={{ color: "var(--ink-faint)", fontSize: 12, textAlign: "center", padding: 20 }}>No forgeable gear.</div>}
-                  {items.map((it) => { const rc = rarityById(it.rarity).color;
-                    // Banked heat is real, paid-for progress. It has to be visible from the list,
-                    // or a player cannot tell which piece they were part-way through.
-                    const heat = (it.temper || 0) >= TEMPER_CFG.safeMax && (it.temper || 0) < TEMPER_CFG.maxRank
-                      ? temperOdds(it, (it.temper || 0) + 1) : null;
-                    return (
-                    <button key={it.id} onClick={() => { setTemperSel(it.id); setTemperMode("temper"); setTemperProtect(false); }} style={{ textAlign: "left", background: "var(--sunk)", border: `1px solid ${rc}44`, borderLeft: `3px solid ${rc}`, borderRadius: 8, padding: "9px 11px", display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
-                      <GameIcon icon={it.icon} size={22} />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ color: rc, fontWeight: 700, fontSize: 12.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{it.name}{temperSuffix(it)}</div>
-                        <div style={{ color: "var(--ink-soft)", fontSize: 10.5 }}>{slotById(it.slotId)?.name} · ilvl {it.ilvl}{it.rerolls ? ` · ${it.rerolls} rerolls` : ""}
-                          {heat && heat.stacks > 0 ? <span style={{ color: heat.chance >= 1 ? "var(--verdigris)" : acc }}> · 🔥 {heat.chance >= 1 ? "next is guaranteed" : `${Math.round(heat.chance * 100)}% to +${(it.temper || 0) + 1}`}</span> : null}</div>
-                      </div>
-                      {it.temper ? <span style={{ color: acc, fontWeight: 800, fontSize: 13 }}>+{it.temper}</span> : null}
+                <div className="ledger-note" style={{ margin: "10px 0" }}>Select a piece to temper or reroll. Relics cannot be forged.</div>
+                {items.length === 0 && <div className="empty">No forgeable gear.</div>}
+                {items.map((it) => {
+                  // Banked heat is real, paid-for progress. It has to be visible from the list,
+                  // or a player cannot tell which piece they were part-way through.
+                  const heat = (it.temper || 0) >= TEMPER_CFG.safeMax && (it.temper || 0) < TEMPER_CFG.maxRank
+                    ? temperOdds(it, (it.temper || 0) + 1) : null;
+                  return (
+                    <button key={it.id} onClick={() => { setTemperSel(it.id); setTemperMode("temper"); setTemperProtect(false); }}
+                      className="item item-tap" style={{ width: "100%" }}>
+                      <span className="mark"><GameIcon icon={it.icon} size={20} /></span>
+                      <span className="item-body">
+                        <span className={`item-name ${rarClass(it.rarity)}`}>{it.name}{temperSuffix(it)}</span>
+                        <span className="item-meta">
+                          {slotById(it.slotId)?.name} · ilvl {it.ilvl}{it.rerolls ? ` · ${it.rerolls} rerolls` : ""}
+                        </span>
+                        {heat && heat.stacks > 0 && (
+                          <span className={heat.chance >= 1 ? "state is-open" : "state is-soon"}>
+                            <Icon name="flame" size={10} /> {heat.chance >= 1 ? "next is guaranteed" : `${Math.round(heat.chance * 100)}% · ${heat.stacks} heat`}
+                          </span>
+                        )}
+                      </span>
+                      {it.temper ? <span className="item-delta is-up">+{it.temper}</span> : null}
                     </button>
-                  ); })}
-                </div>
+                  );
+                })}
               </div>
             )}
 
@@ -8132,17 +8143,21 @@ function GameScreen({ character: initChar, onSave, onBack }) {
               const { lines, tRank, tBonus, rerolls } = detail;
               return (
               <div>
-                <div style={{ background: "var(--sunk)", border: `1px solid ${rc}55`, borderRadius: 10, padding: 11, marginBottom: 10, display: "flex", alignItems: "center", gap: 10 }}>
-                  <GameIcon icon={sel.icon} size={26} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ color: rc, fontWeight: 700, fontSize: 14 }}>{sel.name}{temperSuffix(sel)}</div>
-                    <div style={{ color: "var(--ink-soft)", fontSize: 10.5 }}>{rarityById(sel.rarity).name} · {slotById(sel.slotId)?.name} · ilvl {sel.ilvl}</div>
+                <div className="item">
+                  <span className="mark"><GameIcon icon={sel.icon} size={24} /></span>
+                  <div className="item-body">
+                    <span className={`item-name ${rarClass(sel.rarity)}`}>{sel.name}{temperSuffix(sel)}</span>
+                    <span className="item-meta">{rarityById(sel.rarity).name} · {slotById(sel.slotId)?.name} · ilvl {sel.ilvl}</span>
                   </div>
-                  <button onClick={() => setTemperSel(null)} style={{ background: "none", border: "none", color: "var(--ink-faint)", fontSize: 18, cursor: "pointer" }}>×</button>
+                  <button onClick={() => setTemperSel(null)} className="link">Close</button>
                 </div>
-                <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
-                  <button onClick={() => setTemperMode("temper")} style={rowBtn(temperMode === "temper")}><Icon name="anvil" /> Temper</button>
-                  <button onClick={() => setTemperMode("reroll")} style={rowBtn(temperMode === "reroll")}>🎲 Reroll Stats</button>
+                <div className="leaves">
+                  <button onClick={() => setTemperMode("temper")} className={`leaf${temperMode === "temper" ? " is-open" : ""}`}>
+                    <Icon name="anvil" size={13} /> Temper
+                  </button>
+                  <button onClick={() => setTemperMode("reroll")} className={`leaf${temperMode === "reroll" ? " is-open" : ""}`}>
+                    <Icon name="dice" size={13} /> Reroll stats
+                  </button>
                 </div>
 
                 {temperMode === "temper" && (() => {
@@ -8158,32 +8173,50 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                   const grant = TEMPER_CFG.grantAtRank(target);
                   const canGold = char.gold >= cost, canVen = !protectOn || (char.ven || 0) >= venCost;
                   return (
-                    <div style={{ background: "var(--sunk)", border: "1px solid var(--bole)", borderRadius: 10, padding: 12 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                        <span style={{ color: "var(--bole)", fontSize: 13 }}>+{tRank} → <b style={{ color: acc }}>+{target}</b></span>
-                        <span style={{ color: "var(--gilt)", fontSize: 12 }}>{cost.toLocaleString()}g</span>
+                    <div className={`bench${canGold && canVen ? " is-ready" : ""}`}>
+                      <div className="ledger-line">
+                        <span className="ledger-label">+{tRank} &#8594; <b>+{target}</b></span>
+                        <span className="ledger-val">{cost.toLocaleString()}g</span>
                       </div>
-                      <div style={{ color: "var(--ink-soft)", fontSize: 11, marginBottom: 8 }}>Each secondary line: <b>+{tBonus}</b> → <b>+{tBonus + grant}</b> on success {dblPct > 0 && <span style={{ color: acc }}>({dblPct}% to double this to +{grant * 2})</span>}</div>
+                      <div className="bench-what">
+                        Each secondary line: <b>+{tBonus}</b> &#8594; <b>+{tBonus + grant}</b> on success{dblPct > 0 ? `, doubled ${dblPct}% of the time` : ""}.
+                      </div>
                       {!risky ? (
-                        <div style={{ background: "var(--raised)", border: "1px solid var(--verdigris)", borderRadius: 8, padding: "8px 10px", marginBottom: 10, color: "var(--ink-soft)", fontSize: 12, fontWeight: 700, textAlign: "center" }}>✓ Safe — guaranteed success (no risk until +5)</div>
+                        <div className="aside-note is-gain" style={{ marginTop: 10, marginBottom: 10 }}>
+                          <span>Guaranteed up to +{TEMPER_CFG.safeMax}. Beyond that it can fail.</span>
+                        </div>
                       ) : (
-                        <div style={{ background: "var(--sunk)", border: "1px solid var(--bole)", borderRadius: 8, padding: "8px 10px", marginBottom: 10 }}>
-                          {pctRow("Success", odds.chance >= 1 ? "GUARANTEED" : `${eSuccess}%`, "#7CFC9E")}
+                        <div className="ledger" style={{ marginTop: 10 }}>
+                          <div className="ledger-row">
+                            <div className="ledger-line">
+                              <span className="ledger-label">Success</span>
+                              <span className="ledger-val is-gear">{odds.chance >= 1 ? "guaranteed" : `${eSuccess}%`}</span>
+                            </div>
+                          </div>
                           {/* There is no failure to have a consequence once the ladder is full, so
                               quoting a destroy chance here would just be frightening and untrue. */}
-                          {odds.chance < 1 && pctRow("On failure — destroyed", protectOn ? "0% (warded)" : `${Math.round(eDestroy * 100)}%`, protectOn ? "#7fd0ff" : "#e0455a")}
-                          <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid var(--bole)" }}>
+                          {odds.chance < 1 && (
+                            <div className="ledger-row">
+                              <div className="ledger-line">
+                                <span className="ledger-label">On failure — destroyed</span>
+                                <span className="ledger-val" style={{ color: protectOn ? "var(--verdigris)" : "var(--rubric)" }}>
+                                  {protectOn ? "0% — warded" : `${Math.round(eDestroy * 100)}%`}
+                                </span>
+                              </div>
+                            </div>
+                          )}
+                          <div className="ledger-row">
                             {odds.chance >= 1
-                              ? <div style={{ color: "var(--ink-soft)", fontSize: 11.5, fontWeight: 700, textAlign: "center" }}><Icon name="flame" /> The forge is ready — this attempt cannot fail.</div>
+                              ? <div className="ledger-note" style={{ textAlign: "center" }}><Icon name="flame" size={11} /> The forge is ready — this attempt cannot fail.</div>
                               : <>
-                                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--ink-soft)", marginBottom: 4 }}>
-                                    <span><Icon name="flame" /> Forge heat · {odds.stacks} / {odds.cap} failures</span>
-                                    <span style={{ color: acc }}>+{Math.round(odds.step * 100)}% each</span>
+                                  <div className="ledger-line">
+                                    <span className="ledger-label"><Icon name="flame" size={12} /> Forge heat</span>
+                                    <span className="ledger-val">{odds.stacks}/{odds.cap} · +{Math.round(odds.step * 100)}% each</span>
                                   </div>
-                                  <div style={{ height: 5, background: "var(--raised)", borderRadius: 3, overflow: "hidden" }}>
-                                    <div style={{ width: `${Math.round((odds.stacks / odds.cap) * 100)}%`, height: "100%", background: `var(--raised)` }} />
+                                  <div className="meter" style={{ marginTop: 5 }}>
+                                    <i style={{ width: `${Math.round((odds.stacks / odds.cap) * 100)}%` }} />
                                   </div>
-                                  <div style={{ color: "var(--ink-soft)", fontSize: 10.5, marginTop: 4 }}>
+                                  <div className="ledger-note">
                                     Guaranteed after {odds.left} more failure{odds.left === 1 ? "" : "s"}. Heat is kept on this piece, for this rank only — and is lost if it is destroyed.
                                   </div>
                                 </>}
@@ -8191,31 +8224,43 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                         </div>
                       )}
                       {risky && (
-                        <button onClick={() => setTemperProtect((v) => !v)} style={{ width: "100%", background: protectOn ? "var(--verdigris)" : "var(--bole)", border: `1.5px solid ${protectOn ? "var(--verdigris)" : "var(--bole)"}`, borderRadius: 8, color: protectOn ? "var(--verdigris)" : "var(--ink-soft)", fontSize: 11.5, fontWeight: 700, padding: "8px", cursor: "pointer", marginBottom: 10 }}>
-                          <Icon name="shield" /> {protectOn ? "Warded" : "Ward"} · {venCost} 💎 Ven {protectOn ? "(a failure costs the gold, never the piece)" : ""}
+                        <button onClick={() => setTemperProtect((v) => !v)} className={`go is-quiet${protectOn ? " is-on" : ""}`}>
+                          <Icon name="shield" size={13} /> {protectOn ? "Warded" : "Ward"} · <Icon name="gem" size={11} /> {venCost}
+                          {protectOn ? " — a failure costs the gold, never the piece" : ""}
                         </button>
                       )}
-                      <button onClick={() => temperItem(sel, protectOn)} disabled={!canGold || !canVen} style={{ width: "100%", background: canGold && canVen ? `var(--raised)` : "var(--sunk)", border: `2px solid ${canGold && canVen ? acc : "var(--gilt)"}`, borderRadius: 10, color: canGold && canVen ? acc : "var(--ink-faint)", fontSize: 14, fontWeight: 800, padding: 12, cursor: canGold && canVen ? "pointer" : "default" }}>
-                        {!canGold ? `Need ${cost.toLocaleString()}g` : !canVen ? `Need ${venCost} Ven` : `⚒️ Temper to +${target}`}
+                      <button onClick={() => temperItem(sel, protectOn)} disabled={!canGold || !canVen} className="go">
+                        {!canGold ? `Need ${cost.toLocaleString()}g` : !canVen ? `Need ${venCost} Ven` : <><Icon name="anvil" size={14} /> Temper to +{target}</>}
                       </button>
                     </div>
                   );
                 })()}
 
                 {temperMode === "reroll" && (() => {
-                  if (!lines.length) return <div style={{ color: "var(--ink-soft)", textAlign: "center", padding: 16, fontSize: 12 }}>This item has no secondary stat lines to reroll.</div>;
+                  if (!lines.length) return <div className="empty">This item has no secondary stat lines to reroll.</div>;
                   const cost = rerollCost(rerolls);
                   const ranges = TEMPER_CFG.reroll.pool.map((s) => rerollRange(sel.ilvl, sel.rarity, s, sel.abyss));
                   const rlo = Math.min(...ranges.map((r) => r[0])), rhi = Math.max(...ranges.map((r) => r[1]));
                   const canGold = char.gold >= cost;
                   return (
-                    <div style={{ background: "var(--sunk)", border: "1px solid var(--bole)", borderRadius: 10, padding: 12 }}>
-                      <div style={{ color: "var(--ink-soft)", fontSize: 11, marginBottom: 10 }}>Reroll a line to a random secondary (Sta/Leech/Resil/Vers/CDR/CritDmg — dupes allowed). New value rolls <b style={{ color: "var(--bole)" }}>{rlo}–{rhi}</b>. Cost this reroll: <b>{cost.toLocaleString()}g</b> ({rerolls} done).</div>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                    <div className={`bench${canGold ? " is-ready" : ""}`}>
+                      <div className="bench-what" style={{ marginTop: 0 }}>
+                        Reroll a line to a random secondary — Stamina, Leech, Resilience, Versatility, Cooldown Reduction or Crit Damage. Duplicates are re-rolled away.
+                      </div>
+                      <div className="bench-cost">
+                        <span className={canGold ? "is-held" : "is-short"}>{cost.toLocaleString()}g</span>
+                        <span>rolls {rlo}–{rhi}</span>
+                        <span>{rerolls} so far</span>
+                      </div>
+                      <div className="ledger" style={{ marginTop: 10, marginBottom: 0 }}>
                         {lines.map((ln, i) => (
-                          <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--sunk)", border: "1px solid var(--bole)", borderRadius: 8, padding: "8px 11px" }}>
-                            <div style={{ flex: 1 }}><span style={{ color: "var(--ink-soft)", fontSize: 12.5, fontWeight: 600 }}>{STAT_LABEL[ln.stat]}</span> <span style={{ color: "var(--ink-soft)", fontSize: 12 }}>+{ln.base + tBonus}</span>{tBonus > 0 && <span style={{ color: "var(--ink-faint)", fontSize: 10 }}> ({ln.base}+{tBonus})</span>}</div>
-                            <button onClick={() => rerollLine(sel, i)} disabled={!canGold} style={{ background: canGold ? "var(--bole)" : "var(--sunk)", border: `1px solid ${canGold ? acc : "var(--gilt)"}`, borderRadius: 7, color: canGold ? acc : "var(--ink-faint)", fontSize: 11.5, fontWeight: 700, padding: "6px 12px", cursor: canGold ? "pointer" : "default" }}>🎲 Reroll</button>
+                          <div key={i} className="ledger-row">
+                            <div className="ledger-line">
+                              <span className="ledger-label">{STAT_LABEL[ln.stat]} <span className="item-meta" style={{ display: "inline" }}>+{ln.base}</span></span>
+                              <span className="ledger-val">
+                                <button onClick={() => rerollLine(sel, i)} disabled={!canGold} className="mini">Reroll</button>
+                              </span>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -9208,53 +9253,64 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           const pcol = "#c08bff";
           return (
             <div>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-                <button onClick={() => setTab("prof")} style={{ background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 8, color: "var(--ink)", fontSize: 12, padding: "6px 12px", cursor: "pointer" }}>← Professions</button>
-                <span style={{ color: pcol, fontFamily: "Georgia, serif", fontSize: 15 }}><Icon name="spark" /> Enchanting</span>
-                <span style={{ color: pcol, fontSize: 12 }}><Icon name="spark" /> {char.materials.dust || 0}</span>
+              <div className="head">
+                <button onClick={() => setTab("prof")} className="head-back">&#8592; Professions</button>
+                <span className="head-title"><Icon name="spark" size={15} /> Enchanting</span>
+                <span className="price"><Icon name="spark" size={11} /> {(char.materials.dust || 0).toLocaleString()}</span>
+              </div>
+              <div className="meter-row">
+                <span>{profRank(prof.level)} · Rank {prof.level}/{PROF_MAX}</span>
+                <span>{prof.xp || 0}/{professionXpForLevel(prof.level)} xp</span>
               </div>
               <div style={{ marginBottom: 12 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                  <span style={{ color: pcol, fontSize: 11, fontWeight: 600 }}>{profRank(prof.level)} · Rank {prof.level}/{PROF_MAX}</span>
-                  <span style={{ color: "var(--ink-faint)", fontSize: 11 }}>{prof.xp || 0}/{professionXpForLevel(prof.level)} xp</span>
-                </div>
-                <Bar current={prof.xp || 0} max={professionXpForLevel(prof.level)} color={pcol} height={6} />
+                <Bar current={prof.xp || 0} max={professionXpForLevel(prof.level)} height={6} />
               </div>
-              {equipped.length === 0 ? <div style={{ color: "var(--ink-faint)", fontSize: 12, textAlign: "center", padding: "24px 0" }}>Equip gear first, then enchant it here.</div> : (
+              {equipped.length === 0 ? <div className="empty">Equip gear first, then enchant it here.</div> : (
                 <>
-                  <div style={{ color: "var(--ink-soft)", fontSize: 10, textTransform: "uppercase", letterSpacing: 1, marginBottom: 5 }}>Gear to enchant</div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
-                    {equipped.map((s) => { const gi = char.equipment[s.id]; const r = rarityById(gi.rarity); return (
-                      <button key={s.id} onClick={() => setEnchantSlot(s.id)} style={{ background: enchantSlot === s.id ? r.color + "33" : "var(--raised)", border: `1.5px solid ${enchantSlot === s.id ? r.color : "var(--hairline)"}`, borderRadius: 8, color: enchantSlot === s.id ? r.color : "var(--ink-soft)", fontSize: 11, fontWeight: 600, padding: "5px 9px", cursor: "pointer" }}>{gi.enchant ? "✨ " : ""}<EmojiIcon emoji={s.icon} /> {s.name}</button>
-                    ); })}
-                  </div>
-                  {it && (
-                    <div style={{ background: "var(--sunk)", border: `1px solid ${rarityById(it.rarity).color}55`, borderRadius: 10, padding: "10px 12px", marginBottom: 12 }}>
-                      <div style={{ color: rarityById(it.rarity).color, fontSize: 12.5, fontWeight: 700 }}>{it.enchant ? "✨ " : ""}{it.name}</div>
-                      <div style={{ color: it.enchant ? "var(--verdigris)" : "var(--ink-faint)", fontSize: 11, marginTop: 2 }}>{it.enchant ? `Current enchant: ${Object.entries(it.enchant).map(([k, v]) => `+${v} ${STAT_LABEL[k]}`).join(", ")}` : "No enchant — enchanting replaces any prior enchant"}</div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 5, fontSize: 10.5 }}>
-                        <span style={{ color: "var(--ink-soft)" }}>Skill XP:</span>
-                        <span style={{ color: "var(--verdigris)", fontWeight: 700 }}>+{craftXp(25, enchantXpTier(it.ilvl))}</span>
-                        {enchantXpTier(it.ilvl) > 0 && <span style={{ color: "var(--gilt)" }}>×{Math.pow(CRAFT_XP_TIER_MULT, enchantXpTier(it.ilvl)).toFixed(1)} · ilvl {it.ilvl}</span>}
-                      </div>
-                    </div>
-                  )}
-                  <div style={{ color: "var(--ink-soft)", fontSize: 10, textTransform: "uppercase", letterSpacing: 1, marginBottom: 5 }}>Random enchant (Arcane Dust)</div>
-                  <button onClick={() => enchantGear(enchantSlot, "dust")} disabled={(char.materials.dust || 0) < ARCANE_ENCHANT_COST}
-                    style={{ width: "100%", marginBottom: 14, background: (char.materials.dust || 0) >= ARCANE_ENCHANT_COST ? `var(--raised)` : "var(--sunk)", border: `2px solid ${(char.materials.dust || 0) >= ARCANE_ENCHANT_COST ? pcol : "var(--gilt)"}`, borderRadius: 10, color: (char.materials.dust || 0) >= ARCANE_ENCHANT_COST ? "var(--ink)" : "var(--ink-faint)", fontSize: 13.5, fontWeight: 700, padding: 12, cursor: (char.materials.dust || 0) >= ARCANE_ENCHANT_COST ? "pointer" : "default" }}>
-                    <Icon name="spark" /> Random Enchant · {ARCANE_ENCHANT_COST} Arcane Dust
-                  </button>
-                  <div style={{ color: "var(--ink-soft)", fontSize: 10, textTransform: "uppercase", letterSpacing: 1, marginBottom: 5 }}>Guaranteed enchant (Dust of Stat) · costs 5 · +{enchantAmount("str", prof.level, (char.equipment[enchantSlot] || {}).abyss)} at your rank{(char.equipment[enchantSlot] || {}).abyss != null ? ` (+${enchantAbyssBonus(char.equipment[enchantSlot].abyss)} from ${abyssLabel(char.equipment[enchantSlot].abyss)})` : ""}</div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    {ENCHANT_STATS.map((s) => { const owned = char.materials[statDustId(s)] || 0; const ok = owned >= 5; const amt = enchantAmount(s, prof.level, (char.equipment[enchantSlot] || {}).abyss); const m = STAT_DUST_META[s]; return (
-                      <button key={s} onClick={() => enchantGear(enchantSlot, statDustId(s))} disabled={!ok}
-                        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: ok ? "var(--sunk)" : "var(--verdigris)", border: `1px solid ${ok ? m.color + "66" : "var(--hairline)"}`, borderRadius: 8, padding: "8px 11px", cursor: ok ? "pointer" : "default" }}>
-                        <span style={{ color: ok ? m.color : "var(--ink-faint)", fontSize: 12, fontWeight: 600 }}><EmojiIcon emoji={m.icon} /> {m.name} <span style={{ color: ok ? "var(--ink-faint)" : "var(--rubric)", fontWeight: 400 }}>{owned}/5</span></span>
-                        <span style={{ color: ok ? "var(--ink)" : "var(--ink-faint)", fontSize: 11.5, fontWeight: 700 }}>+{amt} {STAT_LABEL[s]}</span>
+                  <div className="eyebrow"><span>Gear to enchant</span></div>
+                  <div className="picks">
+                    {equipped.map((s) => { const gi = char.equipment[s.id]; return (
+                      <button key={s.id} onClick={() => setEnchantSlot(s.id)}
+                        className={`pick${enchantSlot === s.id ? " is-on" : ""} ${rarClass(gi.rarity)}`}>
+                        <EmojiIcon emoji={s.icon} size={13} /> {s.name}
                       </button>
                     ); })}
                   </div>
-                  <div style={{ color: "var(--ink-faint)", fontSize: 10, textAlign: "center", marginTop: 10 }}>Enchant strength scales with Enchanting rank, capping at an ilvl-65 roll.</div>
+                  {it && (
+                    <div className="bench">
+                      <div className={`bench-name ${rarClass(it.rarity)}`}>{it.enchant ? "✨ " : ""}{it.name}</div>
+                      <div className="bench-what">
+                        {it.enchant ? `Already enchanted: ${Object.entries(it.enchant).map(([k, v]) => `+${v} ${STAT_LABEL[k]}`).join(", ")} — enchanting again replaces it`
+                                    : "No enchant yet"}
+                      </div>
+                      <div className="bench-cost">
+                        <span>+{craftXp(25, enchantXpTier(it.ilvl))} xp{enchantXpTier(it.ilvl) > 0 ? ` ×${Math.pow(CRAFT_XP_TIER_MULT, enchantXpTier(it.ilvl)).toFixed(1)}` : ""}</span>
+                        <span>ilvl {it.ilvl}</span>
+                      </div>
+                    </div>
+                  )}
+                  <div className="eyebrow"><span>Random enchant</span><span>{ARCANE_ENCHANT_COST} Arcane Dust</span></div>
+                  <button onClick={() => enchantGear(enchantSlot, "dust")} disabled={(char.materials.dust || 0) < ARCANE_ENCHANT_COST}
+                    className="go" style={{ marginTop: 0, marginBottom: 14 }}>
+                    <Icon name="spark" size={14} /> Roll a random enchant
+                  </button>
+                  <div className="eyebrow">
+                    <span>Guaranteed enchant</span>
+                    <span>5 dust of that stat</span>
+                  </div>
+                  <div>
+                    {ENCHANT_STATS.map((s) => { const owned = char.materials[statDustId(s)] || 0; const ok = owned >= 5; const amt = enchantAmount(s, prof.level, (char.equipment[enchantSlot] || {}).abyss); const m = MATERIALS[statDustId(s)]; return (
+                      <button key={s} onClick={() => enchantGear(enchantSlot, statDustId(s))} disabled={!ok} className="item item-tap" style={{ width: "100%" }}>
+                        <span className="mark"><EmojiIcon emoji={m.icon} size={16} /></span>
+                        <span className="item-body">
+                          <span className="item-name">{m.name}</span>
+                          <span className="item-meta">{owned}/5 held</span>
+                        </span>
+                        <span className={ok ? "state is-open" : "state is-shut"}>+{amt} {STAT_LABEL[s]}</span>
+                      </button>
+                    ); })}
+                  </div>
+                  <div className="ledger-note" style={{ textAlign: "center", marginTop: 10 }}>Enchant strength scales with Enchanting rank, capping at an ilvl-65 roll.</div>
                 </>
               )}
             </div>
@@ -9275,44 +9331,56 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           const effText = def.kind === "heal" ? `Restores ${tierHeal(ptier)} HP` : def.kind === "dmgbuff" ? `+${tierBuffPct(ptier)}% damage · 5 min` : def.kind === "reducebuff" ? `−${tierBuffPct(ptier)}% damage taken · 5 min` : `+${tierScrollAmount(ptier)} ${STAT_LABEL[def.stat]} · 1 hour`;
           return (
             <div>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-                <button onClick={() => setTab("prof")} style={{ background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 8, color: "var(--ink)", fontSize: 12, padding: "6px 12px", cursor: "pointer" }}>← Professions</button>
-                <span style={{ color: pcol, fontFamily: "Georgia, serif", fontSize: 15 }}><Icon name="flask" /> Alchemy</span>
-                <span style={{ color: "var(--gilt)", fontSize: 12 }}><Icon name="coin" /> {char.gold}g</span>
+              <div className="head">
+                <button onClick={() => setTab("prof")} className="head-back">&#8592; Professions</button>
+                <span className="head-title"><Icon name="flask" size={15} /> Alchemy</span>
+                <span className="price"><Icon name="coin" size={11} /> {char.gold.toLocaleString()}</span>
+              </div>
+              <div className="meter-row">
+                <span>{profRank(prof.level)} · Rank {prof.level}/{PROF_MAX}</span>
+                <span>{prof.xp || 0}/{professionXpForLevel(prof.level)} xp</span>
               </div>
               <div style={{ marginBottom: 12 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                  <span style={{ color: pcol, fontSize: 11, fontWeight: 600 }}>{profRank(prof.level)} · Rank {prof.level}/{PROF_MAX}</span>
-                  <span style={{ color: "var(--ink-faint)", fontSize: 11 }}>{prof.xp || 0}/{professionXpForLevel(prof.level)} xp</span>
-                </div>
-                <Bar current={prof.xp || 0} max={professionXpForLevel(prof.level)} color={pcol} height={6} />
+                <Bar current={prof.xp || 0} max={professionXpForLevel(prof.level)} height={6} />
               </div>
-              <div style={{ color: "var(--ink-soft)", fontSize: 10, textTransform: "uppercase", letterSpacing: 1, marginBottom: 5 }}>Recipe</div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+
+              <div className="eyebrow"><span>Recipe</span></div>
+              <div className="picks">
                 {CONSUMABLE_DEFS.map((d) => (
-                  <button key={d.id} onClick={() => setBrewPotionId(d.id)} style={{ background: brewPotionId === d.id ? d.color + "33" : "var(--raised)", border: `1.5px solid ${brewPotionId === d.id ? d.color : "var(--hairline)"}`, borderRadius: 8, color: brewPotionId === d.id ? d.color : "var(--ink-soft)", fontSize: 11, fontWeight: 600, padding: "5px 9px", cursor: "pointer" }}><EmojiIcon emoji={d.icon} /> {d.id === "heal" ? "Healing" : d.name.replace("Potion of ", "").replace("Scroll of ", "")}</button>
+                  <button key={d.id} onClick={() => setBrewPotionId(d.id)}
+                    className={`pick${brewPotionId === d.id ? " is-on" : ""}`}>
+                    <EmojiIcon emoji={d.icon} size={13} /> {d.name}
+                  </button>
                 ))}
               </div>
-              <div style={{ color: "var(--ink-soft)", fontSize: 10, textTransform: "uppercase", letterSpacing: 1, marginBottom: 5 }}>Herb — sets potion tier</div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+
+              <div className="eyebrow"><span>Herb — sets the potion's tier</span></div>
+              <div className="picks">
                 {HERB_TIERS.map((h, i) => (
-                  <button key={h.id} onClick={() => setBrewHerbIdx(i)} style={{ background: brewHerbIdx === i ? h.color + "33" : "var(--raised)", border: `1.5px solid ${brewHerbIdx === i ? h.color : "var(--hairline)"}`, borderRadius: 8, color: brewHerbIdx === i ? h.color : "var(--ink-soft)", fontSize: 11, fontWeight: 600, padding: "5px 9px", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><EmojiIcon emoji={h.icon} /> {h.name} <span style={{ color: (char.materials[h.id] || 0) > 0 ? "var(--ink-soft)" : "var(--ink-faint)", fontSize: 10 }}>×{char.materials[h.id] || 0}</span></button>
+                  <button key={h.id} onClick={() => setBrewHerbIdx(i)}
+                    className={`pick${brewHerbIdx === i ? " is-on" : ""}`}>
+                    <EmojiIcon emoji={h.icon} size={13} /> {h.name} <small>{char.materials[h.id] || 0}</small>
+                  </button>
                 ))}
               </div>
-              <div style={{ background: "var(--sunk)", border: `1px solid ${pcol}44`, borderRadius: 10, padding: "11px 13px", marginBottom: 12 }}>
-                <div style={{ color: def.color, fontSize: 13, fontWeight: 700, marginBottom: 3 }}>{def.name} {POTION_TIER_ROMAN[ptier]} {qty > 1 && <span style={{ color: "var(--ink-soft)", fontWeight: 400 }}>×{qty}</span>}</div>
-                <div style={{ color: "var(--ink-soft)", fontSize: 11.5, marginBottom: 5 }}>{effText}</div>
-                <div style={{ color: "var(--ink-soft)", fontSize: 11.5 }}>Cost: <span style={{ color: herb.color }}>{herbCost} {herb.name}</span> · <span style={{ color: supDef.color }}>{qty} {supDef.name}</span> <span style={{ color: supOwned >= qty ? "var(--verdigris)" : "var(--rubric)" }}>({supOwned})</span> · <span style={{ color: "var(--gilt)" }}>{goldCost}g</span></div>
-                <div style={{ color: "var(--ink-faint)", fontSize: 10, marginTop: 4 }}>Brewed potions keep this tier permanently — they won't upgrade as you level.</div>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 5, fontSize: 10.5 }}>
-                  <span style={{ color: "var(--ink-soft)" }}>Skill XP:</span>
-                  <span style={{ color: "var(--verdigris)", fontWeight: 700 }}>+{craftXp(20, brewHerbIdx)}</span>
-                  {brewHerbIdx > 0 && <span style={{ color: "var(--gilt)" }}>×{Math.pow(CRAFT_XP_TIER_MULT, brewHerbIdx).toFixed(1)} tier bonus</span>}
+
+              <div className={`bench${canBrew ? " is-ready" : ""}`}>
+                <div className="bench-name">
+                  {def.name} {POTION_TIER_ROMAN[ptier]}{qty > 1 ? <span className="item-meta" style={{ display: "inline", marginLeft: 6 }}>×{qty}</span> : null}
                 </div>
+                <div className="bench-what">{effText}</div>
+                <div className="bench-cost">
+                  <span className={owned >= herbCost ? "is-held" : "is-short"}>{herbCost} {herb.name}</span>
+                  <span className={supOwned >= qty ? "is-held" : "is-short"}>{qty} {supDef.name}</span>
+                  <span className={char.gold >= goldCost ? "is-held" : "is-short"}>{goldCost}g</span>
+                  <span>+{craftXp(20, brewHerbIdx)} xp{brewHerbIdx > 0 ? ` ×${Math.pow(CRAFT_XP_TIER_MULT, brewHerbIdx).toFixed(1)}` : ""}</span>
+                </div>
+                <div className="ledger-note" style={{ marginTop: 6 }}>Brewed potions keep this tier permanently — they will not upgrade as you level.</div>
               </div>
-              <button onClick={brewPotion} disabled={!canBrew}
-                style={{ width: "100%", background: canBrew ? `var(--raised)` : "var(--sunk)", border: `2px solid ${canBrew ? pcol : "var(--gilt)"}`, borderRadius: 12, color: canBrew ? "var(--ink)" : "var(--ink-faint)", fontSize: 15, fontWeight: 700, padding: 15, cursor: canBrew ? "pointer" : "default" }}>
-                <Icon name="flask" /> Brew {def.name} {POTION_TIER_ROMAN[ptier]} {owned < herbCost ? `(need ${herbCost} ${herb.name})` : supOwned < qty ? `(need ${qty} ${supDef.name})` : char.gold < goldCost ? `(need ${goldCost}g)` : ""}
+
+              <button onClick={brewPotion} disabled={!canBrew} className="go">
+                <Icon name="flask" size={14} /> Brew {def.name} {POTION_TIER_ROMAN[ptier]}
+                {owned < herbCost ? ` — need ${herbCost} ${herb.name}` : supOwned < qty ? ` — need ${qty} ${supDef.name}` : char.gold < goldCost ? ` — need ${goldCost}g` : ""}
               </button>
             </div>
           );
@@ -9330,46 +9398,57 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           const pcol = "#C79C6E";
           return (
             <div>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-                <button onClick={() => setTab("prof")} style={{ background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 8, color: "var(--ink)", fontSize: 12, padding: "6px 12px", cursor: "pointer" }}>← Professions</button>
-                <span style={{ color: pcol, fontFamily: "Georgia, serif", fontSize: 15 }}><Icon name="anvil" /> Armorsmith</span>
-                <span style={{ color: "var(--gilt)", fontSize: 12 }}><Icon name="coin" /> {char.gold}g</span>
+              <div className="head">
+                <button onClick={() => setTab("prof")} className="head-back">&#8592; Professions</button>
+                <span className="head-title"><Icon name="anvil" size={15} /> Armorsmith</span>
+                <span className="price"><Icon name="coin" size={11} /> {char.gold.toLocaleString()}</span>
+              </div>
+              <div className="meter-row">
+                <span>{profRank(prof.level)} · Rank {prof.level}/{PROF_MAX}</span>
+                <span>{prof.xp || 0}/{professionXpForLevel(prof.level)} xp</span>
               </div>
               <div style={{ marginBottom: 12 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                  <span style={{ color: pcol, fontSize: 11, fontWeight: 600 }}>{profRank(prof.level)} · Rank {prof.level}/{PROF_MAX}</span>
-                  <span style={{ color: "var(--ink-faint)", fontSize: 11 }}>{prof.xp || 0}/{professionXpForLevel(prof.level)} xp</span>
-                </div>
-                <Bar current={prof.xp || 0} max={professionXpForLevel(prof.level)} color={pcol} height={6} />
+                <Bar current={prof.xp || 0} max={professionXpForLevel(prof.level)} height={6} />
               </div>
-              <div style={{ color: "var(--ink-soft)", fontSize: 10, textTransform: "uppercase", letterSpacing: 1, marginBottom: 5 }}>Gear slot</div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+
+              <div className="eyebrow"><span>Gear slot</span></div>
+              <div className="picks">
                 {ARMOR_CRAFT_SLOTS.map((sid) => (
-                  <button key={sid} onClick={() => setForgeSlot(sid)} style={{ background: forgeSlot === sid ? pcol + "33" : "var(--raised)", border: `1.5px solid ${forgeSlot === sid ? pcol : "var(--hairline)"}`, borderRadius: 8, color: forgeSlot === sid ? "var(--ink)" : "var(--ink-soft)", fontSize: 11, fontWeight: 600, padding: "5px 9px", cursor: "pointer" }}>{slotById(sid).icon} {slotById(sid).name}</button>
+                  <button key={sid} onClick={() => setForgeSlot(sid)}
+                    className={`pick${forgeSlot === sid ? " is-on" : ""}`}>
+                    <EmojiIcon emoji={slotById(sid).icon} size={13} /> {slotById(sid).name}
+                  </button>
                 ))}
               </div>
-              <div style={{ color: "var(--ink-soft)", fontSize: 10, textTransform: "uppercase", letterSpacing: 1, marginBottom: 5 }}>Ore — determines rarity</div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+
+              <div className="eyebrow"><span>Ore — determines rarity</span></div>
+              <div className="picks">
                 {ORE_TIERS.map((t, i) => (
-                  <button key={t.id} onClick={() => setForgeOre(i)} style={{ background: forgeOre === i ? t.color + "33" : "var(--raised)", border: `1.5px solid ${forgeOre === i ? t.color : "var(--hairline)"}`, borderRadius: 8, color: forgeOre === i ? t.color : "var(--ink-soft)", fontSize: 11, fontWeight: 600, padding: "5px 9px", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><EmojiIcon emoji={t.icon} /> {t.name.replace(" Ore", "")} <span style={{ color: (char.materials[t.id] || 0) > 0 ? "var(--ink-soft)" : "var(--ink-faint)", fontSize: 10 }}>×{char.materials[t.id] || 0}</span></button>
+                  <button key={t.id} onClick={() => setForgeOre(i)}
+                    className={`pick${forgeOre === i ? " is-on" : ""}`}>
+                    <EmojiIcon emoji={t.icon} size={13} /> {t.name} <small>{char.materials[t.id] || 0}</small>
+                  </button>
                 ))}
               </div>
-              <div style={{ background: "var(--sunk)", border: `1px solid ${pcol}44`, borderRadius: 10, padding: "11px 13px", marginBottom: 12 }}>
-                <div style={{ color: "var(--bole)", fontSize: 12.5, fontWeight: 700, marginBottom: 4 }}>Craft: {slotById(forgeSlot).icon} {slotById(forgeSlot).name} · Item Level {ilvl}</div>
-                <div style={{ color: "var(--ink-soft)", fontSize: 11.5, marginBottom: 6 }}>Cost: <span style={{ color: tier.color }}>{oreCost} {tier.name}</span> · <span style={{ color: "var(--gilt)" }}>{goldCost}g</span></div>
-                <div style={{ fontSize: 11.5, display: "flex", flexWrap: "wrap", gap: "2px 10px" }}>
-                  <span style={{ color: "var(--ink-soft)" }}>Rarity odds:</span>
-                  {rates.map(([rid, w]) => <span key={rid} style={{ color: rarityById(rid).color, fontWeight: 600 }}>{Math.round((w / totalW) * 100)}% {rarityById(rid).name}</span>)}
+
+              <div className={`bench${canCraft ? " is-ready" : ""}`}>
+                <div className="bench-name"><EmojiIcon emoji={slotById(forgeSlot).icon} size={16} /> {slotById(forgeSlot).name}</div>
+                <div className="bench-what">Item level {ilvl}</div>
+                <div className="bench-cost">
+                  <span className={owned >= oreCost ? "is-held" : "is-short"}>{oreCost} {tier.name}</span>
+                  <span className={char.gold >= goldCost ? "is-held" : "is-short"}>{goldCost.toLocaleString()}g</span>
+                  <span>+{craftXp(25, forgeOre)} xp{forgeOre > 0 ? ` ×${Math.pow(CRAFT_XP_TIER_MULT, forgeOre).toFixed(1)}` : ""}</span>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, fontSize: 10.5 }}>
-                  <span style={{ color: "var(--ink-soft)" }}>Skill XP:</span>
-                  <span style={{ color: "var(--verdigris)", fontWeight: 700 }}>+{craftXp(25, forgeOre)}</span>
-                  {forgeOre > 0 && <span style={{ color: "var(--gilt)" }}>×{Math.pow(CRAFT_XP_TIER_MULT, forgeOre).toFixed(1)} tier bonus</span>}
+                <div className="bench-cost">
+                  {rates.map(([rid, w]) => (
+                    <span key={rid} className={rarClass(rid)}>{Math.round((w / totalW) * 100)}% {rarityById(rid).name}</span>
+                  ))}
                 </div>
               </div>
-              <button onClick={forge} disabled={!canCraft}
-                style={{ width: "100%", background: canCraft ? `var(--raised)` : "var(--sunk)", border: `2px solid ${canCraft ? pcol : "var(--gilt)"}`, borderRadius: 12, color: canCraft ? "var(--ink)" : "var(--ink-faint)", fontSize: 15, fontWeight: 700, padding: 15, cursor: canCraft ? "pointer" : "default" }}>
-                <Icon name="anvil" /> Forge {slotById(forgeSlot).name} {owned < oreCost ? `(need ${oreCost} ${tier.name.replace(" Ore", "")})` : char.gold < goldCost ? `(need ${goldCost}g)` : ""}
+
+              <button onClick={forge} disabled={!canCraft} className="go">
+                <Icon name="anvil" size={14} /> Forge {slotById(forgeSlot).name}
+                {owned < oreCost ? ` — need ${oreCost} ${tier.name.replace(" Ore", "")}` : char.gold < goldCost ? ` — need ${goldCost.toLocaleString()}g` : ""}
               </button>
 
               {/* Souls raise a craft to a hard-mode item level. Ordinary forging caps at 63, which
@@ -9412,20 +9491,20 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           const items = [...char.inventory].filter((it) => it.slotId !== "relic" && !it.relicId && Math.max(0, RARITIES.findIndex((r) => r.id === it.rarity)) >= SALVAGE_MIN_RARITY).sort((a, b) => b.ilvl - a.ilvl || itemScore(b, char.cls) - itemScore(a, char.cls));
           return (
             <div>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-                <button onClick={() => setTab("prof")} style={{ background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 8, color: "var(--ink)", fontSize: 12, padding: "6px 12px", cursor: "pointer" }}>← Professions</button>
-                <span style={{ color: pdef.color, fontFamily: "Georgia, serif", fontSize: 15 }}><EmojiIcon emoji={pdef.icon} /> Salvage</span>
-                <span style={{ color: "var(--rar-epic)", fontSize: 12, display: "flex", alignItems: "center", gap: 4 }}><Icon name="spark" /> {char.materials.dust || 0}</span>
+              <div className="head">
+                <button onClick={() => setTab("prof")} className="head-back">&#8592; Professions</button>
+                <span className="head-title"><EmojiIcon emoji={pdef.icon} size={15} /> Salvage</span>
+                <span className="price"><Icon name="spark" size={11} /> {(char.materials.dust || 0).toLocaleString()}</span>
+              </div>
+              <div className="meter-row">
+                <span>{profRank(prof.level)} · Rank {prof.level}/{PROF_MAX}</span>
+                <span>{prof.xp || 0}/{professionXpForLevel(prof.level)} xp</span>
               </div>
               <div style={{ marginBottom: 12 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                  <span style={{ color: pdef.color, fontSize: 11, fontWeight: 600 }}>{profRank(prof.level)} · Rank {prof.level}/{PROF_MAX}</span>
-                  <span style={{ color: "var(--ink-faint)", fontSize: 11 }}>{prof.xp || 0}/{professionXpForLevel(prof.level)} xp</span>
-                </div>
-                <Bar current={prof.xp || 0} max={professionXpForLevel(prof.level)} color={pdef.color} height={6} />
+                <Bar current={prof.xp || 0} max={professionXpForLevel(prof.level)} height={6} />
               </div>
-              <div style={{ color: "var(--ink-soft)", fontSize: 11, marginBottom: 10 }}>Break down uncommon+ gear into Arcane Dust (costs gold). A rare chance also yields a “Dust of &lt;stat&gt;” for guaranteed enchants.</div>
-              {items.length === 0 && <div style={{ color: "var(--ink-faint)", fontSize: 12, textAlign: "center", padding: "24px 0" }}>No uncommon+ gear to salvage.</div>}
+              <div className="ledger-note" style={{ marginBottom: 10 }}>Break down uncommon-or-better gear into Arcane Dust, for gold. A rare roll also yields a Dust of Stat.</div>
+              {items.length === 0 && <div className="empty">No uncommon+ gear to salvage.</div>}
               <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
                 {items.map((it) => {
                   const dust = salvageReward(it); const cost = salvageGoldCost(it); const afford = char.gold >= cost;
@@ -9453,17 +9532,16 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           const node = gatherNode;
           return (
             <div>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-                <button onClick={() => setTab("prof")} style={{ background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 8, color: "var(--ink)", fontSize: 12, padding: "6px 12px", cursor: "pointer" }}>← Professions</button>
-                <span style={{ color: pdef.color, fontFamily: "Georgia, serif", fontSize: 15 }}><EmojiIcon emoji={pdef.icon} /> {pdef.name}</span>
-                <span style={{ width: 76 }} />
+              <div className="head">
+                <button onClick={() => setTab("prof")} className="head-back">&#8592; Professions</button>
+                <span className="head-title"><EmojiIcon emoji={pdef.icon} size={15} /> {pdef.name}</span>
+              </div>
+              <div className="meter-row">
+                <span>{profRank(prof.level)} · Rank {prof.level}/{PROF_MAX}</span>
+                <span>{prof.xp || 0}/{professionXpForLevel(prof.level)} xp</span>
               </div>
               <div style={{ marginBottom: 14 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                  <span style={{ color: pdef.color, fontSize: 11, fontWeight: 600 }}>{profRank(prof.level)} · Rank {prof.level}/{PROF_MAX}</span>
-                  <span style={{ color: "var(--ink-faint)", fontSize: 11 }}>{prof.xp || 0}/{professionXpForLevel(prof.level)} xp</span>
-                </div>
-                <Bar current={prof.xp || 0} max={professionXpForLevel(prof.level)} color={pdef.color} height={6} />
+                <Bar current={prof.xp || 0} max={professionXpForLevel(prof.level)} height={6} />
               </div>
               {GATHER_TIERS[gatherId] && (() => {
                 const tiers = GATHER_TIERS[gatherId];
@@ -9472,20 +9550,27 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                 const nextLocked = tiers[highestTierIdx(tiers, gLvl) + 1];
                 const label = gatherId === "mining" ? "Ore vein" : "Herb patch";
                 return (
-                  <div style={{ marginBottom: 12 }}>
-                    <div style={{ color: "var(--ink-soft)", fontSize: 10, textTransform: "uppercase", letterSpacing: 1, marginBottom: 5 }}>{label} · pick any unlocked tier</div>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  <div>
+                    <div className="eyebrow"><span>{label} — pick any unlocked tier</span></div>
+                    <div className="picks">
                       {unlocked.map(({ t, i }) => (
-                        <button key={t.id} onClick={() => selectGatherTier(i)} style={{ background: gatherTierIdx === i ? t.color + "33" : "var(--raised)", border: `1.5px solid ${gatherTierIdx === i ? t.color : "var(--hairline)"}`, borderRadius: 8, color: gatherTierIdx === i ? t.color : "var(--ink-soft)", fontSize: 11, fontWeight: 600, padding: "5px 9px", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><EmojiIcon emoji={t.icon} /> {t.name.replace(" Ore", "")}</button>
+                        <button key={t.id} onClick={() => selectGatherTier(i)}
+                          className={`pick${gatherTierIdx === i ? " is-on" : ""}`}>
+                          <EmojiIcon emoji={t.icon} size={13} /> {t.name}
+                        </button>
                       ))}
-                      {nextLocked && <span style={{ color: "var(--ink-faint)", fontSize: 9.5, alignSelf: "center" }}><Icon name="lock" /> {nextLocked.name.replace(" Ore", "")} @ rank {nextLocked.unlock}</span>}
+                      {nextLocked && (
+                        <span className="pick is-shut">
+                          <Icon name="lock" size={11} /> {nextLocked.name.replace(" Ore", "")} <small>rank {nextLocked.unlock}</small>
+                        </span>
+                      )}
                     </div>
                   </div>
                 );
               })()}
-              <div style={{ background: "var(--sunk)", border: `1px solid ${pdef.color}55`, borderRadius: 12, padding: 20, textAlign: "center", marginBottom: 14 }}>
-                <div style={{ fontSize: 64, marginBottom: 6 }}>{node?.icon}</div>
-                <div style={{ color: "var(--bole)", fontSize: 15, fontWeight: 700, fontFamily: "Georgia, serif", marginBottom: 10 }}>{node?.name || "—"}</div>
+              <div className="bench" style={{ textAlign: "center", padding: 20 }}>
+                <div style={{ marginBottom: 6 }}><EmojiIcon emoji={node?.icon} size={48} /></div>
+                <div className="bench-name" style={{ marginBottom: 10 }}>{node?.name || "—"}</div>
                 <Bar current={Math.max(0, node?.hp || 0)} max={node?.maxHp || 1} color={pdef.color} height={11} label={`${Math.max(0, Math.ceil(node?.hp || 0))}/${node?.maxHp || 0}`} />
                 <div style={{ height: 18, marginTop: 8 }}>{gatherFlash && <span style={{ color: "var(--verdigris)", fontSize: 13, fontWeight: 700 }}>{gatherFlash}</span>}</div>
               </div>
@@ -9525,17 +9610,21 @@ function GameScreen({ character: initChar, onSave, onBack }) {
 
         {tab === "prof" && (
           <div>
-            {/* materials summary (collapsible) */}
-            <div onClick={() => setMatsOpen((o) => !o)} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", marginBottom: 8 }}>
-              <span style={{ color: "var(--ink-soft)", fontSize: 11, textTransform: "uppercase", letterSpacing: 1 }}>Materials</span>
-              <span style={{ color: "var(--ink-faint)", fontSize: 11 }}>{matsOpen ? "▾ hide" : "▸ show"}</span>
+            {/* What you hold. Both stores were rows of chips tinted with each
+                material's own data colour — fifty small colours across two rows,
+                on a screen whose whole job is telling you whether you have
+                enough of something. The count is what matters, so the count is
+                what is written; a chip you hold nothing of is faded. */}
+            <div className="eyebrow">
+              <span>Materials</span>
+              <button onClick={() => setMatsOpen((o) => !o)} className="link">{matsOpen ? "hide" : "show"}</button>
             </div>
             {matsOpen && (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
+              <div className="picks">
                 {Object.entries(MATERIALS).map(([k, m]) => (
-                  <div key={k} style={{ background: "var(--sunk)", border: "1px solid var(--hairline)", borderRadius: 8, padding: "5px 9px", fontSize: 11, color: (char.materials[k] || 0) > 0 ? "var(--ink)" : "var(--ink-faint)", display: "flex", gap: 4, alignItems: "center" }}>
-                    <span><EmojiIcon emoji={m.icon} /></span><span>{m.name}</span><span style={{ color: m.color, fontWeight: 700 }}>{char.materials[k] || 0}</span>
-                  </div>
+                  <span key={k} className={`pick${(char.materials[k] || 0) > 0 ? " is-on" : " is-shut"}`}>
+                    <EmojiIcon emoji={m.icon} size={13} /> {m.name} <small>{char.materials[k] || 0}</small>
+                  </span>
                 ))}
               </div>
             )}
@@ -9543,26 +9632,26 @@ function GameScreen({ character: initChar, onSave, onBack }) {
             {/* enemy drops — quest & town-building materials (collapsible) */}
             {(() => { const owned = Object.entries(char.drops || {}).filter(([, v]) => v > 0); return (
               <>
-                <div onClick={() => setDropsOpen((o) => !o)} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", marginBottom: 8 }}>
-                  <span style={{ color: "var(--ink-soft)", fontSize: 11, textTransform: "uppercase", letterSpacing: 1 }}>Loot Drops <span style={{ color: "var(--ink-faint)" }}>({owned.length})</span></span>
-                  <span style={{ color: "var(--ink-faint)", fontSize: 11 }}>{dropsOpen ? "▾ hide" : "▸ show"}</span>
+                <div className="eyebrow">
+                  <span>Loot drops · {owned.length}</span>
+                  <button onClick={() => setDropsOpen((o) => !o)} className="link">{dropsOpen ? "hide" : "show"}</button>
                 </div>
                 {dropsOpen && (
                   owned.length === 0
-                    ? <div style={{ color: "var(--ink-faint)", fontSize: 11, marginBottom: 14 }}>Slay enemies to collect their drops — saved for the coming quest & town-building systems.</div>
-                    : <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
+                    ? <div className="ledger-note" style={{ marginBottom: 14 }}>Slay enemies to collect their drops — saved for the coming quest and town-building systems.</div>
+                    : <div className="picks">
                         {owned.map(([k, v]) => { const d = DROP_BY_ID[k]; if (!d) return null; return (
-                          <div key={k} style={{ background: "var(--sunk)", border: "1px solid var(--hairline)", borderRadius: 8, padding: "5px 9px", fontSize: 11, color: "var(--ink)", display: "flex", gap: 4, alignItems: "center" }}>
-                            <span><EmojiIcon emoji={d.icon} /></span><span>{d.name}</span><span style={{ color: d.color, fontWeight: 700 }}>{v}</span>
-                          </div>
+                          <span key={k} className="pick is-on">
+                            <EmojiIcon emoji={d.icon} size={13} /> {d.name} <small>{v}</small>
+                          </span>
                         ); })}
                       </div>
                 )}
               </>
             ); })()}
 
-            <div style={{ color: "var(--ink-soft)", fontSize: 11, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Professions</div>
-            <div style={{ color: "var(--ink-faint)", fontSize: 11, marginBottom: 12 }}>Learn and train every profession. Only one gatherer trains AFK at a time; open a gatherer to actively mine/harvest for faster materials. Crafting/enchanting has a base cost of skill × 10 gold.</div>
+            <div className="eyebrow"><span>Professions</span></div>
+            <div className="ledger-note" style={{ marginBottom: 12 }}>Learn and train every profession. Only one gatherer trains while you are away; open a gatherer to make it the active one.</div>
             {PROFESSIONS.map((prof) => {
               const data = char.professions[prof.id];
               const learned = !!data;
@@ -9570,51 +9659,36 @@ function GameScreen({ character: initChar, onSave, onBack }) {
               const canLearn = !learned;
               const goldBase = learned ? data.level * 10 : 0;
               return (
-                <div key={prof.id} style={{ background: learned ? "var(--raised)" : "var(--verdigris)", border: `1px solid ${active ? prof.color : learned ? "var(--hairline)" : "var(--ink)"}`, borderRadius: 10, padding: "12px 13px", marginBottom: 10 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <div onClick={() => { if (prof.id === "mining" || prof.id === "herbalism") startGathering(prof.id); else if (prof.id === "salvage") setTab("salvage"); else if (prof.id === "armorsmith") setTab("forge"); else if (prof.id === "alchemy") setTab("brewery"); else if (prof.id === "enchanting") setTab("enchanting"); }}
-                      style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0, cursor: (prof.type === "gathering" || prof.id === "armorsmith" || prof.id === "alchemy" || prof.id === "enchanting") ? "pointer" : "default" }}>
-                      <div style={{ fontSize: 24 }}><EmojiIcon emoji={prof.icon} /></div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                          <span style={{ color: "var(--ink)", fontWeight: 700, fontSize: 13 }}>{prof.name}</span>
-                          <span style={{ color: "var(--ink-faint)", fontSize: 10, background: "var(--raised)", borderRadius: 6, padding: "1px 6px" }}>{prof.type}</span>
-                          {(prof.id === "mining" || prof.id === "herbalism") && <span style={{ color: prof.color, fontSize: 9.5 }}>› tap to {GATHER_NODES[prof.id].verb}</span>}
-                          {prof.id === "salvage" && <span style={{ color: prof.color, fontSize: 9.5 }}>› tap to Salvage</span>}
-                          {prof.id === "armorsmith" && <span style={{ color: prof.color, fontSize: 9.5 }}>› tap to Forge</span>}
-                          {prof.id === "alchemy" && <span style={{ color: prof.color, fontSize: 9.5 }}>› tap to Brew</span>}
-                          {prof.id === "enchanting" && <span style={{ color: prof.color, fontSize: 9.5 }}>› tap to Enchant</span>}
-                        </div>
-                        <div style={{ color: "var(--ink-faint)", fontSize: 11 }}>{prof.desc}</div>
-                      </div>
-                    </div>
-                    {prof.type === "gathering" && <MiniBtn onClick={() => toggleProfession(prof.id)} color={active ? prof.color : "#888"} bg={active ? prof.color + "22" : "#1a1a2e"}>{active ? "⏸ Pause" : ((char.professions[prof.id]?.level || 1) >= PROF_MAX ? "▶ Idle Gather" : "▶ Idle Train")}</MiniBtn>}
+                <div key={prof.id} className={`dest${active ? " is-here" : ""}${learned ? "" : " is-shut"}`}>
+                  <div className="dest-head">
+                    {/* The whole row is the way in, except the pause control. Which room
+                        it opens is data on the profession, not five branches here. */}
+                    <button onClick={() => { const to = PROF_ROOM[prof.id]; if (to === "gather") startGathering(prof.id); else if (to) setTab(to); }}
+                      disabled={!PROF_ROOM[prof.id]} className="item-tap" style={{ alignItems: "center" }}>
+                      <span className="mark"><EmojiIcon emoji={prof.icon} size={20} /></span>
+                      <span className="dest-body">
+                        <span className="dest-name">
+                          {prof.name}
+                          <span className="chip">{prof.type}</span>
+                          {PROF_ROOM[prof.id] && <span className="state">{PROF_VERB[prof.id] || "open"}</span>}
+                        </span>
+                        <span className="item-meta">{prof.desc}</span>
+                      </span>
+                    </button>
+                    {prof.type === "gathering" && (
+                      <MiniBtn onClick={() => toggleProfession(prof.id)} tone={active ? "gain" : undefined}>
+                        {active ? "Pause" : ((char.professions[prof.id]?.level || 1) >= PROF_MAX ? "Idle gather" : "Idle train")}
+                      </MiniBtn>
+                    )}
                   </div>
 
                   {learned && (
-                    <div style={{ marginTop: 10 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                        <span style={{ color: prof.color, fontSize: 11, fontWeight: 600 }}>{profRank(data.level)} ({data.level}/{PROF_MAX})</span>
-                        {active && prof.type === "gathering" && <span style={{ color: "var(--ink-soft)", fontSize: 11 }}><Icon name="gear" /> Gathering…</span>}
+                    <div className="dest-bar">
+                      <div className="meter-row">
+                        <span>{profRank(data.level)} · {data.level}/{PROF_MAX}</span>
+                        {active && prof.type === "gathering" && <span className="state is-open">gathering</span>}
                       </div>
-                      <Bar current={data.xp || 0} max={professionXpForLevel(data.level)} color={prof.color} height={6} />
-
-                      {/* Crafting panels */}
-                      {prof.id === "armorsmith" && (
-                        <div style={{ marginTop: 10 }}>
-                          <button onClick={() => setTab("forge")} style={{ width: "100%", background: `var(--raised)`, border: `1.5px solid ${prof.color}`, borderRadius: 8, color: prof.color, fontSize: 12.5, fontWeight: 700, padding: 9, cursor: "pointer" }}><Icon name="anvil" /> Open Armorsmith</button>
-                        </div>
-                      )}
-                      {prof.id === "alchemy" && (
-                        <div style={{ marginTop: 10 }}>
-                          <button onClick={() => setTab("brewery")} style={{ width: "100%", background: `var(--raised)`, border: `1.5px solid ${prof.color}`, borderRadius: 8, color: prof.color, fontSize: 12.5, fontWeight: 700, padding: 9, cursor: "pointer" }}><Icon name="flask" /> Open Alchemy</button>
-                        </div>
-                      )}
-                      {prof.id === "enchanting" && (
-                        <div style={{ marginTop: 10 }}>
-                          <button onClick={() => setTab("enchanting")} style={{ width: "100%", background: `var(--raised)`, border: `1.5px solid ${prof.color}`, borderRadius: 8, color: prof.color, fontSize: 12.5, fontWeight: 700, padding: 9, cursor: "pointer" }}><Icon name="spark" /> Open Enchanting</button>
-                        </div>
-                      )}
+                      <Bar current={data.xp || 0} max={professionXpForLevel(data.level)} height={6} />
                     </div>
                   )}
                 </div>

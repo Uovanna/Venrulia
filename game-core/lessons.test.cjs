@@ -119,10 +119,15 @@ js += `
       // a literal call: when the market became data-driven, this grep started
       // reporting four perfectly reachable panels as unreachable.
       const stallDests = new Set(MARKET_STALLS.map((st) => st.dest));
+      // Same again for the Crafting Hall: its five rooms are opened from PROF_ROOM
+      // rather than five if/else branches, so grepping for the literal call reported
+      // salvage, forge, brewery and enchanting as unreachable the moment that
+      // refactor landed. Read the table — that is the whole point of it being one.
+      const roomDests = new Set(Object.values(PROF_ROOM));
       const reachable = (k) => new RegExp('setTab\\\\("' + k + '"\\\\)').test(src)
         || new RegExp('setBagTab\\\\("' + k + '"\\\\)').test(src)
         || new RegExp('bagTab === "' + k + '"').test(src)
-        || townDests.has(k) || stallDests.has(k);
+        || townDests.has(k) || stallDests.has(k) || roomDests.has(k);
       ok(keys.length > 0 && keys.every(reachable),
          l.id + " waits on a panel the game can open (" + keys.join(", ") + ")");
     }
@@ -258,10 +263,12 @@ js += `
     // Bank's sub-tabs already needed, and it is the honest one: a destination that
     // only exists inside a JSX callback cannot be checked by anything.
     const stallDests2 = new Set(MARKET_STALLS.map((st) => st.dest));
+    // And the Crafting Hall's five rooms, for the same reason.
+    const roomDests2 = new Set(Object.values(PROF_ROOM));
     const seenWriter = (k) => outside.indexOf('setTab("' + k + '")') > 0
       || outside.indexOf('setBagTab("' + k + '")') > 0
       || outside.indexOf('bagTab === "' + k + '"') > 0
-      || townDests.has(k) || stallDests2.has(k);
+      || townDests.has(k) || stallDests2.has(k) || roomDests2.has(k);
     const fieldWriter = (k) => new RegExp("\\\\b" + k + ":\\\\s*true").test(outside)
       || new RegExp("\\\\[" + k + "\\\\]:\\\\s*true").test(outside)
       || new RegExp("\\\\." + k + "\\\\s*=[^=]").test(outside)
@@ -412,6 +419,10 @@ js += `
     edges.bag = [...new Set([...(edges.bag || []), ...bagIds])];
     // Same for the market's stalls.
     edges.market = [...new Set([...(edges.market || []), ...MARKET_STALLS.map((st) => st.dest)])];
+    // …and the Crafting Hall's rooms, which PROF_ROOM opens. "gather" is not a tab:
+    // it is startGathering, which sets tab "gathering", so it maps to that.
+    edges.prof = [...new Set([...(edges.prof || []),
+      ...Object.values(PROF_ROOM).map((d) => (d === "gather" ? "gathering" : d))])];
     // The town map opens any building directly, and the bottom bar always offers these.
     const ALWAYS = new Set([...TOWN_SPOTS.map((s) => s.dest), "town", "mail", "premium", "combat"]);
 

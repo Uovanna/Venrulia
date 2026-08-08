@@ -149,7 +149,14 @@ sec("Nothing paints its own colour any more");
     }
     styleBlocks.push(app.slice(j, k)); i = k;
   }
-  ok(styleBlocks.length > 1000, `${styleBlocks.length} inline style blocks scanned`);
+  // A floor of "more than a thousand" was a sanity check on the SCANNER, written
+  // when there were 1,700 of these. The conversion has since driven the file
+  // under it, so the check had started failing on success. What it actually
+  // needs to prove is that the brace-walk found every block, which is a ratio
+  // and does not rot as the number falls.
+  const occurrences = (app.match(/style=\{\{/g) || []).length;
+  ok(styleBlocks.length === occurrences,
+     `the brace-walk found all ${occurrences} inline style blocks (got ${styleBlocks.length})`);
 
   const withHex = styleBlocks.filter((b) => /#[0-9a-fA-F]{3,8}\b/.test(b));
   ok(withHex.length === 0, withHex.length
@@ -534,6 +541,44 @@ sec("Portraits are drawn, and the sheets are furnished");
   ok(/const addLog = useCallback\(\(text\) =>/.test(app), "…so addLog no longer takes one");
   const tinted = (app.match(/addLog\([^;]*?, "#[0-9a-fA-F]{6}"\)/g) || []);
   ok(tinted.length === 0, tinted.length ? `${tinted.length} calls still pass a dead colour` : "…and no call still passes one");
+}
+
+sec("Six workshops, one bench");
+{
+  // The Tempering Forge, the Crafting Hall and its four rooms are the same
+  // screen — pick your materials, read what they will make, make it — written
+  // six times. Each tinted its own choices with the material's data colour, so
+  // the Forge was brown, the Brewery purple and the Enchanter blue: a lot of
+  // paint for one verb.
+  ok(panels.includes(".pick {"), "panels.css defines a material you can pick");
+  ok(panels.includes(".bench {"), "…and the bench it all adds up to");
+  ok(app.split('className={`pick').length - 1 >= 5, "every workshop picks the same way");
+  ok(app.split('className={`bench').length - 1 >= 4, "…and reports on the same bench");
+  // The tell for the old version: a data colour with an alpha suffix glued on.
+  ok(!/\.color \+ "33"/.test(app), "no picker tints itself with its material's own colour");
+  ok(!/`1px solid \$\{pcol\}44`/.test(app), "…and no workshop frames itself in its profession's");
+
+  // Each of the four rooms opened with a hand-written back/title/purse row.
+  ok(app.split('<button onClick={() => setTab("prof")} className="head-back">').length - 1 >= 4,
+     "all four rooms open with the same head");
+  ok(!/justifyContent: "space-between", marginBottom: 12 \}\}>\s*\n\s*<button onClick=\{\(\) => setTab\("prof"\)/.test(app),
+     "…and none of them hand-writes one any more");
+
+  // WHICH ROOM A PROFESSION OPENS IS DATA NOW. It was five if/else branches
+  // inside the row plus five colour-tinted hints beside the name. Moving it to
+  // a table broke lessons.test.cjs in exactly the way the Market refactor did —
+  // it greps for setTab("x") — which is the second time that has happened, so
+  // the table has to be readable from module scope or nothing can check it.
+  ok(/^const PROF_ROOM = \{/m.test(app), "PROF_ROOM is at module scope, where a test can read it");
+  ok(!/if \(prof\.id === "mining" \|\| prof\.id === "herbalism"\) startGathering/.test(app),
+     "…rather than five branches inside the row");
+
+  // The temper odds panel is where the money is: it is the only screen in the
+  // game that can destroy an item, so what it says has to be legible.
+  ok(!/const pctRow = /.test(app), "the odds are ledger rows, not a bespoke row helper");
+  ok(!/const rowBtn = /.test(app), "…and the mode switch is leaves, not a bespoke button helper");
+  ok(app.includes('className={`go is-quiet${protectOn ? " is-on" : ""}`}'),
+     "the ward reads as on or off through a class");
 }
 
 sec("The shell is bound in the same hand");

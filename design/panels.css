@@ -625,3 +625,16 @@ select.field { cursor: pointer; }
 /* A quiet action the lesson is currently pointing at. Same flash the tutorial
    hail uses, so "the game wants you to press this" is one mark everywhere. */
 .go.is-due { border-color: var(--rubric); color: var(--rubric); animation: tutflash 1.6s ease-in-out infinite; }
+
+/* ---- what just dropped --------------------------------------------------- */
+/* A slip that flashes past above the foot. It read the rarity's colour out of
+   the data and put it on a 2px frame AND on the text — the palette that fails
+   on parchment, twice, on the one thing you only get a second to read. */
+.drop {
+  position: fixed; bottom: 78px; left: 50%; transform: translateX(-50%); z-index: 999;
+  background: var(--raised); border: 1px solid var(--rule); border-left: 3px solid var(--rar, var(--rule));
+  border-radius: 0 var(--r-md) var(--r-md) 0; padding: 7px 14px;
+  font-family: var(--serif); font-size: var(--step--1); color: var(--ink);
+  box-shadow: var(--lift); display: flex; align-items: center; gap: var(--s-2);
+  max-width: min(84vw, 320px);
+}

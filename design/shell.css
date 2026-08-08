@@ -201,3 +201,11 @@
   color: var(--ink-faint); margin-bottom: var(--s-5);
 }
 .steps > span.is-here { color: var(--rubric); }
+
+/* A stack trace, on the one screen that appears when everything else failed. */
+.trace {
+  background: var(--sunk); border: 1px solid var(--rubric); border-radius: var(--r-sm);
+  color: var(--rubric); font-family: var(--mono); font-size: 10.5px; line-height: 1.5;
+  padding: var(--s-3); margin: 0 0 var(--s-4);
+  white-space: pre-wrap; word-break: break-word; max-height: 220px; overflow: auto;
+}

@@ -88,6 +88,8 @@
 }
 .sheet-lede b { color: var(--ink); font-weight: 600; }
 /* A fact the sheet is reporting rather than prose — a cost, a count, a timer. */
+/* A note about something you cannot afford. */
+.sheet-note.is-short { color: var(--rubric); }
 .sheet-note {
   /* Block, because it is often a <span> inside a <button> — a <div> there is
      invalid HTML — and inline it runs straight on from the button's own label. */

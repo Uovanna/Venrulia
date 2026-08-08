@@ -2379,17 +2379,10 @@ const Bar = ({ current, max, color, height = 8, label, sub }) => (
   </div>
 );
 
-const CombatLog = ({ log }) => {
-  const ref = useRef(null);
-  useEffect(() => { if (ref.current) ref.current.scrollTop = ref.current.scrollHeight; }, [log]);
-  return (
-    <div ref={ref} style={{ background: "var(--sunk)", border: "1px solid var(--hairline)", borderRadius: 6, padding: "8px 10px", height: 116, overflowY: "auto", fontSize: 11, lineHeight: 1.55, fontFamily: "ui-monospace, monospace" }}>
-      {log.length === 0 && <div style={{ color: "var(--ink-faint)" }}>Awaiting combat...</div>}
-      {log.map((e, i) => <div key={i} style={{ color: e.color || "var(--ink-soft)" }}>{withIcons(e.text, 13)}</div>)}
-    </div>
-  );
-};
-
+/* CombatLog is gone. It was the pre-chronicle log box — a bordered panel of
+   coloured lines — and nothing has rendered it since the Chronicle took over.
+   Dead code that still carries design decisions is what a later sweep finds and
+   "fixes", which is worse than deleting it. */
 const STAT_LABEL = { str: "Str", agi: "Agi", int: "Int", sta: "Sta", armor: "Armor", dmg: "Dmg", leech: "Leech", resil: "Resilience", vers: "Versatility", cdr: "Cooldown Reduction", csd: "Crit Damage", crit: "Crit Chance", haste: "Haste", ap: "Attack Power", sp: "Spell Power" };
 
 // ============================================================
@@ -6427,7 +6420,10 @@ function GameScreen({ character: initChar, onSave, onBack }) {
         <div className="notice">{withIcons(notification, 15)}</div>
       )}
       {lastLoot && (
-        <div style={{ position: "fixed", bottom: 78, left: "50%", transform: "translateX(-50%)", background: "var(--sunk)", border: `2px solid ${rarityById(lastLoot.rarity).color}`, borderRadius: 12, padding: "8px 14px", zIndex: 999, fontSize: 12, color: rarityById(lastLoot.rarity).color, fontWeight: 700 }}><EmojiIcon emoji={lastLoot.icon} /> {lastLoot.name}</div>
+        // The drop toast read the rarity's colour straight out of the data, and
+        // put it on a 2px frame AND on the text — the palette that fails on
+        // parchment, twice, on the one thing that flashes past you.
+        <div className={`drop ${rarClass(lastLoot.rarity)}`}><EmojiIcon emoji={lastLoot.icon} size={13} /> {lastLoot.name}</div>
       )}
       {guildBid && (
         <LootBidModal items={guildBid.items} party={guildBid.party} char={char} commitChar={commitChar} showNotif={showNotif} onClose={() => { setGuildBid(null); setTab("guild"); }} />
@@ -6442,15 +6438,23 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           <div onClick={(e) => e.stopPropagation()} className={`sheet ${offlineReport.died ? "is-warn" : "is-prize"}`}>
             <div className="sheet-mark">{offlineReport.died ? <EmojiIcon emoji="💀" size={22} /> : <EmojiIcon emoji="🌙" size={22} />}</div>
             <h3 className="sheet-title">{offlineReport.died ? "Defeated While Away" : "Welcome Back!"}</h3>
-            <div style={{ color: "var(--ink-soft)", fontSize: 12, textAlign: "center", marginBottom: 14 }}>
+            <div className="sheet-note">
               {Math.floor(offlineReport.secondsSimulated / 3600)}h {Math.floor((offlineReport.secondsSimulated % 3600) / 60)}m of auto-combat{offlineReport.zoneName ? ` in ${offlineReport.zoneName}` : ""}
             </div>
-            {[["⚔️ Enemies defeated", offlineReport.kills.toLocaleString()], ["✨ XP gained", offlineReport.xpGained.toLocaleString()], ["💰 Gold gained", offlineReport.goldGained.toLocaleString()], ...(offlineReport.levelsGained > 0 ? [["🎉 Levels gained", `+${offlineReport.levelsGained}`]] : [])].map(([k, v]) => (
-              <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid var(--verdigris)", fontSize: 13 }}>
-                <span style={{ color: "var(--ink-soft)" }}>{k}</span><span style={{ color: "var(--ink)", fontWeight: 700 }}>{v}</span>
-              </div>
-            ))}
-            {offlineReport.died && <div style={{ color: "var(--rubric)", fontSize: 11.5, textAlign: "center", marginTop: 12, lineHeight: 1.5 }}>Your hero fell in battle, so offline combat has been paused. Re-enable it from the World screen when ready.</div>}
+            {/* Every row was ruled off in verdigris, so the whole report was a
+                green-striped table. It is a ledger, like every other list of
+                label-and-number in the game. */}
+            <div className="ledger">
+              {[["Enemies defeated", "sword", offlineReport.kills.toLocaleString()], ["XP gained", "spark", offlineReport.xpGained.toLocaleString()], ["Gold gained", "coin", offlineReport.goldGained.toLocaleString()], ...(offlineReport.levelsGained > 0 ? [["Levels gained", "star", `+${offlineReport.levelsGained}`]] : [])].map(([k, ic, v]) => (
+                <div key={k} className="ledger-row">
+                  <div className="ledger-line">
+                    <span className="ledger-label"><Icon name={ic} size={13} /> {k}</span>
+                    <span className="ledger-val">{v}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {offlineReport.died && <div className="aside-note is-warn"><span>Your hero fell in battle, so offline combat has been paused. Re-enable it from the World screen when ready.</span></div>}
             <button onClick={() => setOfflineReport(null)} className="go is-quiet">Continue</button>
           </div>
         </div>
@@ -6467,15 +6471,15 @@ function GameScreen({ character: initChar, onSave, onBack }) {
             <div onClick={(e) => e.stopPropagation()} className="sheet is-warn">
               <div className="sheet-mark"><EmojiIcon emoji="🔥" size={22} /></div>
               <div className="sheet-title">Reforge Socket?</div>
-              <div style={{ color: "var(--ink)", fontSize: 12.5, lineHeight: 1.55, textAlign: "center", marginBottom: 14 }}>
+              <div className="sheet-lede">
                 This burns <b className={g ? rarClass(g.rarity) : undefined}><EmojiIcon emoji={g?.icon} size={13} /> {g?.name || "the gem"}</b> out of <b>{reforgeConfirm.item.name}</b>, freeing the socket.
-                <br /><span style={{ color: "var(--rubric)" }}>The gem is destroyed — it does not return to your bag.</span>
+                <br />The gem is destroyed — it does not return to your bag.
               </div>
               <div className="sheet-acts">
                 <button onClick={() => setReforgeConfirm(null)} className="go is-quiet">Cancel</button>
                 <button onClick={() => reforgeSocket(reforgeConfirm.item, reforgeConfirm.idx)} disabled={!afford} className="go"><Icon name="flame" size={14} /> Reforge · <Icon name="gem" size={12} /> {REFORGE_SOCKET_VEN}</button>
               </div>
-              {!afford && <div className="sheet-note" style={{ marginTop: 7, marginBottom: 0, color: "var(--rubric)" }}>You hold <Icon name="gem" size={10} /> {(char.ven || 0).toLocaleString()}</div>}
+              {!afford && <div className="sheet-note is-short" style={{ marginTop: 7, marginBottom: 0 }}>You hold <Icon name="gem" size={10} /> {(char.ven || 0).toLocaleString()}</div>}
             </div>
           </div>
         );
@@ -6546,7 +6550,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
               {offhandable && (
                 <div className="sets">
                   {[["weapon", "🗡️ vs Main-hand"], ["offhand", "🗡️ vs Off-hand"]].map(([s, label]) => (
-                    <button key={s} onClick={() => setCompareSlot(s)} style={{ flex: 1, background: slot === s ? "var(--gilt)" : "var(--raised)", border: `1px solid ${slot === s ? "var(--gilt)" : "var(--hairline)"}`, borderRadius: 8, color: slot === s ? "var(--gilt)" : "var(--ink-soft)", fontSize: 11.5, fontWeight: 700, padding: "6px 4px", cursor: "pointer" }}>{label}</button>
+                    <button key={s} onClick={() => setCompareSlot(s)} className={`set${slot === s ? " is-worn" : ""}`} style={{ cursor: "pointer" }}>{withIcons(label, 12)}</button>
                   ))}
                 </div>
               )}
@@ -6555,20 +6559,25 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                 <Panel item={bag} title="In your bag" />
               </div>
               {/* deltas under the bag item */}
-              <div style={{ marginTop: 10, background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 10, padding: "9px 12px" }}>
-                <div style={{ color: "var(--ink-soft)", fontSize: 9.5, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>If you equip the bag item{offhandable && slot === "offhand" ? " in your off-hand" : ""}</div>
+              <div className="leaf-block">
+                <div className="eyebrow"><span>If you equip the bag item{offhandable && slot === "offhand" ? " in your off-hand" : ""}</span></div>
                 {(() => {
                   const rows = keys.map((k) => ({ k, d: (bm[k] || 0) - (em[k] || 0) })).filter((r) => r.d !== 0);
-                  if (!rows.length && !wDelta) return <div style={{ color: "var(--ink-faint)", fontSize: 12 }}>No stat changes.</div>;
-                  return <div style={{ display: "flex", flexWrap: "wrap", gap: "3px 14px" }}>
-                    {wDelta !== 0 && <span style={{ color: wDelta > 0 ? "var(--verdigris)" : "var(--rubric)", fontSize: 12.5, fontWeight: 600 }}>{wDelta > 0 ? "+" : ""}{wDelta} Weapon Dmg</span>}
+                  if (!rows.length && !wDelta) return <div className="fact is-quiet">No stat changes.</div>;
+                  return <div className="statline" style={{ borderTop: 0 }}>
+                    {wDelta !== 0 && <span className={`item-delta ${wDelta > 0 ? "is-up" : "is-down"}`}>{wDelta > 0 ? "+" : ""}{wDelta} Weapon Dmg</span>}
                     {rows.map((r) => (
-                    <span key={r.k} style={{ color: r.d > 0 ? "var(--verdigris)" : "var(--rubric)", fontSize: 12.5, fontWeight: 600 }}>{r.d > 0 ? "+" : ""}{r.d} {STAT_LABEL[r.k]}</span>
+                    <span key={r.k} className={`item-delta ${r.d > 0 ? "is-up" : "is-down"}`}>{r.d > 0 ? "+" : ""}{r.d} {STAT_LABEL[r.k]}</span>
                   ))}</div>;
                 })()}
-                <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--verdigris)", fontSize: 11.5, color: "var(--verdigris)" }}>Overall: <span style={{ color: scoreDelta > 0 ? "var(--verdigris)" : scoreDelta < 0 ? "var(--rubric)" : "var(--verdigris)", fontWeight: 700 }}>{scoreDelta > 0 ? "▲ Upgrade" : scoreDelta < 0 ? "▼ Downgrade" : "≈ Sidegrade"}</span></div>
+                {/* The verdict was a ternary whose "sidegrade" branch and whose
+                    "upgrade" branch were the same green, so a sidegrade read as
+                    an upgrade. Three outcomes, three marks. */}
+                <div className={`item-delta ${scoreDelta > 0 ? "is-up" : scoreDelta < 0 ? "is-down" : "is-side"}`} style={{ marginTop: "var(--s-3)" }}>
+                  {scoreDelta > 0 ? "▲ Upgrade" : scoreDelta < 0 ? "▼ Downgrade" : "≈ Sidegrade"}
+                </div>
               </div>
-              <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+              <div className="sheet-acts">
                 {char.inventory.some((i) => i.id === bag.id) && <button onClick={() => { equipItem(bag, offhandable ? slot : undefined); setCompareItem(null); }} className="go" style={{ marginTop: 0 }}>{offhandable && slot === "offhand" ? "Equip off-hand" : "Equip this"}</button>}
                 <button onClick={() => setCompareItem(null)} className="go is-quiet" style={{ marginTop: 0 }}>Close</button>
               </div>
@@ -6736,20 +6745,22 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                 <div className="sheet-note">
                   {expired ? "Available in the Ven shop's Offers tab" : `Ends in ${hrs}h ${mins}m`}
                 </div>
-                <div style={{ background: "var(--raised)", border: "1px solid var(--rubric)", borderRadius: 10, padding: "10px 12px", marginBottom: 10 }}>
-                  <div style={{ color: "var(--ink)", fontSize: 12.5, fontWeight: 700, marginBottom: 3 }}><Icon name="sword" /> Artifact Weapon</div>
-                  <div style={{ color: "var(--ink-soft)", fontSize: 11, lineHeight: 1.45 }}>Deep-red relic. Three sockets, and it re-forges as you level so it never falls behind.</div>
+                <div className="aside-note is-warn">
+                  <b><Icon name="sword" size={13} /> Artifact Weapon</b>
+                  <span>Deep-red relic. Three sockets, and it re-forges as you level so it never falls behind.</span>
                 </div>
-                <div style={{ color: "var(--rubric)", fontSize: 11, fontWeight: 700, marginBottom: 5 }}>…and choose one more:</div>
+                <div className="eyebrow"><span>…and choose one more</span></div>
+                {/* The choice buttons were a solid --rar-epic block on BOTH branches
+                    of the ternary, so every option was purple and none of them
+                    looked chosen — on the one sheet in the game that asks for money. */}
                 {OFFER.choices.map((ch) => (
                   <button key={ch.id} onClick={() => setOfferPick(ch.id)}
-                    style={{ width: "100%", textAlign: "left", marginBottom: 6, cursor: "pointer",
-                      background: offerPick === ch.id ? "var(--rar-epic)" : "var(--rar-epic)",
-                      border: `1.5px solid ${offerPick === ch.id ? "var(--rubric)" : "var(--rar-epic)"}`, borderRadius: 10, padding: "9px 11px" }}>
-                    <div style={{ color: offerPick === ch.id ? "var(--rubric)" : "var(--ink-soft)", fontSize: 12.5, fontWeight: 700 }}>
-                      {offerPick === ch.id ? "◉" : "○"} <EmojiIcon emoji={ch.icon} /> {ch.name}
-                    </div>
-                    <div style={{ color: "var(--ink-soft)", fontSize: 10.5, lineHeight: 1.4, marginLeft: 16 }}>{ch.desc}</div>
+                    className={`choice${offerPick === ch.id ? " is-on" : ""}`}>
+                    <span className="choice-head">
+                      <span className="mark"><EmojiIcon emoji={ch.icon} size={17} /></span>
+                      <span className="choice-name">{ch.name}</span>
+                    </span>
+                    <span className="choice-body">{ch.desc}</span>
                   </button>
                 ))}
                 <button onClick={buyOffer} className="go">${OFFER.usd} — Claim the bundle</button>
@@ -8549,10 +8560,9 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                 </div>
                 {opts.map((o) => (
                   <button key={o.label} onClick={() => buyBattlemaster(bmPick, o.mains)}
-                    aria-label={`Forge with ${o.label}`}
-                    style={{ width: "100%", textAlign: "left", background: "var(--raised)", border: "1.5px solid var(--bole)", borderRadius: 10, padding: "10px 12px", marginBottom: 8, cursor: "pointer" }}>
-                    <span style={{ color: "var(--bole)", fontWeight: 800, fontSize: 13, display: "block" }}>{o.label}</span>
-                    <span style={{ color: "var(--ink-soft)", fontSize: 10.5, lineHeight: 1.45 }}>{o.sub}</span>
+                    aria-label={`Forge with ${o.label}`} className="choice">
+                    <span className="choice-head"><span className="choice-name">{o.label}</span></span>
+                    <span className="choice-body">{o.sub}</span>
                   </button>
                 ))}
                 <button onClick={() => setBmPick(null)} className="go is-quiet">
@@ -10228,16 +10238,16 @@ function GameScreen({ character: initChar, onSave, onBack }) {
               <div className="sheet-mark"><EmojiIcon emoji="🎟️" size={22} /></div>
               <div className="sheet-title">Use a Dungeon Reset Ticket?</div>
               <div className="sheet-lede">You're out of runs for <b><EmojiIcon emoji={d.icon} /> {d.name}</b>. Spend one Dungeon Reset Ticket to run it once more now, without waiting for the timer.</div>
-              <div style={{ background: "var(--raised)", border: "1px solid var(--verdigris)", borderRadius: 10, padding: "8px 12px", marginBottom: 14, textAlign: "center", color: tix > 0 ? "var(--ink-soft)" : "var(--rubric)", fontSize: 12 }}><Icon name="ticket" /> Tickets held: <b>{tix}</b></div>
+              <div className={`sheet-note${tix > 0 ? "" : " is-short"}`}><Icon name="ticket" size={10} /> Tickets held: <b>{tix}</b></div>
               {tix > 0 ? (
                 <div className="sheet-acts">
                   <button onClick={() => setResetPrompt(null)} className="go is-quiet">Cancel</button>
                   <button onClick={() => { const dn = resetPrompt; setResetPrompt(null); startDungeon(dn, true); }} className="go">Use Ticket &amp; Run</button>
                 </div>
               ) : (
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button onClick={() => setResetPrompt(null)} style={{ flex: 1, background: "var(--raised)", border: "1px solid var(--rule)", borderRadius: 10, color: "var(--ink-soft)", fontSize: 13, fontWeight: 700, padding: 11, cursor: "pointer" }}>Close</button>
-                  <button onClick={() => { setResetPrompt(null); setTab("premium"); }} style={{ flex: 1, background: "var(--raised)", border: "1.5px solid var(--verdigris)", borderRadius: 10, color: "var(--ink-soft)", fontSize: 13, fontWeight: 700, padding: 11, cursor: "pointer" }}><Icon name="gem" /> Get Tickets</button>
+                <div className="sheet-acts">
+                  <button onClick={() => setResetPrompt(null)} className="go is-quiet">Close</button>
+                  <button onClick={() => { setResetPrompt(null); setTab("premium"); }} className="go"><Icon name="gem" size={12} /> Get tickets</button>
                 </div>
               )}
             </div>
@@ -10543,7 +10553,7 @@ function LootBidModal({ items, party, char, commitChar, showNotif, onClose, net,
   const rc = (r) => rarityById(r) || { color: "var(--ink-faint)", name: "" };
   return (
     <div className="veil is-over">
-      <div className="sheet is-prize is-wide" style={{ textAlign: "center" }}>
+      <div className="sheet is-prize is-wide">
         {done || !item ? (
           <>
             <div className="sheet-mark"><EmojiIcon emoji="🏆" size={22} /></div>
@@ -10553,12 +10563,14 @@ function LootBidModal({ items, party, char, commitChar, showNotif, onClose, net,
         ) : (<>
           <div className="sheet-title">Boss Loot · Bid Gold {queue.length > 1 ? `(${idx + 1}/${queue.length})` : ""}</div>
           <div className={`aside-note ${rarClass(item.rarity)}`} style={{ borderLeftColor: "var(--rar)", textAlign: "left" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+            <div className="item" style={{ paddingTop: 0, borderBottom: 0 }}>
               <span className="mark"><EmojiIcon emoji={item.icon || "🎁"} size={22} /></span>
-              <div style={{ minWidth: 0 }}>
-                <div className={rarClass(item.rarity)} style={{ fontSize: "var(--step-0)", fontWeight: 600, lineHeight: 1.15 }}>{item.enchant ? "✨ " : ""}{item.name}{temperSuffix(item)}</div>
-                <div className="item-meta">ilvl {item.ilvl} · {rc(item.rarity).name}{item.slotId && slotById(item.slotId) ? ` · ${slotById(item.slotId).name}` : ""}</div>
-              </div>
+              <span className="item-body">
+                <span className={`item-name ${rarClass(item.rarity)}`}>
+                  {item.enchant ? <Icon name="spark" size={12} style={{ marginRight: ".2em" }} /> : null}{item.name}{temperSuffix(item)}
+                </span>
+                <span className="item-meta">ilvl {item.ilvl} · {rc(item.rarity).name}{item.slotId && slotById(item.slotId) ? ` · ${slotById(item.slotId).name}` : ""}</span>
+              </span>
             </div>
             {(() => {
               const merged = { ...(item.stats || {}) }; if (item.enchant) for (const k in item.enchant) merged[k] = (merged[k] || 0) + item.enchant[k];
@@ -10566,25 +10578,30 @@ function LootBidModal({ items, party, char, commitChar, showNotif, onClose, net,
               const socks = socketsOf(item);
               const bare = mainKeys.concat(secKeys).every((k) => !(merged[k] > 0)) && !item.wdmg && !(merged.armor > 0) && !item.relicDesc;
               return (
-                <div style={{ borderTop: "1px solid var(--hairline)", paddingTop: 6, display: "flex", flexDirection: "column", gap: 1 }}>
-                  {item.wdmg && <div style={{ color: "var(--bole)", fontSize: 11.5, fontWeight: 600 }}><Icon name="sword" /> {item.wdmg.min} – {item.wdmg.max} Damage</div>}
-                  {merged.armor > 0 && <div style={{ color: "var(--ink-soft)", fontSize: 11.5 }}><Icon name="shield" /> {merged.armor} Armor</div>}
-                  {mainKeys.filter((k) => merged[k] > 0).map((k) => <div key={k} style={{ color: "var(--ink)", fontSize: 11.5 }}>+{merged[k]} {STAT_LABEL[k]}</div>)}
-                  {secKeys.filter((k) => merged[k] > 0).map((k) => <div key={k} style={{ color: "var(--ink-soft)", fontSize: 11.5 }}>+{merged[k]} {STAT_LABEL[k]}</div>)}
+                <div className="facts is-ruled">
+                  {item.wdmg && <div className="fact is-weapon"><Icon name="sword" size={12} /> {item.wdmg.min} – {item.wdmg.max} Damage</div>}
+                  {merged.armor > 0 && <div className="fact"><Icon name="shield" size={12} /> {merged.armor} Armor</div>}
+                  {mainKeys.filter((k) => merged[k] > 0).map((k) => <div key={k} className="fact is-main">+{merged[k]} {STAT_LABEL[k]}</div>)}
+                  {secKeys.filter((k) => merged[k] > 0).map((k) => <div key={k} className="fact">+{merged[k]} {STAT_LABEL[k]}</div>)}
                   {item.relicDesc && <div className="fact is-relic"><Icon name="sword" size={12} /> {item.relicDesc}</div>}
-                  {socks.length > 0 && <div style={{ color: "var(--ink-soft)", fontSize: 10, marginTop: 2 }}><Icon name="gem" /> Sockets: {socks.map((gid) => { const g = gid && gemById(gid); return g ? g.icon : "○"; }).join(" ")}</div>}
-                  {item.enchant && <div style={{ color: "var(--rar-epic)", fontSize: 10.5 }}><Icon name="spark" /> {Object.entries(item.enchant).map(([k, v]) => `+${v} ${STAT_LABEL[k]}`).join(", ")}</div>}
-                  {bare && <div style={{ color: "var(--ink-faint)", fontSize: 11 }}>No bonuses</div>}
+                  {socks.length > 0 && <div className="fact is-quiet"><Icon name="gem" size={12} /> Sockets: {socks.map((gid) => { const g = gid && gemById(gid); return g ? g.icon : "○"; }).join(" ")}</div>}
+                  {item.enchant && <div className="fact is-enchant"><Icon name="spark" size={12} /> {Object.entries(item.enchant).map(([k, v]) => `+${v} ${STAT_LABEL[k]}`).join(", ")}</div>}
+                  {bare && <div className="fact is-quiet">No bonuses</div>}
                 </div>
               );
             })()}
           </div>
           {!bid ? null : !bid.resolved ? (<>
-            <div style={{ color: "var(--rar-epic)", fontSize: 13, marginBottom: 2 }}>High bid: <b>{bid.high ? mpFmt(bid.high) + "g" : "—"}</b>{bid.highName ? ` · ${bid.highName}` : ""}</div>
-            <div style={{ color: "var(--ink-soft)", fontSize: 11, marginBottom: 10 }}>Reserve <b>{mpFmt(bid.min || 0)}g</b> · {bid.timeLeft}s left · your gold: {mpFmt(char.gold || 0)}</div>
+            <div className="statline">
+              <span>High bid <b>{bid.high ? mpFmt(bid.high) + "g" : "—"}</b>{bid.highName ? ` · ${bid.highName}` : ""}</span>
+              <span>Reserve <b>{mpFmt(bid.min || 0)}g</b></span>
+              <span>{bid.timeLeft}s left</span>
+              <span>Your gold <b>{mpFmt(char.gold || 0)}</b></span>
+            </div>
             {bid.passed ? (
-              <div style={{ background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 9, padding: "10px 12px", color: "var(--ink-soft)", fontSize: 11.5, lineHeight: 1.5 }}>
-                ✋ <b>You passed.</b> Staying until the hammer falls so your cut is a share of the final price.
+              <div className="aside-note">
+                <b>You passed</b>
+                <span>Staying until the hammer falls so your cut is a share of the final price.</span>
               </div>
             ) : (<>
               <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>{[100, 500, 1000].map((inc) => (<button key={inc} onClick={() => placeBid((bid.high > 0 ? bid.high : (bid.min || 0)) + inc)} className="go is-quiet" style={{ margin: 0, flex: 1 }}>+{mpFmt(inc)}</button>))}</div>
@@ -10592,11 +10609,17 @@ function LootBidModal({ items, party, char, commitChar, showNotif, onClose, net,
               <button onClick={passBid} className="go is-quiet">Pass</button>
             </>)}
           </>) : bid.iWon ? (<>
-            <div style={{ color: "var(--verdigris)", fontSize: 13, fontWeight: 700, marginBottom: 12 }}><Icon name="trophy" /> You won {item.name} for {mpFmt(bid.high)}g!</div>
+            <div className="aside-note is-gain">
+              <b><Icon name="trophy" size={13} /> You won {item.name}</b>
+              <span>for {mpFmt(bid.high)}g.</span>
+            </div>
             <button onClick={next} className="go">{idx + 1 < queue.length ? "Next item" : "Finish"}</button>
           </>) : (<>
-            <div style={{ color: "var(--rubric)", fontSize: 12, marginBottom: 4 }}>{bid.autoPassed ? "Time expired — you passed. " : bid.passed ? "You passed. " : ""}{bid.high > 0 ? `${bid.highName || "A rival"} won the roll` : "No bids met the reserve — the lot went unsold"}{bid.payout ? ` — your full share: +${mpFmt(bid.payout)}g` : ""}.</div>
-            <div style={{ color: "var(--ink-soft)", fontSize: 11, marginBottom: 10 }}>Buy an exact copy for {COPY_ITEM_VEN} 💎 Ven? (you have {char.ven || 0})</div>
+            <div className="aside-note is-warn">
+              <b>{bid.high > 0 ? `${bid.highName || "A rival"} won the roll` : "No bids met the reserve"}</b>
+              <span>{bid.autoPassed ? "Time expired — you passed. " : bid.passed ? "You passed. " : ""}{bid.high > 0 ? "" : "The lot went unsold. "}{bid.payout ? `Your full share: +${mpFmt(bid.payout)}g.` : ""}</span>
+            </div>
+            <div className="ledger-note" style={{ marginBottom: "var(--s-3)" }}>Buy an exact copy for {COPY_ITEM_VEN} Ven? You have {char.ven || 0}.</div>
             <button onClick={buyCopy} className="go"><Icon name="gem" /> Buy copy · {COPY_ITEM_VEN} Ven</button>
             <button onClick={next} className="go is-quiet">No thanks</button>
           </>)}
@@ -11604,12 +11627,19 @@ class GameErrorBoundary extends React.Component {
     if (this.state.err) {
       const msg = String((this.state.err && (this.state.err.stack || this.state.err.message)) || this.state.err);
       return (
-        <div style={{ maxWidth: 500, margin: "40px auto", padding: 20, fontFamily: "system-ui, sans-serif", color: "var(--verdigris)" }}>
-          <div style={{ fontSize: 32, textAlign: "center", marginBottom: 10 }}>⚠️</div>
-          <div style={{ color: "var(--gilt)", fontWeight: 700, fontSize: 16, textAlign: "center", marginBottom: 10, fontFamily: "Georgia, serif" }}>Something broke while loading</div>
-          <div style={{ background: "var(--raised)", border: "1px solid var(--rubric)", borderRadius: 8, padding: 12, fontSize: 11.5, color: "var(--rubric)", whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 220, overflow: "auto", marginBottom: 12 }}>{msg}</div>
-          <div style={{ color: "var(--ink-soft)", fontSize: 12, marginBottom: 12 }}>Your character is saved separately and was not lost. Reload to try again — if it keeps happening, screenshot this message.</div>
-          <button onClick={() => { try { window.location.reload(); } catch {} }} style={{ width: "100%", background: "var(--raised)", border: "1.5px solid var(--rule)", borderRadius: 10, color: "var(--ink)", fontSize: 14, fontWeight: 700, padding: 12, cursor: "pointer" }}>Reload</button>
+        // The one screen that must render when everything else has failed, so it
+        // stays plain — but it can still be the same hand, because the stylesheet
+        // is injected at the root above this boundary and survives the throw.
+        <div className="title-page chronicle-ground" style={{ minHeight: 0, paddingTop: "var(--s-7)" }}>
+          <div className="title-head">
+            <div className="title-mark"><Icon name="warn" size={28} /></div>
+            <h1 className="title-name" style={{ fontSize: "var(--step-2)" }}>Something broke while loading</h1>
+          </div>
+          <div>
+            <pre className="trace">{msg}</pre>
+            <div className="ledger-note" style={{ marginBottom: "var(--s-4)" }}>Your character is saved separately and was not lost. Reload to try again — if it keeps happening, screenshot this message.</div>
+            <button onClick={() => { try { window.location.reload(); } catch {} }} className="go">Reload</button>
+          </div>
         </div>
       );
     }
@@ -11833,15 +11863,15 @@ export default function App() {
         <div className="sheet-title">{linked ? "Cloud Save" : "Sync Across Devices"}</div>
         {linked ? (
           <>
-            <div style={{ color: "var(--ink-soft)", fontSize: 12, lineHeight: 1.6, marginBottom: 12 }}>Signed in as <b>{session.user?.email || "your account"}</b>. Your {saves.length} character{saves.length === 1 ? "" : "s"} sync automatically across your devices.</div>
+            <div className="sheet-lede">Signed in as <b>{session.user?.email || "your account"}</b>. Your {saves.length} character{saves.length === 1 ? "" : "s"} sync automatically across your devices.</div>
             <button onClick={() => { if (session) pullCloud(session); }} className="go">Sync now</button>
             <button onClick={signOut} className="go is-quiet">Sign out</button>
             <button onClick={() => setShowCloud(false)} className="go is-quiet">Close</button>
           </>
         ) : (
           <>
-            <div style={{ color: "var(--ink-soft)", fontSize: 11.5, lineHeight: 1.55, marginBottom: 12 }}>Your progress already saves automatically on this device. Sign in to <b>sync across devices</b> and keep it safe if you reinstall — your current characters carry over.</div>
-            <button disabled={busy} onClick={signInGoogle} style={btnGoogle}><span style={{ fontWeight: 700 }}>G</span>&nbsp; Continue with Google</button>
+            <div className="sheet-lede">Your progress already saves automatically on this device. Sign in to <b>sync across devices</b> and keep it safe if you reinstall — your current characters carry over.</div>
+            <button disabled={busy} onClick={signInGoogle} style={btnGoogle}><b>G</b>&nbsp; Continue with Google</button>
             {!emailMode ? (
               <button onClick={() => { setEmailMode(true); setSyncMsg(""); }} className="go is-quiet">Use an email code instead</button>
             ) : authStage === "email" ? (
@@ -11851,7 +11881,7 @@ export default function App() {
               </>
             ) : (
               <>
-                <div style={{ color: "var(--ink-soft)", fontSize: 11, marginBottom: 6 }}>Enter the 6-digit code sent to <b>{authEmail}</b>.</div>
+                <div className="ledger-note" style={{ marginBottom: 6 }}>Enter the 6-digit code sent to <b>{authEmail}</b>.</div>
                 <input value={authCode} onChange={(e) => setAuthCode(e.target.value)} placeholder="123456" inputMode="numeric" className="field" />
                 <button disabled={busy} onClick={verifyCode} className="go is-quiet">Verify &amp; sign in</button>
                 <button onClick={() => { setAuthStage("email"); setSyncMsg(""); }} className="link" style={{ display: "block", margin: "8px auto 0" }}>← use a different email</button>
@@ -11860,7 +11890,7 @@ export default function App() {
             <button onClick={() => setShowCloud(false)} className="link" style={{ display: "block", margin: "8px auto 0" }}>Keep playing on this device only</button>
           </>
         )}
-        {syncMsg && <div style={{ color: "var(--ink-soft)", fontSize: 10.5, textAlign: "center", marginTop: 10 }}>{syncMsg}</div>}
+        {syncMsg && <div className="sheet-note" style={{ marginTop: 10, marginBottom: 0 }}>{syncMsg}</div>}
       </div>
     </div>
   ) : null;
@@ -11880,7 +11910,7 @@ export default function App() {
         <div className="sheet is-prize is-wide">
           <div className="sheet-mark"><EmojiIcon emoji="⚠️" size={22} /></div>
           <div className="sheet-title">Two versions of your save</div>
-          <div style={{ color: "var(--ink-soft)", fontSize: 11.5, lineHeight: 1.55, marginBottom: 12 }}>This device and the cloud have both changed since they last synced. Choose which to keep — the other is replaced.</div>
+          <div className="sheet-lede">This device and the cloud have both changed since they last synced. Choose which to keep — the other is replaced.</div>
           <div className="aside-note">
             <b><Icon name="cloud" size={12} /> Cloud · saved {when}</b>
             <span>{pendingCloud.cloudSummary}</span>

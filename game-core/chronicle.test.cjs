@@ -977,6 +977,52 @@ sec("Group content, and the panel that had been crashing");
      "the Arena's sub-tabs are leaves like every other tab strip");
 }
 
+sec("The last of it");
+{
+  // THE LOOT TOAST read the rarity's colour out of the data and put it on a 2px
+  // frame AND on the text — the palette that fails on parchment, twice, on the
+  // one thing you only get a second to read before it goes.
+  ok(panels.includes(".drop {"), "a drop is a slip of paper with the rarity on its edge");
+  ok(!/border: `2px solid \$\{rarityById\(lastLoot\.rarity\)\.color\}`/.test(app),
+     "…rather than the raw hex on a frame and on the words");
+
+  // THE PAID OFFER: the choice buttons were a solid --rar-epic block on BOTH
+  // branches of the ternary, so every option was purple and none of them looked
+  // chosen. On the one sheet in the game that asks for money.
+  ok(!/background: offerPick === ch\.id \? "var\(--rar-epic\)" : "var\(--rar-epic\)"/.test(app),
+     "the offer's choices are not all the chosen one");
+  ok(/className=\{`choice\$\{offerPick === ch\.id \? " is-on" : ""\}`\}/.test(app),
+     "…they are choices, like every other list you pick one of");
+
+  // THE UPGRADE VERDICT had "sidegrade" and "upgrade" on the same green, so a
+  // sidegrade read as an upgrade — the collapsed-ternary bug deciding whether a
+  // player equips something.
+  ok(!/scoreDelta > 0 \? "var\(--verdigris\)" : scoreDelta < 0 \? "var\(--rubric\)" : "var\(--verdigris\)"/.test(app),
+     "an upgrade, a downgrade and a sidegrade are three different marks");
+
+  // DEAD CODE CARRYING DESIGN DECISIONS is what a later sweep finds and "fixes".
+  // CombatLog had not been rendered since the Chronicle took the log over.
+  ok(!/const CombatLog = /.test(app), "the pre-chronicle log component is gone");
+  ok(/const Bar = /.test(app), "…and Bar, which sat directly above it, is not");
+
+  // WHAT IS LEFT INLINE. The goal was never zero: a margin, a flex basis and a
+  // one-off width are layout, and belong at the call site. What must not be
+  // inline is a DESIGN DECISION — a background, a border, a radius, a font. This
+  // counts them, so the number can only go down.
+  const blocks = (() => {
+    const out = []; let q = 0;
+    while (true) {
+      const j = app.indexOf("style={{", q); if (j < 0) break;
+      let k = j + 8, d = 2;
+      while (d > 0 && k < app.length) { if (app[k] === "{") d++; else if (app[k] === "}") d--; k++; }
+      out.push(app.slice(j, k)); q = k;
+    }
+    return out;
+  })();
+  const decisive = blocks.filter((b) => /\b(background|border|borderRadius|borderColor|fontWeight|fontFamily|boxShadow)\b/.test(b));
+  ok(decisive.length <= 30, `${decisive.length} inline blocks still carry a design decision (of ${blocks.length} total)`);
+}
+
 sec("The shell is bound in the same hand");
 {
   // Converting the shell is what decides whether the game reads as one object or

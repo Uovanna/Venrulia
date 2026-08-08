@@ -73,7 +73,13 @@ sec("The swap is wired into the app");
   ok((app.match(/<IconSprite \/>/g) || []).length === 1, "…and mounts the sprite exactly once");
   // The three string renderers. These carry the 152 occurrences that live inside
   // addLog and showNotif strings, which no amount of JSX rewriting would reach.
-  ok(app.includes("{withIcons(e.text, 13)}"), "the combat log runs its lines through the swap");
+  // Pinned to CombatLog's internals until that component was deleted — it had
+  // been dead since the Chronicle took the log over, so the check was measuring
+  // code nothing rendered. The Chronicle is the log now, and it is where the
+  // swap has to happen.
+  const chron = fs.readFileSync(path.join(root, 'src/chronicle.jsx'), 'utf8');
+  ok(/withIcons\(p\.deed, 12\)/.test(chron) && /withIcons\(p\.rest, 12\)/.test(chron),
+     "the combat log runs its lines through the swap");
   ok(app.includes("{withIcons(notification, 15)}"), "…so does the notification toast");
   ok(app.includes("{withIcons(l, 12)}"), "…and the group encounter log");
   ok(app.includes("{withIcons(label, 12)}"), "…and every Bar label (HP, resource, XP, enemy health)");

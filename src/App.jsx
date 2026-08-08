@@ -3370,7 +3370,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
   const [sellOpen, setSellOpen] = useState(false);
   const [attrWithGear, setAttrWithGear] = useState(true);
   const [promo, setPromo] = useState("");
-  const [combatLog, setCombatLog] = useState([{ text: "🌄 Your adventure begins...", color: "var(--gilt)" }]);
+  const [combatLog, setCombatLog] = useState([{ text: "🌄 Your adventure begins..." }]);
   const [battle, setBattle] = useState(null);
   const [notification, setNotification] = useState(null);
   const [lastLoot, setLastLoot] = useState(null);
@@ -3478,7 +3478,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     plan.general.forEach((r, i) => { if (i < generalSlotsFor(c)) general[i] = r; });
     commitChar({ ...c, gambits: { ...c.gambits, rules: { ...(c.gambits.rules || {}), ...plan.rules }, general } });
     showNotif(`⚙️ Auto-set ${n} gambit${n === 1 ? "" : "s"}`);
-    addLog(`⚙️ Auto gambit: ${n} rule(s) written from your owned gambits`, "#c8a0ff");
+    addLog(`⚙️ Auto gambit: ${n} rule(s) written from your owned gambits`);
   };
 
   const generalSlotsFor = (c) => c.gambits?.generalSlots || 2;
@@ -3530,8 +3530,8 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     let nc = { ...c, xp: newXp, level: newLevel };
     nc.unlockedSkills = (SKILLS[nc.cls] || []).filter((s) => s.unlockLevel <= newLevel).map((s) => s.name);
     const afterSlots = unlockedSlotCount(newLevel);
-    if (afterSlots > beforeSlots) { nc.selectedSkills = padSelectedSkills(nc, nc.selectedSkills); addLog(`🌟 New ability slot unlocked! (${afterSlots}/${MAX_SKILL_SLOTS})`, "#f0b429"); }
-    if (leveled) { nc.hp = maxHpFor(nc); addLog(`🎉 Reached level ${newLevel}!`, "#f0b429"); }
+    if (afterSlots > beforeSlots) { nc.selectedSkills = padSelectedSkills(nc, nc.selectedSkills); addLog(`🌟 New ability slot unlocked! (${afterSlots}/${MAX_SKILL_SLOTS})`); }
+    if (leveled) { nc.hp = maxHpFor(nc); addLog(`🎉 Reached level ${newLevel}!`); }
     return nc;
   };
   const ensureBoard = () => { const c = charRef.current; const board = c.quests?.board?.length ? c.quests.board : Array.from({ length: BOARD_QUEST_SLOTS }, () => rollBoardQuest(c, boardZone)); commitChar({ ...c, quests: { ...c.quests, board }, tutorial: { ...(c.tutorial || {}), visitedBoard: true } }); };
@@ -3547,7 +3547,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     nc = { ...nc, quests: { ...nc.quests, board: (nc.quests?.board || []).map((x) => x.id === q.id ? rollBoardQuest(nc, boardZone) : x) } };
     commitChar(nc);
     showNotif(`Quest complete! +${q.reward.xp} XP · +${q.reward.gold}g`);
-    addLog(`📜 Quest complete: ${questLabel(q)}`, "#f0b429");
+    addLog(`📜 Quest complete: ${questLabel(q)}`);
   };
   // ---------- Class Hall: choose / swap Specialization (free, from level 10) ----------
   // Selecting a spec auto-grants its three signature skills, strips the previous spec's, prunes any
@@ -3562,10 +3562,10 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     commitChar(nc);
     if (restored) {
       showNotif(`${spec.icon} ${spec.name} — template restored`);
-      addLog(`${spec.icon} Specialized as ${spec.name}. Your saved template (skills, mods, gambits) was restored.`, "#f0b429");
+      addLog(`${spec.icon} Specialized as ${spec.name}. Your saved template (skills, mods, gambits) was restored.`);
     } else {
       showNotif(`${spec.icon} Specialization: ${spec.name}!`);
-      addLog(`${spec.icon} Specialized as ${spec.name}. Signature skills granted: ${specGrantedSkills(specId).join(", ")}.`, "#f0b429");
+      addLog(`${spec.icon} Specialized as ${spec.name}. Signature skills granted: ${specGrantedSkills(specId).join(", ")}.`);
     }
   };
   const toggleSelectedSkill = (name) => {
@@ -3600,7 +3600,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     const endsAt = Date.now() + townTimeAt(bld, cur) * 1000;
     commitChar({ ...c, gold: c.gold - cost.gold, materials: mats, drops, town: { ...(c.town || {}), build: { id, level: cur + 1, endsAt } } });
     showNotif(`🏗️ ${bld.name} → level ${cur + 1} underway!`);
-    addLog(`🏗️ Construction began: ${bld.name} → level ${cur + 1}`, "#f0b429");
+    addLog(`🏗️ Construction began: ${bld.name} → level ${cur + 1}`);
   };
   const collectBuild = () => {
     const c = charRef.current; const bd = c.town?.build; if (!bd || Date.now() < bd.endsAt) return;
@@ -3608,7 +3608,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     commitChar({ ...c, town: { buildings, build: null } });
     const bld = townBuildingById(bd.id);
     showNotif(`✅ ${bld?.name} is now level ${bd.level}!`);
-    addLog(`✅ ${bld?.name} completed — level ${bd.level}. ${bld ? bld.bonus(bd.level) : ""}`, "#5fd35f");
+    addLog(`✅ ${bld?.name} completed — level ${bd.level}. ${bld ? bld.bonus(bd.level) : ""}`);
   };
   const rushBuildCost = (bd) => Math.max(1, Math.ceil(Math.max(0, (bd.endsAt - Date.now())) / 60000)); // 1 Ven per minute remaining
   const rushBuild = () => {
@@ -3619,7 +3619,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     commitChar({ ...c, ven: c.ven - cost, town: { buildings, build: null } });
     const bld = townBuildingById(bd.id);
     showNotif(`⚡ Rushed ${bld?.name} to level ${bd.level}! (−${cost} 💎)`);
-    addLog(`⚡ Rushed ${bld?.name} — now level ${bd.level}. ${bld ? bld.bonus(bd.level) : ""}`, "#7fd0ff");
+    addLog(`⚡ Rushed ${bld?.name} — now level ${bd.level}. ${bld ? bld.bonus(bd.level) : ""}`);
   };
   useEffect(() => {
     const iv = setInterval(() => { const bd = charRef.current?.town?.build; if (bd && Date.now() >= bd.endsAt) collectBuild(); }, 2000);
@@ -3638,7 +3638,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       const until = item.hours === "perm" ? PERMA_TS : Math.max(Date.now(), cur === PERMA_TS ? Date.now() : cur) + item.hours * 3600000;
       nc = { ...nc, auras: { ...nc.auras, [item.aura]: cur === PERMA_TS ? PERMA_TS : until } };
       showNotif(`${item.icon} ${item.name} active!`);
-      addLog(`${item.icon} Activated ${item.name}`, "#7fd0ff");
+      addLog(`${item.icon} Activated ${item.name}`);
     } else if (item.kind === "gem") {
       const g = gemById(item.gem);
       nc = { ...nc, gems: { ...(nc.gems || {}), [item.gem]: ((nc.gems || {})[item.gem] || 0) + 1 } };
@@ -3653,16 +3653,16 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       nc = { ...nc, inventory: d.inventory, overflow: d.overflow };
       showNotif(d.mailed.length ? `${item.icon} ${art.name} forged — bank full, it is in your mail`
                                 : `${item.icon} ${art.name} forged — check your Bag!`);
-      addLog(`${item.icon} Forged ${art.name} (ilvl ${art.ilvl})`, "#c8102e");
+      addLog(`${item.icon} Forged ${art.name} (ilvl ${art.ilvl})`);
     } else if (item.kind === "bank") {
       nc = { ...nc, bankSlots: Math.max(0, (nc.bankSlots || 0) + item.slots) };
       showNotif(`${item.icon} Bank expanded — ${bankCap(nc)} slots`);
-      addLog(`${item.icon} Bank expanded to ${bankCap(nc)} slots`, "#7fd0ff");
+      addLog(`${item.icon} Bank expanded to ${bankCap(nc)} slots`);
       // Anything waiting in the mail can come home now that there is room.
       const cl = claimOverflow(nc);
       if (cl.claimed.length) {
         nc = { ...nc, inventory: cl.inventory, overflow: cl.overflow };
-        addLog(`📬 ${cl.claimed.length} item(s) returned from your mail`, "#7fd0ff");
+        addLog(`📬 ${cl.claimed.length} item(s) returned from your mail`);
       }
     }
     commitChar(nc);
@@ -3676,7 +3676,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     const gold = n * VEN_TO_GOLD;
     commitChar({ ...c, ven: c.ven - n, gold: (c.gold || 0) + gold });
     showNotif(`💰 +${gold.toLocaleString()} gold`);
-    addLog(`💰 Exchanged ${n.toLocaleString()} Ven for ${gold.toLocaleString()} gold`, "#FFD700");
+    addLog(`💰 Exchanged ${n.toLocaleString()} Ven for ${gold.toLocaleString()} gold`);
     setVenExchange("");
   };
   const buyVenStub = () => { showNotif("💳 In-app purchases coming soon — Google Play & more"); };
@@ -3730,7 +3730,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     const opt = TALENT_TIERS[0].options.find((o) => o.id === optionId); if (!opt) return;
     commitChar({ ...c, talents: { ...(c.talents || {}), 10: optionId }, talentTutorialDone: true });
     showNotif(`${opt.icon} ${opt.name} learned!`);
-    addLog(`🌟 Talent path chosen: ${opt.name}. Manage talents under the Hero's Statue.`, "#f0b429");
+    addLog(`🌟 Talent path chosen: ${opt.name}. Manage talents under the Hero's Statue.`);
   };
   // A lesson completes the moment its condition is met. This used to watch three fields, which was
   // enough for six steps keyed on kills and professions; the lessons now key on gear, upgrades,
@@ -3757,7 +3757,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     const allDone = LESSONS.every((l) => doneIds[l.id]);
     nc = { ...nc, tutorial: { ...nc.tutorial, doneIds, step: Object.keys(doneIds).length, done: allDone } };
     commitChar(nc);
-    addLog(`✅ ${lesson.title} complete${rewardMsg ? " — " + rewardMsg : ""}!`, "#f0b429");
+    addLog(`✅ ${lesson.title} complete${rewardMsg ? " — " + rewardMsg : ""}!`);
     showNotif(`✅ ${lesson.title}!${rewardMsg ? " " + rewardMsg : ""}${allDone ? " · Every system learned!" : ""}`);
   }, [char]);
 
@@ -3854,7 +3854,11 @@ function GameScreen({ character: initChar, onSave, onBack }) {
   }, [onSave]);
   const commitBattle = useCallback((next) => { battleRef.current = next; setBattle(next); }, []);
 
-  const addLog = useCallback((text, color = "#ccc") => setCombatLog((prev) => [...prev.slice(-70), { text, color }]), []);
+  // No colour argument. There used to be one on 100 of these calls, in fourteen
+  // different hexes, and the Chronicle has never read it: an entry's kind is
+  // derived from the sentence, because sentence shapes are far more stable than
+  // whoever-was-writing-that-day's choice of amber. They were stored and ignored.
+  const addLog = useCallback((text) => setCombatLog((prev) => [...prev.slice(-70), { text }]), []);
   const showNotif = useCallback((msg) => { setNotification(msg); setTimeout(() => setNotification(null), 2400); }, []);
   const chatState = useGlobalChat(char, showNotif); // shared global chat (town float + combat tab + guild)
   const [combatSide, setCombatSide] = useState("log"); // combat panel tab: log | chat
@@ -4039,7 +4043,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     const apply = (it) => { if (it?.id !== item.id) return it; const sk = [...socketsOf(it)]; sk[idx] = null; return { ...it, sockets: sk }; };
     const equipment = {}; for (const k in (c.equipment || {})) equipment[k] = apply(c.equipment[k]);
     commitChar({ ...c, ven: c.ven - REFORGE_SOCKET_VEN, equipment, inventory: (c.inventory || []).map(apply) });
-    addLog(`🔥 ${g?.name || "Gem"} burned out of ${item.name} — socket freed`, "#ff8877");
+    addLog(`🔥 ${g?.name || "Gem"} burned out of ${item.name} — socket freed`);
     showNotif("🔥 Socket reforged");
     setReforgeConfirm(null);
   };
@@ -4086,7 +4090,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
         if (eqp && itemScore(it, c.cls) <= itemScore(eqp, c.cls)) {
           const price = Math.max(1, Math.floor(it.value * 0.6 * 0.25));
           gold += price;
-          addLog(`💰 Auto-sold ${it.name} (+${price}g)`, "#caa64a");
+          addLog(`💰 Auto-sold ${it.name} (+${price}g)`);
           return;
         }
       }
@@ -4098,7 +4102,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     const res = depositItems({ ...c, inventory: inv }, toBag, unequipped);
     for (const it of toBag) {
       if (res.mailed.includes(it)) addLog(`📬 Bank full — ${it.name} is waiting in your mail`, rarityById(it.rarity).color);
-      else if (res.sold.some((s) => s.item === it)) addLog(`💰 Bank full — auto-sold ${it.name} (+${overflowSellPrice(it)}g)`, "#caa64a");
+      else if (res.sold.some((s) => s.item === it)) addLog(`💰 Bank full — auto-sold ${it.name} (+${overflowSellPrice(it)}g)`);
       else addLog(`🎁 Looted ${it.name}`, rarityById(it.rarity).color);
     }
     if (firstShown) { setLastLoot(firstShown); setTimeout(() => setLastLoot(null), 2600); }
@@ -4171,7 +4175,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
 
     addLog(unattended
       ? `✅ ${enemy.name} defeated! (idle — paid by the hour)`
-      : `✅ ${enemy.name} defeated! +${xpEarned} XP, +${goldBase}g`, "#ABD473");
+      : `✅ ${enemy.name} defeated! +${xpEarned} XP, +${goldBase}g`);
 
     let nc = { ...c };
     const xpGain = c.race === "undead" ? Math.floor(xpEarned * 1.1) : xpEarned;
@@ -4192,7 +4196,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     }
     nc.xp = newXp; nc.level = newLevel;
     nc.unlockedSkills = (SKILLS[c.cls] || []).filter((s) => s.unlockLevel <= newLevel).map((s) => s.name);
-    if (unlockedSlotCount(newLevel) > beforeSlots) { nc.selectedSkills = padSelectedSkills(nc, c.selectedSkills); addLog(`🌟 New ability slot unlocked! (${unlockedSlotCount(newLevel)}/${MAX_SKILL_SLOTS})`, "#f0b429"); }
+    if (unlockedSlotCount(newLevel) > beforeSlots) { nc.selectedSkills = padSelectedSkills(nc, c.selectedSkills); addLog(`🌟 New ability slot unlocked! (${unlockedSlotCount(newLevel)}/${MAX_SKILL_SLOTS})`); }
     nc.honor = newHonor; nc.honorXp = newHonorXp; nc.attrPoints = newAttrPoints;
     nc.gold = c.gold + goldBase;
     // The stretch's running total, or nothing at all once somebody is back. Clearing it on the first
@@ -4202,8 +4206,8 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     nc.kills = c.kills + 1;
     nc.bossKills = enemy.isBoss ? c.bossKills + 1 : c.bossKills;
 
-    if (leveled) { addLog(`🎉 LEVEL UP! Now level ${newLevel}!`, "#FFD700"); showNotif(`🎉 Level ${newLevel}!`); }
-    if (honorGained) { addLog(`⭐ Honor Level ${newHonor}! +1 attribute point`, "#ff8000"); showNotif(`⭐ Honor Level ${newHonor}!`); }
+    if (leveled) { addLog(`🎉 LEVEL UP! Now level ${newLevel}!`); showNotif(`🎉 Level ${newLevel}!`); }
+    if (honorGained) { addLog(`⭐ Honor Level ${newHonor}! +1 attribute point`); showNotif(`⭐ Honor Level ${newHonor}!`); }
 
     // loot (level-banded zones / dungeon-specific tables; dungeon bosses guaranteed)
     const isDungeon = b.mode === "dungeon";
@@ -4243,14 +4247,14 @@ function GameScreen({ character: initChar, onSave, onBack }) {
         const hz = hardZoneById(b.hardId);
         const k = ((nc.hardKills || {})[b.hardId] || 0) + 1;
         nc = { ...nc, hardKills: { ...(nc.hardKills || {}), [b.hardId]: k } };
-        if (hz && k >= hz.killGoal && !nc.hardZoneDone?.[b.hardId]) { nc = { ...nc, hardZoneDone: { ...(nc.hardZoneDone || {}), [b.hardId]: true } }; addLog(`🏆 ${hz.name} (Hard) conquered — ${hz.killGoal} kills!`, "#FFD700"); showNotif(`🏆 ${hz.name} complete!`); }
+        if (hz && k >= hz.killGoal && !nc.hardZoneDone?.[b.hardId]) { nc = { ...nc, hardZoneDone: { ...(nc.hardZoneDone || {}), [b.hardId]: true } }; addLog(`🏆 ${hz.name} (Hard) conquered — ${hz.killGoal} kills!`); showNotif(`🏆 ${hz.name} complete!`); }
       } else if (enemy.hardBoss) {
         const bk = ((nc.hardBossKills || {})[enemy.hardBoss] || 0) + 1;
         nc = { ...nc, hardBossKills: { ...(nc.hardBossKills || {}), [enemy.hardBoss]: bk } };
         const hd = hardDungeonById(b.hardId);
-        addLog(`☠️ ${enemy.hardBoss} slain (${bk}${hd?.completeCount ? "/" + hd.completeCount : "/" + HARD_BOSS_REQ})`, "#ff8877");
-        if (hd?.completeCount && bk >= hd.completeCount && !nc.hardDungeonDone?.[b.hardId]) { nc = { ...nc, hardDungeonDone: { ...(nc.hardDungeonDone || {}), [b.hardId]: true } }; addLog(`🏆 ${hd.name} (Hard) cleared!`, "#FFD700"); showNotif(`🏆 ${hd.name} complete!`); }
-        if (b.hardKind === "raid" && bk >= HARD_BOSS_REQ && !nc.hardDungeonDone?.[b.hardId]) { nc = { ...nc, hardDungeonDone: { ...(nc.hardDungeonDone || {}), [b.hardId]: true } }; addLog("🔥 The Molten Heart falls — HELL MODE awaits!", "#ff4500"); showNotif("🔥 Hard Mode raid cleared!"); }
+        addLog(`☠️ ${enemy.hardBoss} slain (${bk}${hd?.completeCount ? "/" + hd.completeCount : "/" + HARD_BOSS_REQ})`);
+        if (hd?.completeCount && bk >= hd.completeCount && !nc.hardDungeonDone?.[b.hardId]) { nc = { ...nc, hardDungeonDone: { ...(nc.hardDungeonDone || {}), [b.hardId]: true } }; addLog(`🏆 ${hd.name} (Hard) cleared!`); showNotif(`🏆 ${hd.name} complete!`); }
+        if (b.hardKind === "raid" && bk >= HARD_BOSS_REQ && !nc.hardDungeonDone?.[b.hardId]) { nc = { ...nc, hardDungeonDone: { ...(nc.hardDungeonDone || {}), [b.hardId]: true } }; addLog("🔥 The Molten Heart falls — HELL MODE awaits!"); showNotif("🔥 Hard Mode raid cleared!"); }
       }
     } else if (isDungeon && !enemy.isBoss && !(instanceById(b.dungeonId) || {}).raid) {
       // Dungeon TRASH pays gold and XP only. Gear used to trickle out of every wave at 34%, which
@@ -4278,7 +4282,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     const etype = enemyTypeName(enemy);
     if (etype) nc = { ...nc, killsByType: { ...(nc.killsByType || {}), [etype]: ((nc.killsByType || {})[etype] || 0) + 1 } };
     // 💎 Ven — an extremely rare premium-currency drop
-    if (Math.random() < (enemy.isBoss ? 0.006 : 0.0004)) { const vg = enemy.isBoss ? 2 : 1; nc = { ...nc, ven: (nc.ven || 0) + vg }; addLog(`💎 Rare drop! +${vg} Ven`, "#7fd0ff"); showNotif(`💎 +${vg} Ven!`); }
+    if (Math.random() < (enemy.isBoss ? 0.006 : 0.0004)) { const vg = enemy.isBoss ? 2 : 1; nc = { ...nc, ven: (nc.ven || 0) + vg }; addLog(`💎 Rare drop! +${vg} Ven`); showNotif(`💎 +${vg} Ven!`); }
 
     // Mimic Chest: subtle crafting materials suited to the player's gathering ranks, growing with zone level
     if (enemy.isMimic) {
@@ -4289,11 +4293,11 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       mats[oreTier.id] = (mats[oreTier.id] || 0) + q;
       mats[herbTier.id] = (mats[herbTier.id] || 0) + q;
       nc = { ...nc, materials: mats };
-      addLog(`🧰 The Mimic Chest bursts! +${q} ${oreTier.name}, +${q} ${herbTier.name}`, "#f0b429");
+      addLog(`🧰 The Mimic Chest bursts! +${q} ${oreTier.name}, +${q} ${herbTier.name}`);
       showNotif(`🧰 Mimic loot: +${q} ${oreTier.name} · +${q} ${herbTier.name}`);
       if ((nc.professions?.mining?.level || 1) >= PROF_MAX && Math.random() < 0.005) { // 0.5% crystalline at max mining
         nc = { ...nc, materials: { ...nc.materials, crystalline: (nc.materials.crystalline || 0) + 1 } };
-        addLog("💎 The Mimic held a shard of Crystalline Ore!", "#c08bff"); showNotif("💎 Crystalline Ore!");
+        addLog("💎 The Mimic held a shard of Crystalline Ore!"); showNotif("💎 Crystalline Ore!");
       }
     }
 
@@ -4305,13 +4309,13 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       else { const d = relicForDungeon(b.dungeonId); if (d && Math.random() < 0.005) relicDef = d; } // dungeons: extremely rare, this dungeon's relic
       if (relicDef) {
         nc = { ...nc, ...depositEarned(nc, makeRelic(relicDef, enemy.level)) };
-        addLog(`🔱 RELIC DROP: ${relicDef.name}!`, "#f0b429");
+        addLog(`🔱 RELIC DROP: ${relicDef.name}!`);
         showNotif(`🔱 Relic drop: ${relicDef.name}!`);
       }
       // Molten Heart raid: 1% Crystalline Ore at max mining rank
       if (inst?.id === "moltencore" && (nc.professions?.mining?.level || 1) >= PROF_MAX && Math.random() < 0.01) {
         nc = { ...nc, materials: { ...nc.materials, crystalline: (nc.materials.crystalline || 0) + 1 } };
-        addLog("💎 Crystalline Ore glimmers in the Molten Heart!", "#c08bff"); showNotif("💎 Crystalline Ore!");
+        addLog("💎 Crystalline Ore glimmers in the Molten Heart!"); showNotif("💎 Crystalline Ore!");
       }
     }
 
@@ -4320,7 +4324,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       const ap = b.abyssPlus || 0;
       const prog = recordAbyssKill(nc, ap);
       nc = { ...nc, abyss: prog.abyss };
-      if (prog.msg) { addLog(prog.msg, "#b06ad0"); showNotif(prog.msg); }
+      if (prog.msg) { addLog(prog.msg); showNotif(prog.msg); }
       // One piece every 150 kills on average, 95% epic and 5% legendary. Rolled per kill rather
       // than counted, so a run of bad luck is possible and a run of good luck is too — a hard
       // counter would make the 150th kill the only one that ever mattered.
@@ -4350,7 +4354,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       } else {
         const inst = b.hardKind === "raid" ? HARD_RAID : hardDungeonById(b.hardId);
         if (enemy.hardBoss) { // final-wave boss slain → run complete
-          addLog(`🏆 ${inst.name} (Hard) cleared!`, "#FFD700"); showNotif(`🏆 ${inst.name} cleared!`);
+          addLog(`🏆 ${inst.name} (Hard) cleared!`); showNotif(`🏆 ${inst.name} cleared!`);
           nb = null;
         } else {
           const nextWave = b.wave + 1;
@@ -4359,7 +4363,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           // field counting two different things in two places.
           const isBossWave = nextWave > b.waves;
           const e = makeHardEnemy(inst, b.hardKind, isBossWave, nextWave);
-          addLog(isBossWave ? `⚔️ Final boss: ${inst.boss}!` : `🔥 Wave ${nextWave}/${b.waves}`, "#ff4500");
+          addLog(isBossWave ? `⚔️ Final boss: ${inst.boss}!` : `🔥 Wave ${nextWave}/${b.waves}`);
           nb = { ...b, wave: nextWave, enemy: e, hp: b.hp, enemyEffects: [], enemyNextAt: Date.now() + ENEMY_BASE_INTERVAL, playerNextAt: Date.now() + 600 };
         }
       }
@@ -4367,7 +4371,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       if (enemy.isBoss) {
         nc.dungeonClears = (nc.dungeonClears || 0) + 1;
         const dn = instanceById(b.dungeonId);
-        addLog(`🏆 ${dn?.name} cleared!`, "#FFD700");
+        addLog(`🏆 ${dn?.name} cleared!`);
         showNotif(`🏆 ${dn?.name} cleared!`);
         nb = null; // back to idle
       } else {
@@ -4380,7 +4384,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
         const e = makeEnemy(enemyLvl, isBossWave
           ? { isBoss: true, dungeon: dn.id, name: `💀 ${dn.boss}`, hpMult: (dn.hpMult || 1) * ramp }
           : { dungeon: dn.id, champion: true, hpMult: (dn.raid ? 1.3 : 1.1) * (dn.hpMult || 1) * ramp });
-        addLog(isBossWave ? `⚔️ Final boss: ${dn.boss}!` : `⚔️ Wave ${nextWave}/${dn.waves}`, "#C79C6E");
+        addLog(isBossWave ? `⚔️ Final boss: ${dn.boss}!` : `⚔️ Wave ${nextWave}/${dn.waves}`);
         nb = { ...b, wave: nextWave, enemy: e, hp: b.hp, enemyEffects: [], enemyNextAt: Date.now() + ENEMY_BASE_INTERVAL, playerNextAt: Date.now() + 600 };
       }
     } else {
@@ -4390,7 +4394,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       const enemyLvl = clamp(nc.level, z.minLevel, z.maxLevel);
       const e = makeEnemy(enemyLvl, nextIsBoss ? { isBoss: true, name: `💀 ${pick(z.enemies)} Champion` } : (Math.random() < 0.05 ? { mimic: true } : {}));
       e.name = (nextIsBoss || e.isMimic) ? e.name : pick(z.enemies);
-      if (e.isMimic) addLog("🧰 A Mimic Chest appears — defeat it for crafting materials!", "#f0b429");
+      if (e.isMimic) addLog("🧰 A Mimic Chest appears — defeat it for crafting materials!");
       nb = { ...b, enemy: e, hp: b.hp, enemyEffects: [], enemyNextAt: Date.now() + ENEMY_BASE_INTERVAL, playerNextAt: Date.now() + 600 };
     }
     // 2% max-health heal on every enemy defeated (carries into the next encounter)
@@ -4407,8 +4411,8 @@ function GameScreen({ character: initChar, onSave, onBack }) {
 
   const finishKill = (c, bSnap) => {
     if (bSnap && bSnap.pvp) { botCharRef.current = null; botMirrorRef.current = null; botTierRef.current = null; commitBattle(null);
-      if (bSnap.practice) { const pc = charRef.current; commitChar({ ...pc, tutorial: { ...(pc.tutorial || {}), duelDone: true } }); addLog(`🎯 Practice bout won against ${bSnap.ratedOpp?.name || "your partner"} — unranked, nothing recorded.`, "#5fd35f"); }
-      else { recordRated(true); addLog(`🏆 You defeated ${bSnap.ratedOpp?.name || "your rival"}!`, "#5fd35f"); }
+      if (bSnap.practice) { const pc = charRef.current; commitChar({ ...pc, tutorial: { ...(pc.tutorial || {}), duelDone: true } }); addLog(`🎯 Practice bout won against ${bSnap.ratedOpp?.name || "your partner"} — unranked, nothing recorded.`); }
+      else { recordRated(true); addLog(`🏆 You defeated ${bSnap.ratedOpp?.name || "your rival"}!`); }
       setTab("arena"); return; }
     const res = resolveDeath(c, bSnap);
     commitChar(res.char);
@@ -4454,7 +4458,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       commitBattle(null);
       if (!b.practice) recordRated(false);
       addLog(b.practice ? `🎯 ${b.ratedOpp?.name || "Your partner"} took that one — unranked, nothing recorded. Lesson learned.`
-                        : `💀 ${b.ratedOpp?.name || "Your rival"} bested you in the arena.`, "#e07a7a");
+                        : `💀 ${b.ratedOpp?.name || "Your rival"} bested you in the arena.`);
       setTab("arena"); return; }
     // GROUP RUN death rule: an individual death does NOT fail the run. A living teammate battle-reses
     // you (limited charges). The run only fails on a true wipe — reses exhausted or every member down.
@@ -4463,12 +4467,12 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       if (resesRef.current > 0 && livingMates > 0) {
         resesRef.current -= 1; setGroupReses(resesRef.current);
         commitBattle({ ...b, hp: Math.max(1, Math.round(maxHpFor(c) * 0.4)) }); // revived at 40% — fight continues
-        addLog(`✚ A teammate battle-reses you! (${resesRef.current} left)`, "#5fd35f"); showNotif("✚ Battle-res!");
+        addLog(`✚ A teammate battle-reses you! (${resesRef.current} left)`); showNotif("✚ Battle-res!");
         return;
       }
       guildRunRef.current = null; setGroupParty(null); pveBotsRef.current = null; // out of reses / whole party down → wipe (run fails, no bid)
       commitChar({ ...c, hp: maxHpFor(c) }); commitBattle(null);
-      addLog("☠️ Party wipe — the run fails.", "#e07a7a"); showNotif("☠️ Party wiped");
+      addLog("☠️ Party wipe — the run fails."); showNotif("☠️ Party wiped");
       setTab("guild");
       return;
     }
@@ -4479,8 +4483,8 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     const xpLost = lowLevel ? 0 : Math.floor(c.xp * 0.25);
     const nc = { ...c, gold: c.gold - penalty, xp: c.xp - xpLost, hp: maxHpFor(c) };
     commitChar(nc);
-    if (lowLevel) { addLog("💀 You died! No penalty under level 10. Combat paused.", "#cc2200"); showNotif("💀 Defeated — no penalty (under 10)"); }
-    else { addLog(`💀 You died! The shrine healer charges ${penalty}g and you lose ${xpLost} XP. Combat paused.`, "#cc2200"); showNotif(`💀 Defeated — lost ${penalty}g & ${xpLost} XP`); }
+    if (lowLevel) { addLog("💀 You died! No penalty under level 10. Combat paused."); showNotif("💀 Defeated — no penalty (under 10)"); }
+    else { addLog(`💀 You died! The shrine healer charges ${penalty}g and you lose ${xpLost} XP. Combat paused.`); showNotif(`💀 Defeated — lost ${penalty}g & ${xpLost} XP`); }
     commitBattle(null);
   };
 
@@ -4514,31 +4518,31 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     const directDmg = (dmg) => wardLow(dmg * (1 - mit) * magicCut);
     // DoT ability damage: reduced by Resilience (its dedicated defense), not armor
     const dotDmg = (dmg) => wardLow(dmg * (1 - sp.resil / 100) * magicCut);
-    if (isMagicHit && spellbreak && (sk.mult || sk.dotMult)) { const pb = w.playerEffects.find((e) => e.kind === "physbuff"); if (pb) { pb.stacks = Math.min(5, (pb.stacks || 0) + 1); pb.expires = now + 12000; } else { w.playerEffects.push({ kind: "physbuff", name: "Spell Feedback", icon: "⚔️", stacks: 1, expires: now + 12000 }); } addLog(`⚔️ Spell Feedback — +${Math.min(5, (w.playerEffects.find((e) => e.kind === "physbuff") || {}).stacks || 1) * 5}% physical damage`, "#e0a955"); }
+    if (isMagicHit && spellbreak && (sk.mult || sk.dotMult)) { const pb = w.playerEffects.find((e) => e.kind === "physbuff"); if (pb) { pb.stacks = Math.min(5, (pb.stacks || 0) + 1); pb.expires = now + 12000; } else { w.playerEffects.push({ kind: "physbuff", name: "Spell Feedback", icon: "⚔️", stacks: 1, expires: now + 12000 }); } addLog(`⚔️ Spell Feedback — +${Math.min(5, (w.playerEffects.find((e) => e.kind === "physbuff") || {}).stacks || 1) * 5}% physical damage`); }
     if (sk.mult && sk.mult > 0) {
       const dmg = directDmg(base * sk.mult * (sk.hits || 1));
       w.hp = Math.max(0, w.hp - dmg);
-      addLog(`✦ ${w.enemy.name} casts ${sk.name} — ${dmg}!`, "#ff5566");
+      addLog(`✦ ${w.enemy.name} casts ${sk.name} — ${dmg}!`);
     }
     if (sk.dotMult) {
       const per = Math.max(1, Math.floor((dotDmg(base * sk.dotMult) * debuffMult) / (sk.dotDur || 3)));
       w.playerEffects = w.playerEffects.filter((e) => !(e.kind === "pdot" && e.name === sk.name));
       w.playerEffects.push({ kind: "pdot", name: sk.name, icon: sk.dotIcon || "☠️", dmgPerTick: per, nextTick: now + 1000, expires: now + (sk.dotDur || 3) * 1000 * debuffMult });
-      addLog(`${sk.icon} ${w.enemy.name}'s ${sk.name} afflicts you — ${per}/s`, "#ff7799");
+      addLog(`${sk.icon} ${w.enemy.name}'s ${sk.name} afflicts you — ${per}/s`);
     }
     if (sk.slowPct) {
       const isStun = sk.slowPct >= 100;
       const drf = drFactor(w, "player", isStun ? "stun" : "slow", true); // peek
       // Resilience gives a chance to resist stun/slow debuffs
-      if (drf <= 0) { addLog(`🛡️ You resist more ${isStun ? "stuns" : "slows"} (diminishing returns)`, "#8ec5ff"); }
+      if (drf <= 0) { addLog(`🛡️ You resist more ${isStun ? "stuns" : "slows"} (diminishing returns)`); }
       else if (Math.random() < sp.resil / 100) {
-        addLog(`🛡️ Resilience resists ${w.enemy.name}'s ${sk.name}!`, "#8ec5ff");
+        addLog(`🛡️ Resilience resists ${w.enemy.name}'s ${sk.name}!`);
       } else {
         drFactor(w, "player", isStun ? "stun" : "slow"); // consume a stack
         const ccMult = sk.name === "Fear" ? 1 : debuffMult; // Fear is exempt from the elite CC-duration doubling
         w.playerEffects = w.playerEffects.filter((e) => !(e.kind === "pslow" && e.name === sk.name));
         w.playerEffects.push({ kind: "pslow", name: sk.name, icon: isStun ? "💫" : "🐌", pct: isStun ? 100 : Math.round(sk.slowPct * drf), expires: now + (sk.slowDur || 3) * 1000 * ccMult * drf * (isMagicHit && spellbreak ? 0.8 : 1) });
-        addLog(`${sk.icon} ${w.enemy.name}'s ${sk.name} ${isStun ? "stuns" : "slows"} you!`, "#ff7799");
+        addLog(`${sk.icon} ${w.enemy.name}'s ${sk.name} ${isStun ? "stuns" : "slows"} you!`);
       }
     }
     return w.hp <= 0;
@@ -4560,13 +4564,13 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       if (talentFlag(c, "beastPet")) {
         if (!w.pet) w.pet = { hp: petMaxHp(c), maxHp: petMaxHp(c), nextAt: now + PET.interval, resummonAt: 0 };
         const pet = w.pet;
-        if (pet.hp <= 0 && pet.resummonAt && now >= pet.resummonAt) { pet.hp = pet.maxHp; pet.resummonAt = 0; pet.nextAt = now + PET.interval; addLog("🐺 Your Savage Companion returns to your side!", "#8fd35f"); dirty = true; }
+        if (pet.hp <= 0 && pet.resummonAt && now >= pet.resummonAt) { pet.hp = pet.maxHp; pet.resummonAt = 0; pet.nextAt = now + PET.interval; addLog("🐺 Your Savage Companion returns to your side!"); dirty = true; }
         if (pet.hp > 0 && w.enemy.hp > 0) {
           let gp = 0;
           while (now >= (pet.nextAt || 0) && w.enemy.hp > 0 && gp++ < 4) {
             let pd = petHitDamage(c); if (pet.empowerUntil && now < pet.empowerUntil) pd = Math.floor(pd * (1 + PET.empower));
             const pcrit = Math.random() < critChanceFor(c); if (pcrit) pd = Math.floor(pd * critMultFor(c));
-            w.enemy.hp = Math.max(0, w.enemy.hp - pd); addLog(`🐺 Savage Companion mauls for ${pd}${pcrit ? " ⚡" : ""}`, "#8fd35f");
+            w.enemy.hp = Math.max(0, w.enemy.hp - pd); addLog(`🐺 Savage Companion mauls for ${pd}${pcrit ? " ⚡" : ""}`);
             pet.nextAt = (pet.nextAt || now) + PET.interval; dirty = true;
           }
           if ((pet.nextAt || 0) < now) pet.nextAt = now + PET.interval;
@@ -4591,7 +4595,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
         dmg = Math.max(1, Math.floor(dmg * (w.pvp ? PVP_AUTO_MULT : 1)));
         dmg = Math.max(1, Math.floor(dmg * (1 - enemyMitigation(w.enemy, c.level))));   // armoured archetypes turn blows
         w.enemy.hp = Math.max(0, w.enemy.hp - dmg);
-        if (execThresh > 0 && w.enemy.hp > 0 && w.enemy.hp <= (w.enemy.maxHp || 0) * execThresh) { w.enemy.hp = 0; addLog("👁️ Executioner's Eye — slain!", "#ff5555"); } // instant kill on execute
+        if (execThresh > 0 && w.enemy.hp > 0 && w.enemy.hp <= (w.enemy.maxHp || 0) * execThresh) { w.enemy.hp = 0; addLog("👁️ Executioner's Eye — slain!"); } // instant kill on execute
         if (sp.leech > 0 || talentMods(c).leech > 0) { const h = Math.floor(dmg * (sp.leech + talentMods(c).leech) / 100); if (h > 0) w.hp = Math.min(maxHp, w.hp + h); }
         if (talentFlag(c, "hexRefresh")) { w.enemyEffects.forEach((e) => { if (e.dur) e.expires = now + e.dur; }); } // Hexer: refresh your debuffs on the enemy
         addLog(`🗡️ Auto-attack: ${dmg}${crit ? " ⚡" : ""}`, crit ? "#FFD700" : "#7EC8E3");
@@ -4627,7 +4631,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
             w.hp = Math.min(gMaxHp, w.hp + Math.round(tierHeal(t) * gemPotionMult(cc))); w.cooldowns = { ...(w.cooldowns || {}), [ck]: now + 8000 };
             lastPotionRef.current = Date.now(); setLastPotion(Date.now());
             commitChar({ ...cc, consumables: { ...cc.consumables, [key]: cc.consumables[key] - 1 } });
-            addLog(`🧪 Gambit: ${def.name} (+HP)`, "#7CFC9E"); dirty = true;
+            addLog(`🧪 Gambit: ${def.name} (+HP)`); dirty = true;
           } else if (def.kind === "dmgbuff" || def.kind === "reducebuff") {
             const bkey = def.kind === "dmgbuff" ? "dmgpct" : "reducepct";
             if (activeBuffs(cc)[bkey]) return;
@@ -4672,7 +4676,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       }
 
       // class resource is volatile — unspent power decays away
-      if ((w.resQ || []).length && resExpire(w, now)) { addLog(`${classResource(c.cls).icon} Unspent ${classResource(c.cls).name} fades away`, "#7a7490"); dirty = true; }
+      if ((w.resQ || []).length && resExpire(w, now)) { addLog(`${classResource(c.cls).icon} Unspent ${classResource(c.cls).name} fades away`); dirty = true; }
 
       // gem regeneration — socketed Emeralds restore a % of max HP each second
       const gRegen = gemRegen(c);
@@ -4686,7 +4690,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
 
       // enemy DoTs
       w.enemyEffects.forEach((e) => {
-        if (e.kind === "dot") { let g2 = 0; while (now >= e.nextTick && w.enemy.hp > 0 && g2++ < 6) { w.enemy.hp = Math.max(0, w.enemy.hp - e.dmgPerTick); if (c.cls === "warlock") { w.shardTicks = (w.shardTicks || 0) + 1; if (w.shardTicks >= SHARD_TICKS_PER) { w.shardTicks = 0; if (resTotal(w) < CLASS_RESOURCES.warlock.max) { resAdd(w, 1, CLASS_RESOURCES.warlock.max, now); addLog("💜 Soul Shard harvested", "#9482C9"); } } } const lp = sp.leech + talentMods(c).leech; if (lp > 0) w.hp = Math.min(maxHp, w.hp + Math.floor(e.dmgPerTick * lp / 100)); addLog(`${e.icon} ${e.name}: ${e.dmgPerTick}`, "#c8a0ff"); e.nextTick += 1000; dirty = true; } }
+        if (e.kind === "dot") { let g2 = 0; while (now >= e.nextTick && w.enemy.hp > 0 && g2++ < 6) { w.enemy.hp = Math.max(0, w.enemy.hp - e.dmgPerTick); if (c.cls === "warlock") { w.shardTicks = (w.shardTicks || 0) + 1; if (w.shardTicks >= SHARD_TICKS_PER) { w.shardTicks = 0; if (resTotal(w) < CLASS_RESOURCES.warlock.max) { resAdd(w, 1, CLASS_RESOURCES.warlock.max, now); addLog("💜 Soul Shard harvested"); } } } const lp = sp.leech + talentMods(c).leech; if (lp > 0) w.hp = Math.min(maxHp, w.hp + Math.floor(e.dmgPerTick * lp / 100)); addLog(`${e.icon} ${e.name}: ${e.dmgPerTick}`); e.nextTick += 1000; dirty = true; } }
       });
       // PvE party bots: scale the boss for the group (once), then let each bot damage it for real
       if (pveBotsRef.current && pveBotsRef.current.length && !w.pvp && !w.enemy.mirror) {
@@ -4723,7 +4727,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
         const dodgeChance = Math.max(c.race === "nightelf" ? 0.03 : 0, dodgePctOf(w.playerEffects));
         let g3 = 0;
         while (now >= w.enemyNextAt && g3++ < 6) {
-          if (Math.random() < dodgeChance) { addLog("🌀 Dodged the attack!", "#9fd"); }
+          if (Math.random() < dodgeChance) { addLog("🌀 Dodged the attack!"); }
           else {
             const eCrit = eArch.crit > 0 && Math.random() < eArch.crit;   // only the archetypes that are meant to spike
             const rawDmg = enemyBaseDamage(w.enemy) * (enemyCanCast(w.enemy) ? enemyAutoMult(w.enemy.level) : 1) * enrageMult(w, now) * (eCrit ? 1 + CRIT_BONUS : 1); // Hard Mode damage now lives in enemy stats; dungeon enrage still applies
@@ -4734,18 +4738,18 @@ function GameScreen({ character: initChar, onSave, onBack }) {
             eDmg = Math.max(1, Math.floor(eDmg * wardMultOf(w.playerEffects))); // ward buffs reduce damage taken
             if (c.cls === "paladin" && (w.res || 0) > 0) { // Aegis soaks the blow before your health does
               const soak = resTake(w, Math.min(resTotal(w), eDmg)); eDmg -= soak;
-              if (soak > 0) addLog(`🛡️ Aegis absorbs ${Math.floor(soak)}`, "#F58CBA");
+              if (soak > 0) addLog(`🛡️ Aegis absorbs ${Math.floor(soak)}`);
               if (eDmg <= 0) { dirty = true; return; }
             }
             if (c.cls === "warrior") { resAdd(w, 5, CLASS_RESOURCES.warrior.max, now); } // Rage builds as you're struck
             if (c.level < 5) eDmg = Math.max(1, Math.floor(eDmg * 0.8)); // early-game protection: -20% until level 5
             if (talentFlag(c, "beastPet") && w.pet && w.pet.hp > 0 && Math.random() < PET.snipe) { // the companion draws some blows — a second target, not a shield
-              w.pet.hp = Math.max(0, w.pet.hp - eDmg); addLog(`🐺 Savage Companion is struck for ${eDmg}`, "#c98"); 
-              if (w.pet.hp <= 0) { w.pet.resummonAt = now + PET.resummonMs; addLog("🐺 Your Savage Companion is slain! (returns in 15s)", "#cc6644"); }
+              w.pet.hp = Math.max(0, w.pet.hp - eDmg); addLog(`🐺 Savage Companion is struck for ${eDmg}`); 
+              if (w.pet.hp <= 0) { w.pet.resummonAt = now + PET.resummonMs; addLog("🐺 Your Savage Companion is slain! (returns in 15s)"); }
               dirty = true;
             } else {
               w.hp = Math.max(0, w.hp - eDmg);
-              addLog(`🩸 ${w.enemy.name} hits for ${eDmg}`, "#cc6644");
+              addLog(`🩸 ${w.enemy.name} hits for ${eDmg}`);
               if (w.hp <= 0) { applyDefeat(); return; }
             }
           }
@@ -4755,13 +4759,13 @@ function GameScreen({ character: initChar, onSave, onBack }) {
 
       // enemy-applied DoT debuffs tick on the player
       w.playerEffects.forEach((e) => {
-        if (e.kind === "pdot") { let gp = 0; while (now >= e.nextTick && gp++ < 6) { w.hp = Math.max(0, w.hp - e.dmgPerTick); addLog(`${e.icon} ${e.name}: ${e.dmgPerTick}`, "#ff8899"); e.nextTick += 1000; dirty = true; } }
+        if (e.kind === "pdot") { let gp = 0; while (now >= e.nextTick && gp++ < 6) { w.hp = Math.max(0, w.hp - e.dmgPerTick); addLog(`${e.icon} ${e.name}: ${e.dmgPerTick}`); e.nextTick += 1000; dirty = true; } }
       });
       if (w.hp <= 0) { applyDefeat(); return; }
 
       // player HoTs
       w.playerEffects.forEach((e) => {
-        if (e.kind === "hot") { let g4 = 0; while (now >= e.nextTick && g4++ < 6) { w.hp = Math.min(maxHp, w.hp + e.healPerTick); addLog(`➕ Heal ${e.healPerTick}`, "#7CFC9E"); e.nextTick += 1000; dirty = true; } }
+        if (e.kind === "hot") { let g4 = 0; while (now >= e.nextTick && g4++ < 6) { w.hp = Math.min(maxHp, w.hp + e.healPerTick); addLog(`➕ Heal ${e.healPerTick}`); e.nextTick += 1000; dirty = true; } }
       });
 
       if (dirty) commitBattle(w);
@@ -4782,7 +4786,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           commitBattle({ ...b, hp: healed });
           commitChar({ ...c, consumables: { ...c.consumables, [key]: c.consumables[key] - 1 } });
           lastPotionRef.current = Date.now(); setLastPotion(Date.now());
-          addLog(`🧪 Auto-potion (+${healed - b.hp} HP)`, "#ff7766");
+          addLog(`🧪 Auto-potion (+${healed - b.hp} HP)`);
         }
       }
     }, 1000);
@@ -4807,7 +4811,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
         const add = (k, n) => { nc.materials[k] = (nc.materials[k] || 0) + n; };
         const salvageOne = () => {
           const target = lowestDowngradeGreenPlus(nc);
-          if (target) { const rIdx = RARITIES.findIndex((r) => r.id === target.rarity); const dust = 1 + Math.max(0, rIdx - 2); add("dust", dust); nc.inventory = nc.inventory.filter((i) => i.id !== target.id); addLog(`♻️ Salvaged ${target.name} → ${dust} Dust`, "#c08bff"); }
+          if (target) { const rIdx = RARITIES.findIndex((r) => r.id === target.rarity); const dust = 1 + Math.max(0, rIdx - 2); add("dust", dust); nc.inventory = nc.inventory.filter((i) => i.id !== target.id); addLog(`♻️ Salvaged ${target.name} → ${dust} Dust`); }
         };
         if (prof.level >= PROF_MAX) {
           // Idle Gather: at max rank, keep harvesting the last-selected material each tick
@@ -4841,10 +4845,10 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     const c = charRef.current;
     const z = ZONES.find((z) => z.id === c.currentZoneId) || ZONES[0];
     const e = makeEnemy(clamp(c.level, z.minLevel, z.maxLevel), Math.random() < 0.05 ? { mimic: true } : {});
-    if (!e.isMimic) e.name = pick(z.enemies); else addLog("🧰 A Mimic Chest appears — defeat it for crafting materials!", "#f0b429");
+    if (!e.isMimic) e.name = pick(z.enemies); else addLog("🧰 A Mimic Chest appears — defeat it for crafting materials!");
     const t = Date.now();
     commitBattle({ mode: "zone", hp: curHp(c), enemy: e, res: 0, resQ: [], shardTicks: 0, cooldowns: {}, playerEffects: [], enemyEffects: [], playerNextAt: t + PLAYER_BASE_INTERVAL, enemyNextAt: t + ENEMY_BASE_INTERVAL });
-    addLog(`⚔️ Hunting in ${z.name}...`, "#f0b429");
+    addLog(`⚔️ Hunting in ${z.name}...`);
   };
   // travel to a zone and immediately begin hunting on the combat screen
   const huntZone = (z) => {
@@ -4886,7 +4890,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     const t = Date.now();
     commitBattle({ mode: "dungeon", dungeonId: dn.id, wave: 1, runStart: t, drPlayer: {}, drEnemy: {}, hp: curHp(nc), enemy: e, res: 0, resQ: [], shardTicks: 0, cooldowns: {}, playerEffects: [], enemyEffects: [], playerNextAt: t + PLAYER_BASE_INTERVAL, enemyNextAt: t + ENEMY_BASE_INTERVAL });
     setTab("combat");
-    addLog(`🏰 Entering ${dn.name}! Wave 1/${dn.waves}`, "#f0b429");
+    addLog(`🏰 Entering ${dn.name}! Wave 1/${dn.waves}`);
   };
   const raidCooldownLeft = (c, id) => Math.max(0, (c.raidCooldowns?.[id] || 0) - Date.now());
   const startRaid = (raid) => {
@@ -4901,7 +4905,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     const t = Date.now();
     commitBattle({ mode: "dungeon", dungeonId: raid.id, wave: 1, runStart: t, drPlayer: {}, drEnemy: {}, hp: curHp(nc), enemy: e, res: 0, resQ: [], shardTicks: 0, cooldowns: {}, playerEffects: [], enemyEffects: [], playerNextAt: t + PLAYER_BASE_INTERVAL, enemyNextAt: t + ENEMY_BASE_INTERVAL });
     setTab("combat");
-    addLog(`🌋 Entering ${raid.name}! Wave 1/${raid.waves}`, "#ff4500");
+    addLog(`🌋 Entering ${raid.name}! Wave 1/${raid.waves}`);
   };
   // Hard Mode enemies: power comes from the "hard" row of DIFFICULTY_TIERS; these hpMults are the
   // per-content-type health weighting on top of it (zone < dungeon trash < dungeon boss < raid boss).
@@ -4953,7 +4957,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       drPlayer: {}, drEnemy: {}, hp: curHp(c), enemy: makeAbyssEnemy(p), res: 0, resQ: [], shardTicks: 0,
       cooldowns: {}, playerEffects: [], enemyEffects: [], playerNextAt: t + PLAYER_BASE_INTERVAL, enemyNextAt: t + ENEMY_BASE_INTERVAL });
     setTab("combat");
-    addLog(`🕳️ The Abyss${p ? ` +${p}` : ""} — no waves, no boss, no end. Only what you can survive.`, "#b06ad0");
+    addLog(`🕳️ The Abyss${p ? ` +${p}` : ""} — no waves, no boss, no end. Only what you can survive.`);
   };
   // A kill in the Abyss banks against THAT rank. Reaching the goal unlocks the next +, once.
   const recordAbyssKill = (c, plus) => {
@@ -5000,7 +5004,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     const t = Date.now();
     commitBattle({ mode: "hard", hardId: inst.id, hardKind: kind, dropIlvl: inst.dropIlvl, wave: 1, waves, runStart: t, drPlayer: {}, drEnemy: {}, hp: curHp(nc), enemy: e, res: 0, resQ: [], shardTicks: 0, cooldowns: {}, playerEffects: [], enemyEffects: [], playerNextAt: t + PLAYER_BASE_INTERVAL, enemyNextAt: t + ENEMY_BASE_INTERVAL });
     setTab("combat");
-    addLog(kind === "zone" ? `🔥 HARD MODE — ${inst.name}! Extreme danger.` : `🔥 HARD MODE — ${inst.name}! Wave 1/${waves}`, "#ff4500");
+    addLog(kind === "zone" ? `🔥 HARD MODE — ${inst.name}! Extreme danger.` : `🔥 HARD MODE — ${inst.name}! Wave 1/${waves}`);
     setLastHard({ id: inst.id, kind });
   };
   // ---------- GUILD: queue group content, backfill a party with bots (15s), then run REAL combat ----------
@@ -5083,7 +5087,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     setGroupRun({ tutorialDelve: true, bossId: TUTORIAL_DELVE_ID, ilvl, size: 4, raid: false, bossDef,
       party: buildTrinityPartyOfSize(c, ilvl, 4), bidParty: null, label: "Training Delve (practice)" });
     setTab("group");
-    addLog("🏛️ The Training Delve — a practice party. No lockout, no loot, nothing at stake.", "#8fd0e0");
+    addLog("🏛️ The Training Delve — a practice party. No lockout, no loot, nothing at stake.");
   };
   const startTutorialDuel = () => {
     if (battleRef.current) { showNotif("Finish your current fight first"); return; }
@@ -5108,7 +5112,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     // and it has no lockout to gate one.
     if (run.tutorialDelve) {
       commitChar({ ...c, tutorial: { ...(c.tutorial || {}), delveCleared: true } });
-      addLog("🏛️ Training Delve cleared. That is how a group fight works — the real ones drop loot.", "#8fd0e0");
+      addLog("🏛️ Training Delve cleared. That is how a group fight works — the real ones drop loot.");
       showNotif("🏛️ Training Delve cleared!");
       return;
     }
@@ -5125,8 +5129,8 @@ function GameScreen({ character: initChar, onSave, onBack }) {
         const bk = ((c.hardBossKills || {})[boss] || 0) + 1;
         c = { ...c, hardBossKills: { ...(c.hardBossKills || {}), [boss]: bk } };
         const hd = run.kind === "hard-raid" ? HARD_RAID : hardDungeonById(run.content.id);
-        addLog(`☠️ ${boss} slain with your group (${bk}${hd?.completeCount ? "/" + hd.completeCount : "/" + HARD_BOSS_REQ}) — counts toward Hard Mode unlocks`, "#ff8877");
-        if (hd?.completeCount && bk >= hd.completeCount && !c.hardDungeonDone?.[run.content.id]) { c = { ...c, hardDungeonDone: { ...(c.hardDungeonDone || {}), [run.content.id]: true } }; addLog(`🏆 ${hd.name} (Hard) cleared!`, "#FFD700"); }
+        addLog(`☠️ ${boss} slain with your group (${bk}${hd?.completeCount ? "/" + hd.completeCount : "/" + HARD_BOSS_REQ}) — counts toward Hard Mode unlocks`);
+        if (hd?.completeCount && bk >= hd.completeCount && !c.hardDungeonDone?.[run.content.id]) { c = { ...c, hardDungeonDone: { ...(c.hardDungeonDone || {}), [run.content.id]: true } }; addLog(`🏆 ${hd.name} (Hard) cleared!`); }
         if (run.kind === "hard-raid" && bk >= HARD_BOSS_REQ && !c.hardDungeonDone?.[run.content.id]) { c = { ...c, hardDungeonDone: { ...(c.hardDungeonDone || {}), [run.content.id]: true } }; }
         commitChar(c);
       }
@@ -5166,7 +5170,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
         // just the announcement, so nothing is granted locally.
         addLog(m.winnerName
           ? `🔨 ${m.item?.name || "Lot"} sold to ${m.winnerName} for ${m.price}g — your share is in the mail`
-          : `🔨 ${m.item?.name || "Lot"} went unsold (reserve not met)`, "#f0b429");
+          : `🔨 ${m.item?.name || "Lot"} went unsold (reserve not met)`);
         return;
       }
       setNetBid({ lot: m.lot, sold: null, done: false, myAllyId: run.myAllyId });
@@ -5258,7 +5262,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     (bw.enemyEffects || []).forEach((e) => { if (e.kind === "dot") { let g2 = 0; while (now >= e.nextTick && bw.enemy.hp > 0 && g2++ < 6) { bw.enemy.hp = Math.max(0, bw.enemy.hp - e.dmgPerTick); e.nextTick += 1000; } } });
     // bot rotation — REAL skill engine, resource + cooldown gated, tier-driven quality
     if (!bw.nextGcd) bw.nextGcd = now;
-    if (now >= bw.nextGcd) { const sk = chooseBotSkill(bc, bw, now, tier); if (sk) { const r = applySkillCore(sk, bc, bw, now, () => {}); bw = r.battle; botMirrorRef.current = bw; addLog(`✦ ${w.enemy.name} casts ${sk.name}`, "#e0a0a0"); } bw.nextGcd = now + PVP_GCD; }
+    if (now >= bw.nextGcd) { const sk = chooseBotSkill(bc, bw, now, tier); if (sk) { const r = applySkillCore(sk, bc, bw, now, () => {}); bw = r.battle; botMirrorRef.current = bw; addLog(`✦ ${w.enemy.name} casts ${sk.name}`); } bw.nextGcd = now + PVP_GCD; }
     // UNFETTERED ONYX. In the bot's mirror the PLAYER is `bw.enemy`, so a stun cast on the player
     // arrives in bw.enemyEffects as a 100% slow. Break the first one of the fight and mark it spent
     // on the battle, not the character — "each fight" has to mean each fight, and a flag on the save
@@ -5269,7 +5273,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
         bw.enemyEffects = bw.enemyEffects.filter((e) => e !== stun);
         botMirrorRef.current = bw;
         w.ccBroken = true;
-        addLog("⛓️ Unfettered Onyx shatters the stun!", "#8fd0e0");
+        addLog("⛓️ Unfettered Onyx shatters the stun!");
       }
     }
     // apply the mitigated tick total to the player's real HP
@@ -5360,7 +5364,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     setTab("combat");
     addLog(practice
       ? `🎯 Practice Duel — ${opp.name}, a ${tier.label.toLowerCase()} ${clsInfo.name || opp.cls}. Unranked: win or lose, nothing is recorded.`
-      : `⚔️ Rated Arena — ${opp.name}, a ${tier.label.toLowerCase()} ${clsInfo.name || opp.cls} (${oppRating}). They fight for real — bring your best.`, "#c8a0ff");
+      : `⚔️ Rated Arena — ${opp.name}, a ${tier.label.toLowerCase()} ${clsInfo.name || opp.cls} (${oppRating}). They fight for real — bring your best.`);
   };
   const recordRated = (win) => {
     const c = charRef.current; const mp = c.mp || {};
@@ -5389,7 +5393,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     guildRunRef.current = null; setGroupParty(null); pveBotsRef.current = null; // leaving a run cancels any pending Guild bid + party panel
     const b = battleRef.current;
     if (b) commitChar({ ...charRef.current, hp: b.hp }); // keep current health on retreat
-    addLog("⏸ Retreated from combat.", "#888");
+    addLog("⏸ Retreated from combat.");
     commitBattle(null);
   };
   // AUTO-RETREAT. Being handed a new lesson mid-fight used to mean reading it while something was
@@ -5415,7 +5419,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     stopCombat();
     setTab("town");
     showNotif(`📜 New lesson: ${lesson.title} — withdrawn from combat`);
-    addLog(`📜 You withdraw to town: ${lesson.title}.`, "#f0b429");
+    addLog(`📜 You withdraw to town: ${lesson.title}.`);
   }, [char, groupParty]);
 
   // can the remembered dungeon/raid be run right now (not locked out)?
@@ -5448,7 +5452,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     if ((c.gold || 0) < up.cost) { showNotif(`Need ${up.cost.toLocaleString()}g`); return; }
     commitChar({ ...c, gold: c.gold - up.cost, upgrades: { ...(c.upgrades || {}), [up.id]: true } });
     showNotif(`${up.icon} ${up.name} purchased!`);
-    addLog(`${up.icon} ${up.name} — ${up.desc}`, "#7CFC9E");
+    addLog(`${up.icon} ${up.name} — ${up.desc}`);
   };
   // use one consumable of a specific tier (defaults to the best tier you own)
   const useConsumable = (def, tier) => {
@@ -5476,7 +5480,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       if (!c.tutorial?.drankPotion) c = { ...c, tutorial: { ...(c.tutorial || {}), drankPotion: true } };
       commitChar({ ...c, hp: healed, consumables: { ...c.consumables, [key]: c.consumables[key] - 1 } });
       setLastPotion(Date.now()); lastPotionRef.current = Date.now();
-      addLog(`🧪 Drank ${def.name} ${roman} (+${healed - cur} HP)`, "#ff7766");
+      addLog(`🧪 Drank ${def.name} ${roman} (+${healed - cur} HP)`);
       return;
     }
     const amount = Math.round(tierScrollAmount(t) * gemScrollMult(c));
@@ -5532,7 +5536,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     showNotif(s.count
       ? `Set ${to + 1} equipped — ${s.count} piece${s.count === 1 ? "" : "s"}, ilvl ${s.ilvl}`
       : `Set ${to + 1} is empty — equip from your bank`);
-    addLog(`🗡️ Switched to gear Set ${to + 1}`, "#8fd0e0");
+    addLog(`🗡️ Switched to gear Set ${to + 1}`);
   };
 
   const equipItem = (item, targetSlot) => {
@@ -5563,7 +5567,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     if (item.locked) { showNotif("🔒 Item is locked — unlock to sell"); return; }
     const price = sellPrice(item);
     commitChar({ ...c, gold: c.gold + price, inventory: c.inventory.filter((i) => i.id !== item.id) });
-    addLog(`💰 Sold ${item.name} for ${price}g`, "#FFD700");
+    addLog(`💰 Sold ${item.name} for ${price}g`);
   };
   const sellByRarity = (rarityId) => {
     const c = charRef.current;
@@ -5677,7 +5681,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     commitChar(nc);
     setOfferOpen(false);
     showNotif(`\u2694\uFE0F ${OFFER.name} claimed — check your Bag!`);
-    for (const a of made) addLog(`\u2694\uFE0F ${a.name} (ilvl ${a.ilvl})`, "#c8102e");
+    for (const a of made) addLog(`\u2694\uFE0F ${a.name} (ilvl ${a.ilvl})`);
   };
   const buyOffer = () => {
     // No payment provider is wired yet — VEN_PACKS' buttons show the same notice. The grant path
@@ -5698,7 +5702,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     const owed = passRank(c);
     showNotif(owed > 0 ? `⚔️ Champion's Pass unlocked — ${owed} rank${owed > 1 ? "s" : ""} ready to claim`
                        : "⚔️ Champion's Pass unlocked");
-    addLog(`⚔️ Champion's Pass purchased — −${PASS.venCost} Ven`, "#f0b429");
+    addLog(`⚔️ Champion's Pass purchased — −${PASS.venCost} Ven`);
   };
 
   const claimPassRank = (rank, paid, quiet = false) => {
@@ -5720,8 +5724,8 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       // and ADD the proceeds, the same trap the daily claim had to avoid.
       const dep = depositItems(nc, items);
       nc = { ...nc, inventory: dep.inventory, overflow: dep.overflow, gold: (nc.gold || 0) + dep.gold };
-      if (dep.sold.length) addLog(`\u{1F4B0} Bank full — sold ${dep.sold.length} for ${dep.gold}g`, "#caa64a");
-      if (dep.mailed.length) addLog(`\u{1F4EC} Bank full — ${dep.mailed.length} held in the mail`, "#7fd0ff");
+      if (dep.sold.length) addLog(`\u{1F4B0} Bank full — sold ${dep.sold.length} for ${dep.gold}g`);
+      if (dep.mailed.length) addLog(`\u{1F4EC} Bank full — ${dep.mailed.length} held in the mail`);
     }
     const key = paid ? "claimedPaid" : "claimedFree";
     nc = { ...nc, pass: { ...passRec(nc), [key]: { ...(passRec(nc)[key] || {}), [rank]: true } } };
@@ -5784,12 +5788,12 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       // Take the three fields that belong on a character and ADD the proceeds.
       const dep = depositItems(nc, items);
       nc = { ...nc, inventory: dep.inventory, overflow: dep.overflow, gold: (nc.gold || 0) + dep.gold };
-      if (dep.sold.length) addLog(`\u{1F4B0} Bank full \u2014 sold ${dep.sold.length} for ${dep.gold}g`, "#caa64a");
-      if (dep.mailed.length) addLog(`\u{1F4EC} Bank full \u2014 ${dep.mailed.length} held in the mail`, "#7fd0ff");
+      if (dep.sold.length) addLog(`\u{1F4B0} Bank full \u2014 sold ${dep.sold.length} for ${dep.gold}g`);
+      if (dep.mailed.length) addLog(`\u{1F4EC} Bank full \u2014 ${dep.mailed.length} held in the mail`);
     }
     commitChar(nc);
     setDailyResult({ lines: reward.lines, items, streak: row.streak });
-    addLog(`\u{1F4C5} Daily sign-in \u2014 day ${row.streak}: ${reward.lines.join(", ")}`, "#7fd0ff");
+    addLog(`\u{1F4C5} Daily sign-in \u2014 day ${row.streak}: ${reward.lines.join(", ")}`);
   };
 
   const postStack = async (kind, id, price) => {
@@ -5909,12 +5913,12 @@ function GameScreen({ character: initChar, onSave, onBack }) {
       const dep = depositItems(nc, [it]);
       nc = { ...nc, inventory: dep.inventory, overflow: dep.overflow, gold: (nc.gold || 0) + dep.gold };
       what = `${it.name} (ilvl ${it.ilvl}, ${mains.map((k) => STAT_LABEL[k] || k).join(" + ")})`;
-      if (dep.mailed.length) addLog("📬 Bank full — held in the mail", "#7fd0ff");
+      if (dep.mailed.length) addLog("📬 Bank full — held in the mail");
     }
     commitChar(nc);
     setBmPick(null);
     showNotif(`🎟️ −${entry.cost} · ${what}`);
-    addLog(`🛡️ Battlemaster: ${what} for ${entry.cost} Arena Tokens`, "#ffd479");
+    addLog(`🛡️ Battlemaster: ${what} for ${entry.cost} Arena Tokens`);
   };
 
   // ---------- tempering forge ----------
@@ -6117,7 +6121,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     commitChar(def.repeatable ? res.char : { ...res.char, redeemed: { ...c.redeemed, [code]: true } });
     setPromo("");
     showNotif(res.msg);
-    addLog(`🎟️ Promo redeemed: ${def.label}`, "#f0b429");
+    addLog(`🎟️ Promo redeemed: ${def.label}`);
   };
 
   // ---------- honor attribute allocation ----------
@@ -6214,8 +6218,8 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     const before = c.professions.salvage?.level || 1;
     const prof = gainProfXp(c.professions.salvage || { level: 1, xp: 0, active: false }, 12 + rIdx * 8 + Math.floor((item.ilvl || 1) / 3));
     commitChar({ ...c, gold: c.gold - goldCost, materials: mats, inventory: c.inventory.filter((i) => i.id !== item.id), professions: { ...c.professions, salvage: prof } });
-    addLog(`♻️ Salvaged ${item.name} (−${goldCost}g) → ${dust} ✨ Dust${bonus}`, "#c08bff");
-    if (prof.level > before) addLog(`♻️ Salvage → rank ${prof.level}!`, "#7d8aa0");
+    addLog(`♻️ Salvaged ${item.name} (−${goldCost}g) → ${dust} ✨ Dust${bonus}`);
+    if (prof.level > before) addLog(`♻️ Salvage → rank ${prof.level}!`);
     showNotif(`Salvaged → ${dust} Dust${bonus ? " + a stat dust!" : ""}`);
   };
   // active mining loop — auto-swings at the node while the gathering screen is open
@@ -6291,7 +6295,7 @@ function GameScreen({ character: initChar, onSave, onBack }) {
     const newItem = { ...it, enchant: { [stat]: amount } };
     const mats = { ...c.materials }; mats[dustKind] = (mats[dustKind] || 0) - cost;
     commitChar({ ...c, materials: mats, equipment: { ...c.equipment, [slotId]: newItem }, professions: { ...c.professions, enchanting: gainProfXp(prof, craftXp(25, enchantXpTier(it.ilvl))) } });
-    addLog(`✨ Enchanted ${it.name}: +${amount} ${STAT_LABEL[stat]}`, "#c08bff");
+    addLog(`✨ Enchanted ${it.name}: +${amount} ${STAT_LABEL[stat]}`);
     showNotif(`Enchanted: +${amount} ${STAT_LABEL[stat]}`);
   };
 

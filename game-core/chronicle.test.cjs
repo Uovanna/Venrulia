@@ -523,6 +523,17 @@ sec("Portraits are drawn, and the sheets are furnished");
     ok(!new RegExp("const " + o + " = \\{").test(app), `${o} is retired`);
   ok(app.includes("const btnGoogle = {"),
      "…and btnGoogle stays, because Google's sign-in branding specifies those exact colours");
+
+  // A HUNDRED DEAD COLOURS. Every addLog call carried a second argument naming
+  // the colour to write that line in, in fourteen different hexes — and the
+  // Chronicle has never read it, because an entry's kind is derived from the
+  // sentence. They were stored on the entry and ignored. Removing the argument
+  // took a third of the file's remaining raw hexes with it.
+  const chron = fs.readFileSync(path.join(root, "src/chronicle.jsx"), "utf8");
+  ok(!/e\.color|entry\.color/.test(chron), "the chronicle reads an entry's text, never a colour");
+  ok(/const addLog = useCallback\(\(text\) =>/.test(app), "…so addLog no longer takes one");
+  const tinted = (app.match(/addLog\([^;]*?, "#[0-9a-fA-F]{6}"\)/g) || []);
+  ok(tinted.length === 0, tinted.length ? `${tinted.length} calls still pass a dead colour` : "…and no call still passes one");
 }
 
 sec("The shell is bound in the same hand");

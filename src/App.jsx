@@ -680,6 +680,31 @@ const ENEMY_LORE = {
   "Ancient Salamander": "A primordial beast that has basked in the mountain's heart since the world was young.",
 };
 // ordered enemy roster with their home region, for the Bestiary
+// WHAT A CREATURE LOOKS LIKE. The Bestiary drew each enemy with the icon of the
+// thing it DROPS — a bone for a Goblin, a spool of thread for a Bandit, a coat
+// for a Highway Thug — because that was the only per-enemy art the game had.
+// The drop is not the creature.
+//
+// Matched by substring against the enemy's name, longest key first, the same way
+// ENEMY_DROPS already works: "Fire Drake" has to beat "Fire", and "Giant Spider"
+// has to beat "Giant". Ten silhouettes cover all thirty-one without pretending
+// each is unique — what a list entry needs to say is "wolf-shaped", "undead",
+// "made of fire", and the name is right beside it.
+const ENEMY_MARKS = {
+  Skeleton: "skull", Ghoul: "undead", "Risen Warrior": "undead", Wraith: "wraith",
+  "Dark Rider": "wraith", Spider: "spider", Bat: "bat", Bullywug: "toad",
+  Panther: "cat", Raptor: "drake", Drake: "drake", Salamander: "lizard",
+  Wolf: "wolf", Gnoll: "wolf", Hound: "wolf",
+  Ogre: "ogre", Troll: "ogre", Giant: "golem", Golem: "golem", Sentinel: "golem",
+  "Dust Devil": "whirl",
+  Elemental: "flame", "Lava Spawn": "flame", "Lava Surger": "flame", "Cinder Fiend": "flame",
+  Goblin: "figure", Bandit: "figure", Thug: "figure", Dwarf: "figure",
+};
+const ENEMY_MARK_KEYS = Object.keys(ENEMY_MARKS).sort((a, b) => b.length - a.length);
+const enemyMark = (name) => {
+  const k = ENEMY_MARK_KEYS.find((key) => String(name || "").includes(key));
+  return k ? ENEMY_MARKS[k] : "beast";
+};
 const ALL_ENEMY_TYPES = (() => {
   const out = []; const seen = new Set();
   for (const z of ZONES) for (const n of z.enemies) if (!seen.has(n)) { seen.add(n); out.push({ name: n, origin: z.name, minLevel: z.minLevel, maxLevel: z.maxLevel, color: z.color }); }
@@ -7336,10 +7361,12 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           const unlocked = (n) => (char.killsByType?.[n] || 0) > 0;
           return (
             <div>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-                <button onClick={() => (sel ? setBestiarySel(null) : setTab("tavern"))} style={{ background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 8, color: "var(--ink)", fontSize: 12, padding: "6px 12px", cursor: "pointer" }}>← {sel ? "Bestiary" : "Tavern"}</button>
-                <span style={{ color: "var(--bole)", fontFamily: "Georgia, serif", fontSize: 15 }}><Icon name="tome" /> Bestiary</span>
-                <span style={{ color: "var(--ink-faint)", fontSize: 11 }}>{ALL_ENEMY_TYPES.filter((e) => unlocked(e.name)).length}/{ALL_ENEMY_TYPES.length}</span>
+              <div className="head">
+                <button onClick={() => (sel ? setBestiarySel(null) : setTab("tavern"))} className="head-back">
+                  &#8592; {sel ? "All creatures" : "Tavern"}
+                </button>
+                <span className="head-title"><Icon name="tome" size={15} /> Bestiary</span>
+                <span className="head-note">{ALL_ENEMY_TYPES.filter((e) => unlocked(e.name)).length}/{ALL_ENEMY_TYPES.length}</span>
               </div>
               {sel ? (() => {
                 const drop = ENEMY_DROPS[sel.name]; const k = char.killsByType?.[sel.name] || 0; const lvl = Math.round((sel.minLevel + sel.maxLevel) / 2);
@@ -7352,59 +7379,96 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                 const showHp = hard ? Math.round(enemyRepHp(showLvl) * ENEMY_RANKS.champion.hp * diffTier("hard").hp * 8) : enemyRepHp(showLvl); // Champion rank × hard tier × zone weighting
                 const prefersMagic = enemyPrefersMagic(repCls.id, showLvl);   // the rule makeEnemy uses
                 const eSkills = (SKILLS[repCls.id] || []).filter((s) => s.unlockLevel <= showLvl && ((s.mult && s.mult > 0) || s.dotMult || s.slowPct) && isMagicSkill(s) === prefersMagic);
-                const statMeta = [["str", "💪", "Str"], ["agi", "🏹", "Agi"], ["int", "🧠", "Int"], ["sta", "❤️", "Sta"]];
+                const statMeta = [["str", "Str"], ["agi", "Agi"], ["int", "Int"], ["sta", "Sta"]];
                 return (
                   <div>
-                    <div style={{ background: "var(--sunk)", border: `1px solid ${sel.color}66`, borderRadius: 12, padding: 14 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
-                        <span style={{ fontSize: 34 }}>{drop?.icon || "👹"}</span>
-                        <div><div style={{ color: "var(--ink)", fontWeight: 700, fontSize: 16, fontFamily: "Georgia, serif" }}>{sel.name}</div><div style={{ color: sel.color, fontSize: 11 }}>{sel.origin}</div></div>
+                    <div className="item" style={{ borderBottom: 0 }}>
+                      <span className="mark" style={{ padding: 5 }}><Icon name={enemyMark(sel.name)} size={28} /></span>
+                      <div className="item-body">
+                        <span style={{ display: "block", fontSize: "var(--step-1)", fontWeight: 600, lineHeight: 1.15 }}>{sel.name}</span>
+                        <span className="item-meta">{sel.origin}</span>
                       </div>
-                      <div style={{ color: "var(--ink-soft)", fontSize: 12.5, lineHeight: 1.5, marginBottom: 12, fontStyle: "italic" }}>{ENEMY_LORE[sel.name] || "Little is known of this creature."}</div>
-                      <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-                        {[["normal", "Normal"], ["hard", "🔥 Hard Mode"]].map(([id, label]) => (
-                          <button key={id} onClick={() => setBestiaryMode(id)} style={{ flex: 1, background: bestiaryMode === id ? (id === "hard" ? "var(--rubric)" : "var(--raised)") : "var(--verdigris)", border: `1px solid ${bestiaryMode === id ? (id === "hard" ? "var(--rubric)" : "var(--gilt)") : "var(--hairline)"}`, borderRadius: 7, color: bestiaryMode === id ? (id === "hard" ? "var(--rubric)" : "var(--gilt)") : "var(--ink-faint)", padding: "7px 4px", fontSize: 11.5, fontWeight: 700, cursor: "pointer" }}>{label}</button>
-                        ))}
-                      </div>
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
-                        {[["Level", hard ? `${showLvl}` : `${sel.minLevel}–${sel.maxLevel}`], ["Health", `~${showHp.toLocaleString()}`], ["Slain", `${k}`]].map(([a, b]) => (
-                          <div key={a} style={{ flex: "1 1 28%", background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 8, padding: "8px 6px", textAlign: "center" }}>
-                            <div style={{ color: "var(--ink-soft)", fontSize: 9.5, textTransform: "uppercase", letterSpacing: 1 }}>{a}</div>
-                            <div style={{ color: hard && a !== "Slain" ? "var(--rubric)" : "var(--gilt)", fontSize: 14, fontWeight: 700 }}>{b}</div>
-                          </div>
-                        ))}
-                      </div>
-                      <div style={{ color: "var(--ink-soft)", fontSize: 10, textTransform: "uppercase", letterSpacing: 1, marginBottom: 5 }}>Attributes <span style={{ textTransform: "none", letterSpacing: 0, color: "var(--ink-soft)" }}>· {repCls.name} · {hard ? "Champion, Hard" : "normal"} · Lv {showLvl}</span></div>
-                      <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-                        {statMeta.map(([key, ic, lbl]) => { const isPrim = key === repCls.main; return (
-                          <div key={key} style={{ flex: 1, background: "var(--raised)", border: `1px solid ${isPrim ? sel.color + "88" : "var(--hairline)"}`, borderRadius: 8, padding: "7px 4px", textAlign: "center" }}>
-                            <div style={{ fontSize: 13 }}>{ic}</div>
-                            <div style={{ color: "var(--ink-soft)", fontSize: 8.5, textTransform: "uppercase" }}>{lbl}</div>
-                            <div style={{ color: isPrim ? sel.color : "var(--ink)", fontSize: 13, fontWeight: 700 }}>{eStats[key]}</div>
-                          </div>
-                        ); })}
-                      </div>
-                      <div style={{ color: "var(--ink-soft)", fontSize: 10, textTransform: "uppercase", letterSpacing: 1, marginBottom: 5 }}>Possible Skills <span style={{ textTransform: "none", letterSpacing: 0, color: "var(--ink-soft)" }}>· {prefersMagic ? "arcane" : "physical"}{hard ? " · Champion draws 2" : ""}</span></div>
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 6 }}>
-                        {eSkills.length ? eSkills.map((s) => (<span key={s.name} style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "var(--sunk)", border: "1px solid var(--verdigris)", borderRadius: 7, padding: "4px 8px", fontSize: 11, color: "var(--ink-soft)" }}><EmojiIcon emoji={s.icon} /> {s.name}{s.slowPct ? <span style={{ color: "var(--verdigris)", fontSize: 9 }}>CC</span> : null}</span>)) : <span style={{ color: "var(--ink-faint)", fontSize: 11 }}>Attacks only</span>}
-                      </div>
-                      <div style={{ color: "var(--ink-soft)", fontSize: 9.5, fontStyle: "italic", marginBottom: 12 }}>Each creature keeps a fixed disposition. Higher-rank foes (Champion/Boss/Lord) wield more skills and stronger stats.</div>
-                      <div style={{ color: "var(--ink-soft)", fontSize: 10, textTransform: "uppercase", letterSpacing: 1, marginBottom: 5 }}>Drops</div>
-                      {drop ? <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "var(--sunk)", border: `1px solid ${drop.color}55`, borderRadius: 8, padding: "6px 10px" }}><span style={{ fontSize: 16 }}><EmojiIcon emoji={drop.icon} /></span><span style={{ color: drop.color, fontSize: 12, fontWeight: 600 }}>{drop.name}</span><span style={{ color: "var(--ink-faint)", fontSize: 11 }}>×{char.drops?.[drop.id] || 0} held</span></div> : <span style={{ color: "var(--ink-faint)", fontSize: 12 }}>None</span>}
                     </div>
+                    <p className="dest-desc" style={{ fontStyle: "italic", marginBottom: 12 }}>
+                      {ENEMY_LORE[sel.name] || "Little is known of this creature."}
+                    </p>
+
+                    <div className="leaves">
+                      {[["normal", "Normal"], ["hard", "Hard Mode"]].map(([id, label]) => (
+                        <button key={id} onClick={() => setBestiaryMode(id)} className={`leaf${bestiaryMode === id ? " is-open" : ""}`}>{label}</button>
+                      ))}
+                    </div>
+
+                    <div className="statline">
+                      <span>Level <b>{hard ? `${showLvl}` : `${sel.minLevel}\u2013${sel.maxLevel}`}</b></span>
+                      <span>Health <b>~{showHp.toLocaleString()}</b></span>
+                      <span>Slain <b>{k}</b></span>
+                    </div>
+
+                    <div className="eyebrow">
+                      <span>Attributes</span>
+                      <span>{repCls.name} · {hard ? "Champion, Hard" : "normal"} · Lv {showLvl}</span>
+                    </div>
+                    <div className="ledger">
+                      {statMeta.map(([key, lbl]) => (
+                        <div key={key} className="ledger-row">
+                          <div className="ledger-line">
+                            <span className="ledger-label">
+                              {lbl}{key === repCls.main ? <small className="item-meta" style={{ marginLeft: 6 }}>primary</small> : null}
+                            </span>
+                            <span className="ledger-val">{eStats[key]}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="eyebrow">
+                      <span>Possible skills</span>
+                      <span>{prefersMagic ? "arcane" : "physical"}{hard ? " · a Champion draws 2" : ""}</span>
+                    </div>
+                    <div className="picks">
+                      {eSkills.length
+                        ? eSkills.map((s) => (
+                            <span key={s.name} className="pick is-on">
+                              <EmojiIcon emoji={s.icon} size={13} /> {s.name}
+                            </span>
+                          ))
+                        : <span className="pick is-shut">Auto-attacks only</span>}
+                    </div>
+                    <div className="ledger-note" style={{ marginBottom: 12 }}>
+                      Each creature keeps a fixed disposition. Higher-rank foes — Champion, Boss, Lord — wield more skills and stronger stats.
+                    </div>
+
+                    <div className="eyebrow"><span>Drops</span></div>
+                    {drop
+                      ? <div className="item">
+                          <span className="mark"><EmojiIcon emoji={drop.icon} size={16} /></span>
+                          <div className="item-body">
+                            <span className="item-name">{drop.name}</span>
+                            <span className="item-meta">{char.drops?.[drop.id] || 0} held</span>
+                          </div>
+                        </div>
+                      : <div className="empty">Nothing but coin.</div>}
                   </div>
                 );
               })() : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <div>
                   {ALL_ENEMY_TYPES.map((e) => { const on = unlocked(e.name); const drop = ENEMY_DROPS[e.name]; return (
-                    <button key={e.name} disabled={!on} onClick={() => setBestiarySel(e.name)} style={{ display: "flex", alignItems: "center", gap: 10, background: on ? "var(--sunk)" : "var(--verdigris)", border: `1px solid ${on ? e.color + "44" : "var(--verdigris)"}`, borderRadius: 8, padding: "9px 11px", cursor: on ? "pointer" : "default", textAlign: "left" }}>
-                      <span style={{ fontSize: 20, filter: on ? "none" : "grayscale(1) brightness(0.4)" }}>{on ? (drop?.icon || "👹") : "❓"}</span>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ color: on ? "var(--ink)" : "var(--ink-faint)", fontSize: 13, fontWeight: 600 }}>{on ? e.name : "???"}</div>
-                        <div style={{ color: on ? "var(--ink-soft)" : "var(--verdigris)", fontSize: 10 }}>{on ? `${e.origin} · slain ${char.killsByType[e.name]}×` : `Lvl ${e.minLevel}–${e.maxLevel} · undiscovered`}</div>
-                        {on && drop && <div style={{ color: drop.color, fontSize: 9.5, marginTop: 1 }}><EmojiIcon emoji={drop.icon} /> {drop.name} <span style={{ color: "var(--ink-faint)" }}>×{char.drops?.[drop.id] || 0}</span></div>}
-                      </div>
-                      {on && <span style={{ color: "var(--ink-faint)", fontSize: 14 }}>›</span>}
+                    <button key={e.name} disabled={!on} onClick={() => setBestiarySel(e.name)}
+                      className="item item-tap" style={{ width: "100%", opacity: on ? 1 : 0.5 }}>
+                      <span className="mark">
+                        {on ? <Icon name={enemyMark(e.name)} size={18} /> : <Icon name="warn" size={16} />}
+                      </span>
+                      <span className="item-body">
+                        <span className="item-name">{on ? e.name : "Not yet met"}</span>
+                        <span className="item-meta">
+                          {on ? `${e.origin} · slain ${char.killsByType[e.name]}` : `Lv ${e.minLevel}–${e.maxLevel} · ${e.origin}`}
+                        </span>
+                        {on && drop && (
+                          <span className="item-stats"><EmojiIcon emoji={drop.icon} size={12} /> {drop.name} · {char.drops?.[drop.id] || 0} held</span>
+                        )}
+                      </span>
+                      {on && <span className="gateway-more">&#8250;</span>}
                     </button>
                   ); })}
                 </div>

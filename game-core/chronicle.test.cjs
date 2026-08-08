@@ -639,6 +639,44 @@ sec("The last of the ledger screens");
   ok(clovers === 1, `🍀 now belongs to one thing (${clovers}), so mapping it to a herb is unambiguous`);
 }
 
+sec("The Bestiary knows what a creature looks like");
+{
+  const sprite = fs.readFileSync(path.join(root, "design/icons-sprite.svg"), "utf8");
+  const svgHas = (id) => sprite.includes(`<symbol id="i-${id}"`);
+  // THE DROP IS NOT THE CREATURE. Every entry drew itself with the icon of the
+  // thing it drops — a bone for a Goblin, a spool of thread for a Bandit, a coat
+  // for a Highway Thug — because that was the only per-enemy art the game had.
+  // A book of monsters that shows you their loot is not a book of monsters.
+  ok(!/\{drop\?\.icon \|\| "👹"\}/.test(app), "no creature is drawn as the thing it drops");
+  ok(/^const ENEMY_MARKS = \{/m.test(app), "there is a table of what each creature looks like");
+  ok(app.includes('<Icon name={enemyMark(e.name)}'), "…and the list reads it");
+  ok(app.includes('<Icon name={enemyMark(sel.name)}'), "…so does the entry");
+
+  // Ten silhouettes, matched longest-key-first the way ENEMY_DROPS already is —
+  // "Fire Drake" has to beat "Fire", "Giant Spider" has to beat "Giant".
+  ok(/ENEMY_MARK_KEYS = Object\.keys\(ENEMY_MARKS\)\.sort\(\(a, b\) => b\.length - a\.length\)/.test(app),
+     "…longest key first, so a Fire Drake is a drake and not a flame");
+  for (const g of ["wolf", "spider", "bat", "toad", "cat", "ogre", "wraith", "golem", "whirl", "lizard"])
+    ok(svgHas(g), `the sprite draws a ${g}`);
+
+  // EVERY enemy in the game must resolve, or the ones that fall through are the
+  // ones a player never sees drawn — which is the bug this section fixes.
+  const marks = (() => {
+    const i = app.indexOf("const ENEMY_MARKS = {"), j = app.indexOf("\n};", i);
+    const t = {};
+    for (const m of app.slice(i, j).matchAll(/"?([A-Za-z ]+)"?:\s*"([a-z]+)"/g)) t[m[1].trim()] = m[2];
+    return t;
+  })();
+  const keys = Object.keys(marks).sort((a, b) => b.length - a.length);
+  const di = app.indexOf("const ENEMY_DROPS = {"), dj = app.indexOf("\n};", di);
+  const enemies = [...app.slice(di, dj).matchAll(/^\s{2}"([^"]+)":/gm)].map((m) => m[1]);
+  ok(enemies.length > 25, `${enemies.length} named enemies in the drop table`);
+  const fellThrough = enemies.filter((n) => !keys.some((k) => n.includes(k)));
+  ok(fellThrough.length === 0, fellThrough.length
+    ? `${fellThrough.length} fall through to the generic beast: ${fellThrough.join(", ")}`
+    : "…and every one of them resolves to a silhouette of its own");
+}
+
 sec("The shell is bound in the same hand");
 {
   // Converting the shell is what decides whether the game reads as one object or

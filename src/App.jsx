@@ -7551,18 +7551,18 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           const auraLabel = (type) => { const u = char.auras?.[type] || 0; if (u >= PERMA_TS) return "Permanent"; if (u > now) return fmtDur((u - now) / 1000) + " left"; return null; };
           return (
             <div>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                <button className="head-back" onClick={() => setTab("town")}>&larr; Town</button>
-                <span style={{ color: "var(--verdigris)", fontFamily: "Georgia, serif", fontSize: 15 }}><Icon name="gem" /> Premium Shop</span>
-                <span style={{ color: "var(--ink-soft)", fontSize: 12, fontWeight: 700 }}><Icon name="gem" /> {(char.ven || 0).toLocaleString()}</span>
+              <div className="head">
+                <button className="head-back" onClick={() => setTab("town")}>&#8592; Town</button>
+                <span className="head-title"><Icon name="gem" size={15} /> Premium Shop</span>
+                <span className="price"><Icon name="gem" size={11} /> {(char.ven || 0).toLocaleString()}</span>
               </div>
 
               {(auraLabel("xp") || auraLabel("gold") || (char.tickets?.dungeonReset || 0) > 0 || (char.tickets?.arenaChallenge || 0) > 0) && (
-                <div style={{ background: "var(--raised)", border: "1px solid var(--verdigris)", borderRadius: 10, padding: "9px 12px", marginBottom: 12, fontSize: 11, color: "var(--ink-soft)", display: "flex", flexWrap: "wrap", gap: 10 }}>
-                  {auraLabel("xp") && <span><Icon name="spark" /> XP Aura: <b>{auraLabel("xp")}</b></span>}
-                  {auraLabel("gold") && <span><Icon name="coin" /> Gold Aura: <b>{auraLabel("gold")}</b></span>}
-                  {(char.tickets?.dungeonReset || 0) > 0 && <span><Icon name="ticket" /> Dungeon: <b>{char.tickets.dungeonReset}</b></span>}
-                  {(char.tickets?.arenaChallenge || 0) > 0 && <span><Icon name="arena" /> Arena: <b>{char.tickets.arenaChallenge}</b></span>}
+                <div className="statline">
+                  {auraLabel("xp") && <span><Icon name="spark" size={12} /> XP aura <b>{auraLabel("xp")}</b></span>}
+                  {auraLabel("gold") && <span><Icon name="coin" size={12} /> Gold aura <b>{auraLabel("gold")}</b></span>}
+                  {(char.tickets?.dungeonReset || 0) > 0 && <span><Icon name="ticket" size={12} /> Dungeon <b>{char.tickets.dungeonReset}</b></span>}
+                  {(char.tickets?.arenaChallenge || 0) > 0 && <span><Icon name="arena" size={12} /> Arena <b>{char.tickets.arenaChallenge}</b></span>}
                 </div>
               )}
 
@@ -7571,79 +7571,82 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                   once taken, so it is never two places at once. */}
               {offerState(char, now) === "expired" && (
                 <>
-                  <div style={{ color: "var(--rubric)", fontSize: 11, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Offers</div>
-                  <button onClick={() => setOfferOpen(true)}
-                    style={{ width: "100%", textAlign: "left", marginBottom: 16, cursor: "pointer",
-                      background: "var(--raised)", border: "1.5px solid var(--rubric)",
-                      borderRadius: 12, padding: "12px 14px", display: "flex", alignItems: "center", gap: 12 }}>
-                    <span style={{ fontSize: 24 }}>⚔️</span>
-                    <span style={{ flex: 1 }}>
-                      <span style={{ color: "var(--rubric)", fontFamily: "Georgia, serif", fontSize: 14, fontWeight: 700, display: "block" }}>{OFFER.name}</span>
-                      <span style={{ color: "var(--ink-soft)", fontSize: 11, lineHeight: 1.4, display: "block" }}>
-                        An Artifact Weapon plus your choice of a second weapon or an off-hand.
-                      </span>
+                  <div className="eyebrow"><span>Offers</span></div>
+                  <button onClick={() => setOfferOpen(true)} className="choice is-on">
+                    <span className="choice-head">
+                      <span className="mark"><Icon name="sword" size={18} /></span>
+                      <span className="choice-name">{OFFER.name}</span>
+                      <span className="price">${OFFER.usd}</span>
                     </span>
-                    <span style={{ color: "var(--verdigris)", fontSize: 13, fontWeight: 800 }}>${OFFER.usd}</span>
+                    <span className="choice-body">An Artifact Weapon plus your choice of a second weapon or an off-hand.</span>
                   </button>
                 </>
               )}
-              <div style={{ color: "var(--ink-soft)", fontSize: 11, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Boosts & Tickets</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+
+              <div className="eyebrow"><span>Boosts and tickets</span></div>
+              <div style={{ marginBottom: 16 }}>
                 {PREMIUM_ITEMS.filter((it) => !(it.kind === "aura" && (char.auras?.[it.aura] || 0) >= PERMA_TS)).map((it) => {
                   const afford = (char.ven || 0) >= it.cost;
                   return (
-                    <div key={it.id} style={{ background: "var(--sunk)", border: `1px solid ${it.hours === "perm" ? "var(--gilt)" : "var(--hairline)"}`, borderRadius: 10, padding: "10px 12px", display: "flex", alignItems: "center", gap: 11 }}>
-                      <div style={{ fontSize: 22 }}><EmojiIcon emoji={it.icon} /></div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ color: "var(--ink)", fontSize: 12.5, fontWeight: 700 }}>{it.name}</div>
-                        <div style={{ color: "var(--ink-soft)", fontSize: 10.5 }}>{it.desc}</div>
+                    <div key={it.id} className="item">
+                      <span className="mark"><EmojiIcon emoji={it.icon} size={18} /></span>
+                      <div className="item-body">
+                        <span className="item-name">{it.name}{it.hours === "perm" ? <small className="item-meta" style={{ marginLeft: 6 }}>permanent</small> : null}</span>
+                        <span className="item-stats">{it.desc}</span>
                       </div>
-                      <button onClick={() => buyPremium(it)} disabled={!afford} style={{ background: afford ? "var(--raised)" : "var(--verdigris)", border: `1.5px solid ${afford ? "var(--verdigris)" : "var(--ink)"}`, borderRadius: 8, color: afford ? "var(--ink-soft)" : "var(--ink-faint)", fontSize: 11.5, fontWeight: 700, padding: "7px 10px", cursor: afford ? "pointer" : "default", whiteSpace: "nowrap" }}><Icon name="gem" /> {it.cost.toLocaleString()}</button>
+                      <div className="item-acts">
+                        <MiniBtn onClick={() => buyPremium(it)} disabled={!afford} tone={afford ? "gain" : undefined}>
+                          {it.cost.toLocaleString()} Ven
+                        </MiniBtn>
+                      </div>
                     </div>
                   );
                 })}
               </div>
 
-              <div style={{ color: "var(--ink-soft)", fontSize: 11, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Moneychanger</div>
+              <div className="eyebrow"><span>Moneychanger</span><span>1 Ven &#8594; {VEN_TO_GOLD.toLocaleString()}g</span></div>
               {(() => {
                 const n = Math.max(0, Math.floor(Number(venExchange) || 0));
                 const gold = n * VEN_TO_GOLD;
                 const afford = n > 0 && (char.ven || 0) >= n;
                 return (
-                  <div style={{ background: "var(--sunk)", border: "1px solid var(--gilt)", borderRadius: 10, padding: "12px", marginBottom: 16 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 9 }}>
-                      <span style={{ fontSize: 22 }}>💱</span>
-                      <span style={{ flex: 1 }}>
-                        <span style={{ display: "block", color: "var(--ink)", fontSize: 12.5, fontWeight: 700 }}>Exchange Ven for Gold</span>
-                        <span style={{ display: "block", color: "var(--ink-soft)", fontSize: 10.5 }}>Rate: 💎 1 → 💰 {VEN_TO_GOLD.toLocaleString()} · you hold 💎 {(char.ven || 0).toLocaleString()}</span>
+                  <div className={`bench${afford ? " is-ready" : ""}`}>
+                    <div className="bulk" style={{ borderTop: 0, paddingTop: 0 }}>
+                      <span className="bulk-label">Ven to change</span>
+                      <input type="number" min={1} value={venExchange} className="bulk-n" aria-label="Ven to exchange"
+                        onChange={(e) => setVenExchange(e.target.value)} />
+                      {[100, 500, 1000].map((q) => (
+                        <button key={q} onClick={() => setVenExchange(String(q))}
+                          className={`pick${String(q) === venExchange ? " is-on" : ""}`}>{q}</button>
+                      ))}
+                      <button onClick={() => setVenExchange(String(char.ven || 0))} className="pick">All</button>
+                    </div>
+                    <div className="ledger-line">
+                      <span className="ledger-label">You will receive</span>
+                      <span className="ledger-val" style={{ color: n > 0 ? "var(--gilt)" : "var(--ink-faint)" }}>
+                        <Icon name="coin" size={12} /> {gold.toLocaleString()}g
                       </span>
                     </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 9 }}>
-                      <span style={{ color: "var(--ink-soft)", fontSize: 12 }}>💎</span>
-                      <input type="number" min={1} value={venExchange} onChange={(e) => setVenExchange(e.target.value)} placeholder="Enter Ven…" style={{ flex: 1, minWidth: 0, background: "var(--sunk)", border: "1px solid var(--rule)", borderRadius: 7, color: "var(--ink)", fontSize: 14, padding: "8px 10px" }} />
-                      {[100, 500, 1000].map((q) => <button key={q} onClick={() => setVenExchange(String(q))} style={{ background: String(q) === venExchange ? "var(--hairline)" : "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 6, color: "var(--ink-soft)", fontSize: 10.5, padding: "6px 8px", cursor: "pointer" }}>{q}</button>)}
-                      <button onClick={() => setVenExchange(String(char.ven || 0))} style={{ background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 6, color: "var(--ink-soft)", fontSize: 10.5, padding: "6px 8px", cursor: "pointer" }}>Max</button>
-                    </div>
-                    <div style={{ background: "var(--raised)", border: `1px solid ${n > 0 ? "var(--gilt)" : "var(--hairline)"}`, borderRadius: 8, padding: "9px 11px", textAlign: "center", marginBottom: 9 }}>
-                      <span style={{ color: "var(--ink-soft)", fontSize: 10.5 }}>You will receive</span>
-                      <div style={{ color: n > 0 ? "var(--gilt)" : "var(--ink-faint)", fontSize: 19, fontWeight: 700, fontFamily: "Georgia, serif" }}><Icon name="coin" /> {gold.toLocaleString()}</div>
-                      {n > 0 && !afford && <div style={{ color: "var(--rubric)", fontSize: 10 }}>Not enough Ven — you hold {(char.ven || 0).toLocaleString()}</div>}
-                    </div>
-                    <button onClick={() => exchangeVen(venExchange)} disabled={!afford} style={{ width: "100%", background: afford ? "var(--raised)" : "var(--verdigris)", border: `1.5px solid ${afford ? "var(--gilt)" : "var(--ink)"}`, borderRadius: 8, color: afford ? "var(--gilt)" : "var(--ink-faint)", fontSize: 12.5, fontWeight: 700, padding: 10, cursor: afford ? "pointer" : "default" }}><Icon name="coin" /> Exchange</button>
+                    {n > 0 && !afford && (
+                      <div className="ledger-note" style={{ color: "var(--rubric)" }}>
+                        Not enough Ven — you hold {(char.ven || 0).toLocaleString()}.
+                      </div>
+                    )}
+                    <button onClick={() => exchangeVen(venExchange)} disabled={!afford} className="go">Exchange</button>
                   </div>
                 );
               })()}
 
-              <div style={{ color: "var(--ink-soft)", fontSize: 11, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Get Ven</div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              <div className="eyebrow"><span>Get Ven</span></div>
+              <div className="sets" style={{ flexWrap: "wrap" }}>
                 {VEN_PACKS.map((p) => (
-                  <div key={p.ven} style={{ flex: "1 1 30%", minWidth: 96, background: "var(--sunk)", border: "1px solid var(--hairline)", borderRadius: 10, padding: "10px 8px", textAlign: "center" }}>
-                    <div style={{ color: "var(--verdigris)", fontSize: 15, fontWeight: 700 }}><Icon name="gem" /> {p.ven.toLocaleString()}</div>
-                    <button onClick={buyVenStub} style={{ marginTop: 6, width: "100%", background: "var(--raised)", border: "1.5px solid var(--verdigris)", borderRadius: 8, color: "var(--ink-soft)", fontSize: 12, fontWeight: 700, padding: "6px 4px", cursor: "pointer" }}>${p.usd}</button>
+                  <div key={p.ven} className="set" style={{ flex: "1 1 30%", minWidth: 96, textAlign: "center", cursor: "default" }}>
+                    <div className="set-name" style={{ justifyContent: "center" }}><Icon name="gem" size={14} /> {p.ven.toLocaleString()}</div>
+                    <button onClick={buyVenStub} className="go is-quiet">${p.usd}</button>
                   </div>
                 ))}
               </div>
-              <div style={{ color: "var(--ink-faint)", fontSize: 10, textAlign: "center", marginTop: 12, lineHeight: 1.5 }}>In-app purchases are not yet enabled. Payment options (Google Play & others) are coming soon. Ven can also drop, extremely rarely, from slain foes.</div>
+              <div className="ledger-note" style={{ textAlign: "center", marginTop: 12 }}>In-app purchases are not yet enabled. Payment options (Google Play & others) are coming soon. Ven can also drop, extremely rarely, from slain foes.</div>
             </div>
           );
         })()}
@@ -8381,63 +8384,85 @@ function GameScreen({ character: initChar, onSave, onBack }) {
           const accessible = ALL_GAMBITS.filter((x) => gambitAccessible(char, x.id)); // hide skills this character can't use
           if ((char.level || 1) < GAMBIT_UNLOCK_LEVEL) return (
             <div>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                <button onClick={() => setTab("market")} style={{ background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 8, color: "var(--ink)", fontSize: 12, padding: "6px 12px", cursor: "pointer" }}>← Market</button>
-                <span style={{ color: "var(--rar-epic)", fontFamily: "Georgia, serif", fontSize: 15 }}><Icon name="arena" /> Gambit Shop</span>
-                <span />
+              <div className="head">
+                <button onClick={() => setTab("market")} className="head-back">&#8592; Market</button>
+                <span className="head-title"><Icon name="arena" size={15} /> Gambit Shop</span>
               </div>
-              <div style={{ background: "var(--raised)", border: "1px solid var(--rar-epic)", borderRadius: 12, padding: "22px 16px", textAlign: "center" }}>
-                <div style={{ fontSize: 34, marginBottom: 6 }}>🔒</div>
-                <div style={{ color: "var(--rar-epic)", fontFamily: "Georgia, serif", fontSize: 15, marginBottom: 4 }}>Gambits unlock at level {GAMBIT_UNLOCK_LEVEL}</div>
-                <div style={{ color: "var(--ink-soft)", fontSize: 12, lineHeight: 1.5 }}>Reach level {GAMBIT_UNLOCK_LEVEL} to automate your skills with if/then gambits. You're level {char.level}.</div>
+              <div className="bench">
+                <div className="sheet-mark"><Icon name="lock" size={22} /></div>
+                <div className="bench-name" style={{ textAlign: "center" }}>Gambits unlock at level {GAMBIT_UNLOCK_LEVEL}</div>
+                <div className="bench-what" style={{ textAlign: "center" }}>
+                  Reach level {GAMBIT_UNLOCK_LEVEL} to automate your skills with if/then gambits. You are level {char.level}.
+                </div>
               </div>
             </div>
           );
           return (
             <div>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                <button onClick={() => setTab("market")} style={{ background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 8, color: "var(--ink)", fontSize: 12, padding: "6px 12px", cursor: "pointer" }}>← Market</button>
-                <span style={{ color: "var(--rar-epic)", fontFamily: "Georgia, serif", fontSize: 15 }}><Icon name="arena" /> Gambit Shop</span>
-                <span style={{ color: "var(--gilt)", fontSize: 11 }}><Icon name="coin" /> {char.gold}g</span>
+              <div className="head">
+                <button onClick={() => setTab("market")} className="head-back">&#8592; Market</button>
+                <span className="head-title"><Icon name="arena" size={15} /> Gambit Shop</span>
+                <span className="price"><Icon name="coin" size={11} /> {char.gold.toLocaleString()}</span>
               </div>
-              <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
-                {[["roll", "🎲 Roll"], ["shards", "💠 Shards"], ["collection", "📇 Collection"]].map(([id, label]) => (
-                  <button key={id} onClick={() => setGambitShopTab(id)} style={{ flex: 1, background: gambitShopTab === id ? "var(--verdigris)" : "var(--sunk)", border: `1px solid ${gambitShopTab === id ? "var(--rar-epic)" : "var(--hairline)"}`, borderRadius: 8, color: gambitShopTab === id ? "var(--rar-epic)" : "var(--ink-faint)", padding: "8px 3px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>{label}</button>
+              <div className="leaves">
+                {[["roll", "Roll"], ["shards", "Shards"], ["collection", "Collection"]].map(([id, label]) => (
+                  <button key={id} onClick={() => setGambitShopTab(id)} className={`leaf${gambitShopTab === id ? " is-open" : ""}`}>{label}</button>
                 ))}
               </div>
 
               {gambitShopTab === "roll" && (
                 <div>
-                  <div style={{ background: "var(--raised)", border: "1px solid var(--rar-epic)", borderRadius: 12, padding: "16px 14px", textAlign: "center", marginBottom: 12 }}>
-                    <div style={{ fontSize: 34 }}>🎰</div>
-                    <div style={{ color: "var(--rar-epic)", fontFamily: "Georgia, serif", fontSize: 15, marginBottom: 4 }}>Gambit Gacha</div>
-                    <div style={{ color: "var(--ink-soft)", fontSize: 11, lineHeight: 1.5, marginBottom: 12 }}>Roll for <b>if</b> and <b>then</b> gambits. "If" conditions are rarest. Duplicates become shards.</div>
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <button onClick={() => gambitRoll(1)} disabled={char.gold < GAMBIT_ROLL_COST} style={{ flex: 1, background: char.gold >= GAMBIT_ROLL_COST ? "var(--raised)" : "var(--verdigris)", border: `1.5px solid ${char.gold >= GAMBIT_ROLL_COST ? "var(--rar-epic)" : "var(--ink)"}`, borderRadius: 10, color: char.gold >= GAMBIT_ROLL_COST ? "var(--rar-epic)" : "var(--ink-faint)", fontSize: 13, fontWeight: 700, padding: 12, cursor: char.gold >= GAMBIT_ROLL_COST ? "pointer" : "default" }}>Roll ×1<br /><span style={{ fontSize: 10, color: "var(--gilt)" }}>{GAMBIT_ROLL_COST.toLocaleString()}g</span></button>
-                      <button onClick={() => gambitRoll(10)} disabled={char.gold < GAMBIT_ROLL10_COST} style={{ flex: 1, background: char.gold >= GAMBIT_ROLL10_COST ? "var(--raised)" : "var(--verdigris)", border: `1.5px solid ${char.gold >= GAMBIT_ROLL10_COST ? "var(--rar-epic)" : "var(--ink)"}`, borderRadius: 10, color: char.gold >= GAMBIT_ROLL10_COST ? "var(--rar-epic)" : "var(--ink-faint)", fontSize: 13, fontWeight: 700, padding: 12, cursor: char.gold >= GAMBIT_ROLL10_COST ? "pointer" : "default" }}>Roll ×10<br /><span style={{ fontSize: 10, color: "var(--gilt)" }}>{GAMBIT_ROLL10_COST.toLocaleString()}g</span></button>
+                  <div className="bench">
+                    <div className="sheet-mark"><Icon name="dice" size={22} /></div>
+                    <div className="bench-name" style={{ textAlign: "center" }}>Gambit Gacha</div>
+                    <div className="bench-what" style={{ textAlign: "center" }}>
+                      Roll for <b>if</b> and <b>then</b> gambits. If-conditions are the rarer half; duplicates become shards.
+                    </div>
+                    <div className="sheet-acts">
+                      <button onClick={() => gambitRoll(1)} disabled={char.gold < GAMBIT_ROLL_COST} className="go">
+                        Roll · {GAMBIT_ROLL_COST.toLocaleString()}g
+                      </button>
+                      <button onClick={() => gambitRoll(10)} disabled={char.gold < GAMBIT_ROLL10_COST} className="go">
+                        Roll ten · {GAMBIT_ROLL10_COST.toLocaleString()}g
+                      </button>
                     </div>
                   </div>
-                  <div style={{ color: "var(--ink-soft)", fontSize: 10.5, textAlign: "center" }}>Owned: {accessible.filter((x)=>g.owned?.[x.id]).length}/{accessible.length} · Shards: {shardTotal(char)}</div>
+                  <div className="ledger-note" style={{ textAlign: "center" }}>
+                    Owned {accessible.filter((x) => g.owned?.[x.id]).length}/{accessible.length} · {shardTotal(char)} shards
+                  </div>
                 </div>
               )}
 
               {gambitShopTab === "shards" && (
                 <div>
-                  <div style={{ color: "var(--ink-soft)", fontSize: 11.5, lineHeight: 1.5, marginBottom: 10 }}>Duplicate pulls become shards. Spend <b style={{ color: "var(--rar-epic)" }}>{SHARD_EXCHANGE}</b> shards (any) to unlock a gambit of your choice. You have <b>{shardTotal(char)}</b> shards.</div>
+                  <div className="ledger-note" style={{ marginBottom: 10 }}>
+                    Duplicate pulls become shards. Spend {SHARD_EXCHANGE} of them on any gambit you do not own yet.
+                  </div>
                   {Object.keys(g.shards || {}).length > 0 && (
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 12 }}>
-                      {Object.entries(g.shards).map(([id, n]) => (<span key={id} style={{ background: "var(--raised)", border: `1px solid ${rarCol(id)}55`, borderRadius: 6, padding: "3px 7px", fontSize: 10.5, color: "var(--ink-soft)" }}>{gambitById(id)?.icon} Shard of {gambitById(id)?.label} <b style={{ color: rarCol(id) }}>×{n}</b></span>))}
+                    <div className="picks">
+                      {Object.entries(g.shards).map(([id, n]) => (
+                        <span key={id} className={`pick is-on ${rarClass(gambitById(id)?.rarity || "common")}`}>
+                          {gambitById(id)?.label || id} <small>{n}</small>
+                        </span>
+                      ))}
                     </div>
                   )}
-                  <div style={{ color: "var(--ink-soft)", fontSize: 10.5, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Redeem (locked gambits)</div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                  <div className="eyebrow"><span>Redeem a locked gambit</span><span>{shardTotal(char)} shards</span></div>
+                  <div>
                     {accessible.filter((x) => !g.owned?.[x.id]).map((x) => {
                       const canBuy = shardTotal(char) >= SHARD_EXCHANGE;
                       return (
-                        <div key={x.id} style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--sunk)", border: `1px solid ${rarityById(x.rarity).color}44`, borderLeft: `3px solid ${rarityById(x.rarity).color}`, borderRadius: 8, padding: "7px 10px" }}>
-                          <span style={{ fontSize: 16 }}><EmojiIcon emoji={x.icon} /></span>
-                          <span style={{ flex: 1, minWidth: 0, color: rarityById(x.rarity).color, fontSize: 11.5, fontWeight: 600 }}>{x.type === "if" ? "IF " : "THEN "}{x.label}</span>
-                          <button onClick={() => exchangeShards(x.id)} disabled={!canBuy} style={{ background: canBuy ? "var(--rar-epic)" : "var(--verdigris)", border: `1px solid ${canBuy ? "var(--rar-epic)" : "var(--ink)"}`, borderRadius: 6, color: canBuy ? "var(--rar-epic)" : "var(--ink-faint)", fontSize: 10.5, fontWeight: 700, padding: "5px 9px", cursor: canBuy ? "pointer" : "default", whiteSpace: "nowrap" }}><Icon name="gem" /> {SHARD_EXCHANGE}</button>
+                        <div key={x.id} className="item">
+                          <span className="mark"><EmojiIcon emoji={x.icon} size={16} /></span>
+                          <div className="item-body">
+                            <span className={`item-name ${rarClass(x.rarity)}`}>{x.type === "if" ? "IF " : "THEN "}{x.label}</span>
+                            <span className="item-meta">{x.rarity}</span>
+                          </div>
+                          <div className="item-acts">
+                            <MiniBtn onClick={() => exchangeShards(x.id)} disabled={!canBuy} tone={canBuy ? "gain" : undefined}>
+                              {SHARD_EXCHANGE} shards
+                            </MiniBtn>
+                          </div>
                         </div>
                       );
                     })}
@@ -8446,15 +8471,17 @@ function GameScreen({ character: initChar, onSave, onBack }) {
               )}
 
               {gambitShopTab === "collection" && (
-                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                <div>
                   {["if", "then"].map((typ) => (
                     <React.Fragment key={typ}>
-                      <div style={{ color: "var(--ink-soft)", fontSize: 10.5, textTransform: "uppercase", letterSpacing: 1, margin: "6px 0 2px" }}>{typ === "if" ? "IF — Conditions" : "THEN — Actions"}</div>
+                      <div className="eyebrow"><span>{typ === "if" ? "If — conditions" : "Then — actions"}</span></div>
                       {accessible.filter((x) => x.type === typ).map((x) => { const owned = !!g.owned?.[x.id]; return (
-                        <div key={x.id} style={{ display: "flex", alignItems: "center", gap: 8, background: owned ? "var(--sunk)" : "var(--verdigris)", border: `1px solid ${owned ? rarityById(x.rarity).color + "44" : "var(--verdigris)"}`, borderRadius: 8, padding: "7px 10px", opacity: owned ? 1 : 0.5 }}>
-                          <span style={{ fontSize: 16, filter: owned ? "none" : "grayscale(1) brightness(0.5)" }}>{owned ? x.icon : "❓"}</span>
-                          <span style={{ flex: 1, color: owned ? rarityById(x.rarity).color : "var(--ink-faint)", fontSize: 11.5, fontWeight: 600 }}>{owned ? x.label : "???"}</span>
-                          <span style={{ color: "var(--ink-faint)", fontSize: 9.5, textTransform: "uppercase" }}>{x.rarity}{g.shards?.[x.id] ? ` · 💠${g.shards[x.id]}` : ""}</span>
+                        <div key={x.id} className={`item${owned ? "" : " is-shut"}`} style={owned ? undefined : { opacity: 0.5 }}>
+                          <span className="mark"><EmojiIcon emoji={owned ? x.icon : "❓"} size={16} /></span>
+                          <div className="item-body">
+                            <span className={owned ? `item-name ${rarClass(x.rarity)}` : "item-name"}>{owned ? x.label : "Not yet found"}</span>
+                            <span className="item-meta">{x.rarity}{g.shards?.[x.id] ? ` · ${g.shards[x.id]} shards` : ""}</span>
+                          </div>
                         </div>
                       ); })}
                     </React.Fragment>
@@ -8591,29 +8618,36 @@ function GameScreen({ character: initChar, onSave, onBack }) {
 
         {tab === "supply" && (
           <div>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-              <button onClick={() => setTab("market")} style={{ background: "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 8, color: "var(--ink)", fontSize: 12, padding: "6px 12px", cursor: "pointer" }}>← Market</button>
-              <span style={{ color: "var(--verdigris)", fontFamily: "Georgia, serif", fontSize: 15 }}><Icon name="mail" /> Supply Master</span>
-              <span style={{ color: "var(--gilt)", fontSize: 12 }}><Icon name="coin" /> {char.gold}g</span>
+            <div className="head">
+              <button onClick={() => setTab("market")} className="head-back">&#8592; Market</button>
+              <span className="head-title"><Icon name="mail" size={15} /> Supply Master</span>
+              <span className="price"><Icon name="coin" size={11} /> {char.gold.toLocaleString()}</span>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--sunk)", border: "1px solid var(--hairline)", borderRadius: 10, padding: "9px 12px", marginBottom: 12 }}>
-              <span style={{ color: "var(--ink-soft)", fontSize: 12 }}>Bulk quantity:</span>
-              <button onClick={() => setSupplyQty((q) => Math.max(1, q - 1))} style={{ width: 28, height: 28, background: "var(--raised)", border: "1px solid var(--rule)", borderRadius: 6, color: "var(--verdigris)", fontSize: 16, cursor: "pointer" }}>−</button>
-              <input type="number" value={supplyQty} min={1} onChange={(e) => setSupplyQty(Math.max(1, Math.min(999, parseInt(e.target.value) || 1)))} style={{ width: 60, textAlign: "center", background: "var(--sunk)", border: "1px solid var(--rule)", borderRadius: 6, color: "var(--ink)", fontSize: 14, padding: "5px 4px" }} />
-              <button onClick={() => setSupplyQty((q) => Math.min(999, q + 1))} style={{ width: 28, height: 28, background: "var(--raised)", border: "1px solid var(--rule)", borderRadius: 6, color: "var(--verdigris)", fontSize: 16, cursor: "pointer" }}>+</button>
-              {[10, 50, 100].map((n) => <button key={n} onClick={() => setSupplyQty(n)} style={{ background: supplyQty === n ? "var(--hairline)" : "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 6, color: "var(--ink-soft)", fontSize: 11, padding: "5px 8px", cursor: "pointer" }}>{n}</button>)}
+            <div className="bulk">
+              <span className="bulk-label">How many</span>
+              <button onClick={() => setSupplyQty((q) => Math.max(1, q - 1))} className="bulk-step" aria-label="One fewer">&#8722;</button>
+              <input type="number" value={supplyQty} min={1} className="bulk-n" aria-label="Quantity"
+                onChange={(e) => setSupplyQty(Math.max(1, Math.min(999, parseInt(e.target.value) || 1)))} />
+              <button onClick={() => setSupplyQty((q) => Math.min(999, q + 1))} className="bulk-step" aria-label="One more">+</button>
+              {[10, 50, 100].map((n) => (
+                <button key={n} onClick={() => setSupplyQty(n)} className={`pick${supplyQty === n ? " is-on" : ""}`}>{n}</button>
+              ))}
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div>
               {SUPPLY_ITEMS.map((s) => {
                 const owned = char.supplies?.[s.id] || 0; const total = s.price * Math.max(1, supplyQty); const afford = char.gold >= total;
                 return (
-                  <div key={s.id} style={{ background: "var(--sunk)", border: `1px solid ${s.color}44`, borderLeft: `3px solid ${s.color}`, borderRadius: 8, padding: "10px 12px", display: "flex", alignItems: "center", gap: 10 }}>
-                    <div style={{ fontSize: 22 }}><EmojiIcon emoji={s.icon} /></div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ color: s.color, fontSize: 12.5, fontWeight: 700 }}>{s.name} <span style={{ color: "var(--ink-faint)", fontWeight: 400 }}>×{owned}</span></div>
-                      <div style={{ color: "var(--ink-soft)", fontSize: 10.5 }}>{s.price}g each</div>
+                  <div key={s.id} className="item">
+                    <span className="mark"><EmojiIcon emoji={s.icon} size={18} /></span>
+                    <div className="item-body">
+                      <span className="item-name">{s.name}</span>
+                      <span className="item-meta">{s.price}g each · {owned} held</span>
                     </div>
-                    <button onClick={() => buySupply(s)} disabled={!afford} style={{ background: afford ? "var(--raised)" : "var(--verdigris)", border: `1.5px solid ${afford ? s.color : "var(--ink)"}`, borderRadius: 8, color: afford ? s.color : "var(--ink-faint)", fontSize: 12, fontWeight: 700, padding: "8px 12px", cursor: afford ? "pointer" : "default", whiteSpace: "nowrap" }}>Buy {Math.max(1, supplyQty)} · {total}g</button>
+                    <div className="item-acts">
+                      <MiniBtn onClick={() => buySupply(s)} disabled={!afford} tone={afford ? "gain" : undefined}>
+                        Buy {Math.max(1, supplyQty)} · {total.toLocaleString()}g
+                      </MiniBtn>
+                    </div>
                   </div>
                 );
               })}
@@ -8623,32 +8657,32 @@ function GameScreen({ character: initChar, onSave, onBack }) {
 
         {tab === "vendor" && (
           <div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-              <div style={{ color: "var(--gilt)", fontWeight: 700, fontSize: 15, fontFamily: "Georgia, serif" }}><Icon name="stall" /> Vendor</div>
-              <div style={{ color: "var(--ink-faint)", fontSize: 11 }}><Icon name="coin" /> {char.gold}g</div>
+            <div className="head">
+              <span className="head-title" style={{ textAlign: "left" }}><Icon name="stall" size={15} /> Vendor</span>
+              <span className="price"><Icon name="coin" size={11} /> {char.gold.toLocaleString()}</span>
             </div>
 
             {/* Permanent upgrades first: the Draught Belt is the one purchase a character cannot
                 progress without, so it must not be buried under the consumable list. */}
-            <div style={{ color: "var(--ink-soft)", fontSize: 11, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Permanent Upgrades</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 7, marginBottom: 18 }}>
+            <div className="eyebrow"><span>Permanent upgrades</span></div>
+            <div style={{ marginBottom: 18 }}>
               {VENDOR_UPGRADES.map((up) => {
                 const owned = vendorUpgradeOwned(char, up.id);
                 const canBuy = (char.gold || 0) >= up.cost;
                 const wanted = (activeLesson(char) || {}).id === "autopot" && up.id === "autoPotion";
                 return (
-                  <div key={up.id} style={{ background: "var(--sunk)", border: `1px solid ${owned ? "var(--verdigris)" : wanted ? "var(--gilt)" : "var(--hairline)"}`,
-                    borderLeft: `3px solid ${owned ? "var(--verdigris)" : "var(--gilt)"}`, borderRadius: 8, padding: "10px 11px",
-                    display: "flex", alignItems: "center", gap: 10,
-                    animation: wanted && !owned ? "tutflash 1.4s ease-in-out infinite" : "none" }}>
-                    <div style={{ fontSize: 22 }}><EmojiIcon emoji={up.icon} /></div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ color: owned ? "var(--verdigris)" : "var(--gilt)", fontWeight: 700, fontSize: 12.5 }}>{up.name}{owned ? " \u2713" : ""}</div>
-                      <div style={{ color: "var(--ink-soft)", fontSize: 10.5, lineHeight: 1.4 }}>{up.desc}</div>
+                  <div key={up.id} className="item"
+                    style={wanted && !owned ? { animation: "tutflash 1.4s ease-in-out infinite" } : undefined}>
+                    <span className="mark"><EmojiIcon emoji={up.icon} size={18} /></span>
+                    <div className="item-body">
+                      <span className="item-name">{up.name}{owned ? " ✓" : ""}</span>
+                      <span className="item-stats">{up.desc}</span>
                     </div>
-                    {owned
-                      ? <span style={{ color: "var(--ink-soft)", fontSize: 11, fontWeight: 700 }}>Owned</span>
-                      : <MiniBtn onClick={() => buyVendorUpgrade(up)} color={canBuy ? "#FFD700" : "#666"} bg={canBuy ? "#1a1830" : "#15131f"}>{up.cost.toLocaleString()}g</MiniBtn>}
+                    <div className="item-acts">
+                      {owned
+                        ? <span className="state is-open">owned</span>
+                        : <MiniBtn onClick={() => buyVendorUpgrade(up)} tone={canBuy ? "gain" : undefined}>{up.cost.toLocaleString()}g</MiniBtn>}
+                    </div>
                   </div>
                 );
               })}
@@ -8656,14 +8690,17 @@ function GameScreen({ character: initChar, onSave, onBack }) {
 
             {/* Buy consumables */}
             <div style={{ color: "var(--ink-soft)", fontSize: 11, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Consumables — for level {char.level}</div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--sunk)", border: "1px solid var(--hairline)", borderRadius: 10, padding: "9px 12px", marginBottom: 10 }}>
-              <span style={{ color: "var(--ink-soft)", fontSize: 12 }}>Bulk quantity:</span>
-              <button onClick={() => setVendorQty((q) => Math.max(1, q - 1))} style={{ width: 28, height: 28, background: "var(--raised)", border: "1px solid var(--rule)", borderRadius: 6, color: "var(--verdigris)", fontSize: 16, cursor: "pointer" }}>−</button>
-              <input type="number" value={vendorQty} min={1} onChange={(e) => setVendorQty(Math.max(1, Math.min(999, parseInt(e.target.value) || 1)))} style={{ width: 60, textAlign: "center", background: "var(--sunk)", border: "1px solid var(--rule)", borderRadius: 6, color: "var(--ink)", fontSize: 14, padding: "5px 4px" }} />
-              <button onClick={() => setVendorQty((q) => Math.min(999, q + 1))} style={{ width: 28, height: 28, background: "var(--raised)", border: "1px solid var(--rule)", borderRadius: 6, color: "var(--verdigris)", fontSize: 16, cursor: "pointer" }}>+</button>
-              {[10, 50, 100].map((n) => <button key={n} onClick={() => setVendorQty(n)} style={{ background: vendorQty === n ? "var(--hairline)" : "var(--raised)", border: "1px solid var(--hairline)", borderRadius: 6, color: "var(--ink-soft)", fontSize: 11, padding: "5px 8px", cursor: "pointer" }}>{n}</button>)}
+            <div className="bulk">
+              <span className="bulk-label">How many</span>
+              <button onClick={() => setVendorQty((q) => Math.max(1, q - 1))} className="bulk-step" aria-label="One fewer">&#8722;</button>
+              <input type="number" value={vendorQty} min={1} className="bulk-n" aria-label="Quantity"
+                onChange={(e) => setVendorQty(Math.max(1, Math.min(999, parseInt(e.target.value) || 1)))} />
+              <button onClick={() => setVendorQty((q) => Math.min(999, q + 1))} className="bulk-step" aria-label="One more">+</button>
+              {[10, 50, 100].map((n) => (
+                <button key={n} onClick={() => setVendorQty(n)} className={`pick${vendorQty === n ? " is-on" : ""}`}>{n}</button>
+              ))}
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 7, marginBottom: 18 }}>
+            <div style={{ marginBottom: 18 }}>
               {CONSUMABLE_DEFS.map((def) => {
                 const qty = Math.max(1, vendorQty);
                 const price = consumablePrice(def, char.level) * qty;
@@ -8671,15 +8708,15 @@ function GameScreen({ character: initChar, onSave, onBack }) {
                 const effectText = def.kind === "heal" ? `Restores ${potionHeal(char.level)} HP` : def.kind === "dmgbuff" ? `+${mightPct(char.level)}% damage · 5 min` : def.kind === "reducebuff" ? `−${wardPct(char.level)}% damage taken · 5 min` : `+${scrollAmount(char.level)} ${STAT_LABEL[def.stat]} · 1 hour`;
                 const canBuy = char.gold >= price;
                 return (
-                  <div key={def.id} style={{ background: "var(--sunk)", border: `1px solid ${def.color}44`, borderLeft: `3px solid ${def.color}`, borderRadius: 8, padding: "9px 11px", display: "flex", alignItems: "center", gap: 10 }}>
-                    <div style={{ fontSize: 22 }}><EmojiIcon emoji={def.icon} /></div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ color: def.color, fontWeight: 700, fontSize: 12.5 }}>{tieredName(def, char.level)} {owned > 0 && <span style={{ color: "var(--ink-faint)", fontWeight: 400 }}>×{owned}</span>}</div>
-                      <div style={{ color: "var(--ink-soft)", fontSize: 10.5 }}>{effectText}</div>
+                  <div key={def.id} className="item">
+                    <span className="mark"><EmojiIcon emoji={def.icon} size={18} /></span>
+                    <div className="item-body">
+                      <span className="item-name">{tieredName(def, char.level)}{owned > 0 ? <small className="item-meta" style={{ marginLeft: 6 }}>{owned} held</small> : null}</span>
+                      <span className="item-stats">{effectText}</span>
                     </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                      <MiniBtn onClick={() => buyConsumable(def)} color={canBuy ? "#FFD700" : "#666"} bg={canBuy ? "#1a1830" : "#15131f"}>Buy {qty} · {price}g</MiniBtn>
-                      {owned > 0 && <MiniBtn onClick={() => useConsumable(def)} color={def.color}>Use</MiniBtn>}
+                    <div className="item-acts">
+                      <MiniBtn onClick={() => buyConsumable(def)} disabled={!canBuy} tone={canBuy ? "gain" : undefined}>Buy {qty} · {price.toLocaleString()}g</MiniBtn>
+                      {owned > 0 && <MiniBtn onClick={() => useConsumable(def)}>Use</MiniBtn>}
                     </div>
                   </div>
                 );
@@ -8687,37 +8724,41 @@ function GameScreen({ character: initChar, onSave, onBack }) {
             </div>
 
             {/* Upgrades */}
-            <div style={{ color: "var(--ink-soft)", fontSize: 11, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Upgrades</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 7, marginBottom: 18 }}>
-              <div style={{ background: "var(--sunk)", border: "1px solid var(--hairline)", borderRadius: 8, padding: "9px 11px", display: "flex", alignItems: "center", gap: 10 }}>
-                <div style={{ fontSize: 20 }}>💰</div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ color: "var(--ink)", fontSize: 12.5, fontWeight: 700 }}>Auto-Sell Downgrades</div>
-                  <div style={{ color: "var(--ink-soft)", fontSize: 10.5 }}>Vendor looted gear that isn't an upgrade</div>
-                </div>
-                <MiniBtn onClick={() => commitChar({ ...charRef.current, autoSellDowngrades: !charRef.current.autoSellDowngrades })} color={char.autoSellDowngrades ? "#5fd35f" : "#888"} bg="#15131f">{char.autoSellDowngrades ? "✓ On" : "Off"}</MiniBtn>
+            <div className="eyebrow"><span>Upgrades</span></div>
+            <div className="item" style={{ marginBottom: 18 }}>
+              <span className="mark"><Icon name="coin" size={18} /></span>
+              <div className="item-body">
+                <span className="item-name">Auto-sell downgrades</span>
+                <span className="item-stats">Vendor looted gear that is not an upgrade</span>
+              </div>
+              <div className="item-acts">
+                <MiniBtn onClick={() => commitChar({ ...charRef.current, autoSellDowngrades: !charRef.current.autoSellDowngrades })}
+                  tone={char.autoSellDowngrades ? "gain" : undefined}>{char.autoSellDowngrades ? "On" : "Off"}</MiniBtn>
               </div>
             </div>
 
             {/* Sell equipment (collapsible, collapsed by default) */}
-            <button onClick={() => setSellOpen((s) => !s)} style={{ width: "100%", background: "var(--sunk)", border: "1px solid var(--hairline)", borderRadius: 8, color: "var(--ink-soft)", padding: "9px 11px", fontSize: 11, textTransform: "uppercase", letterSpacing: 1, cursor: "pointer", display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-              <span>Sell Gear ({char.inventory.length})</span><span>{sellOpen ? "▲" : "▼"}</span>
-            </button>
+            <div className="eyebrow">
+              <span>Sell gear · {char.inventory.length}</span>
+              <button onClick={() => setSellOpen((s) => !s)} className="link">{sellOpen ? "hide" : "show"}</button>
+            </div>
             {sellOpen && (
               <>
                 {(() => {
                   const byRarity = char.inventory.reduce((m, it) => { (m[it.rarity] = m[it.rarity] || []).push(it); return m; }, {});
                   const dgCount = char.inventory.filter((i) => isDowngrade(char, i)).length;
                   return (
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
-                      <MiniBtn onClick={sellDowngrades} color="#e0556a" bg="#1f1320">Sell downgrades{dgCount ? ` (${dgCount})` : ""}</MiniBtn>
+                    <div className="picks">
+                      <button onClick={sellDowngrades} className="pick">Sell downgrades{dgCount ? ` · ${dgCount}` : ""}</button>
                       {RARITIES.filter((r) => byRarity[r.id]?.length).map((r) => (
-                        <MiniBtn key={r.id} onClick={() => sellByRarity(r.id)} color={r.color}>Sell {r.name} ({byRarity[r.id].length})</MiniBtn>
+                        <button key={r.id} onClick={() => sellByRarity(r.id)} className={`pick ${rarClass(r.id)}`}>
+                          Sell {r.name} <small>{byRarity[r.id].length}</small>
+                        </button>
                       ))}
                     </div>
                   );
                 })()}
-                {char.inventory.length === 0 && <div style={{ color: "var(--ink-faint)", fontSize: 12, padding: "16px 0", textAlign: "center" }}>No gear to sell.</div>}
+                {char.inventory.length === 0 && <div className="empty">No gear to sell.</div>}
                 <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
                   {[...char.inventory].sort((a, b) => b.ilvl - a.ilvl || itemScore(b, char.cls) - itemScore(a, char.cls)).map((it) => (
                     <ItemCard key={it.id} item={it} cls={char.cls} compare={itemScore(char.equipment[it.slotId], char.cls)}

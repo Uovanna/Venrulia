@@ -581,6 +581,33 @@ sec("Six workshops, one bench");
      "the ward reads as on or off through a class");
 }
 
+sec("Four counters where money changes hands");
+{
+  // The Vendor, the Supply Master, the Gambit Shop and the Premium Shop all sell
+  // things, and all four had written their own buy row: a card bordered in the
+  // item's own data colour, with a hand-styled price button on the end. A thing
+  // you can buy is an item in a ledger with a small action beside it — which the
+  // Bank has had since the second commit of this redesign.
+  const itemRows = (app.split('className="item"').length - 1) + (app.split('className={`item').length - 1);
+  ok(itemRows >= 18, `a thing you can buy is an ordinary item row (${itemRows} of them now)`);
+  ok(!/borderLeft: `3px solid \$\{(?:s|def)\.color\}`/.test(app),
+     "no shop row is ruled in its item's own colour");
+  ok(!/border: `1px solid \$\{rarityById\(x\.rarity\)\.color\}44`/.test(app),
+     "…and no gambit is boxed in its rarity");
+
+  // BOTH BULK CONTROLS USED A NATIVE <input type=number>, which brings the
+  // operating system's spinner arrows and its own focus ring — neither of which
+  // this page can reach or theme.
+  ok(panels.includes(".bulk {"), "panels.css defines the bulk-quantity control");
+  ok(app.split('className="bulk"').length - 1 >= 2, "…and both shops use the same one");
+  ok(/\.bulk-n[^}]*appearance: textfield/s.test(panels), "…with the platform's spinners turned off");
+  // [^>]* would stop at the ">" inside an arrow function — the same trap that
+  // made an earlier full-width-button sweep miss every handler with one.
+  ok(!/<input type="number"[\s\S]{0,300}?style=\{\{/.test(app),
+     "no number field styles itself inline any more");
+
+}
+
 sec("The shell is bound in the same hand");
 {
   // Converting the shell is what decides whether the game reads as one object or
@@ -607,10 +634,32 @@ sec("The shell is bound in the same hand");
   ok(darkBg.length === 0, darkBg.length
     ? `${darkBg.length} hard-coded near-black panels remain: ${[...new Set(darkBg)].slice(0, 6).join(", ")}`
     : "no hard-coded near-black panel backgrounds survive the sweep");
-  const tokenBg = (app.match(/background: "var\(--/g) || []).length;
-  ok(tokenBg > 120, `${tokenBg} backgrounds now resolve through tokens`);
-  const tokenFg = (app.match(/color: "var\(--/g) || []).length;
-  ok(tokenFg > 400, `${tokenFg} colours now resolve through tokens`);
+  // These were absolute floors — "more than 120 backgrounds", "more than 400
+  // colours" — written to prove the sweep had run. They are the WRONG SHAPE for
+  // a conversion that is still going: every screen that moves to a class
+  // removes an inline colour, so the counts fall as the work succeeds, and the
+  // floors started failing on progress. Twice now (the style-block scan did the
+  // same). What actually matters is the RATIO: of the colours still written
+  // inline, nearly all should be tokens rather than hexes.
+  // Scoped to inline STYLE objects, walked brace by brace. Matching the whole
+  // file instead counts the data tables — a zone's tint, a relic's hue, a
+  // class's colour — which are identity and are meant to stay hexes. Getting
+  // that wrong reported 83% and made the guard look like a regression.
+  const inStyles = (() => {
+    const blocks = []; let q = 0;
+    while (true) {
+      const j = app.indexOf("style={{", q); if (j < 0) break;
+      let k = j + 8, d = 2;
+      while (d > 0 && k < app.length) { if (app[k] === "{") d++; else if (app[k] === "}") d--; k++; }
+      blocks.push(app.slice(j, k)); q = k;
+    }
+    return blocks.join("\n");
+  })();
+  const inlineTok = (inStyles.match(/var\(--/g) || []).length;
+  const inlineHex = (inStyles.match(/"#[0-9a-fA-F]{3,8}"/g) || []).length;
+  const pct = Math.round((inlineTok / (inlineTok + inlineHex)) * 100);
+  ok(pct >= 97,
+     `${pct}% of inline-style colours are tokens (${inlineTok} tokens, ${inlineHex} raw hexes)`);
 }
 
 console.log("\n" + (fail
